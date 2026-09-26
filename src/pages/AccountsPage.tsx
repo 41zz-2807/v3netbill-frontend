@@ -12,6 +12,7 @@ import {
 import type { Account } from '../lib/types.ts'
 import Loader from '../components/Loader.tsx'
 import { GradientCard } from '../components/ui/GradientCard.tsx'
+import { Modal } from '../components/ui/Modal.tsx'
 import { inputClass, buttonClass } from '../components/ui/gradientCardStyles.ts'
 
 export default function AccountsPage() {
@@ -27,6 +28,7 @@ export default function AccountsPage() {
   const [createdVoucher, setCreatedVoucher] = useState<
     (Account & { password: string }) | null
   >(null)
+  const [modal, setModal] = useState<'VOUCHER' | 'MEMBER' | null>(null)
   const [busy, setBusy] = useState(false)
   const [search, setSearch] = useState('')
 
@@ -56,6 +58,25 @@ export default function AccountsPage() {
         )
       })
     : accounts
+
+  function bukaModal(jenis: 'VOUCHER' | 'MEMBER') {
+    setError(null)
+    setCreatedVoucher(null)
+    setModal(jenis)
+  }
+
+  function tutupModal() {
+    if (busy) return
+    setModal(null)
+    setCreatedVoucher(null)
+    setError(null)
+  }
+
+  function gantiTab(next: 'VOUCHER' | 'MEMBER') {
+    setModal(null)
+    setCreatedVoucher(null)
+    setTab(next)
+  }
 
   /** Backend hanya menolak nominal yang bukan kelipatan 500 (0 lolos), jadi
    *  minimum 500 dicek di sini agar nominal nol tidak pernah terkirim. */
@@ -105,6 +126,7 @@ export default function AccountsPage() {
       setMemberNama('')
       setMemberPassword('')
       setMemberNominalInput('')
+      setModal(null)
       await load()
     } catch (err: unknown) {
       setError(
@@ -167,134 +189,175 @@ export default function AccountsPage() {
     <div>
       <h1 className="mb-6 text-2xl font-bold text-slate-900">Voucher & Member</h1>
 
-      <div className="mb-6 flex gap-2">
-        <TabButton active={tab === 'VOUCHER'} onClick={() => setTab('VOUCHER')}>
-          Voucher
-        </TabButton>
-        <TabButton active={tab === 'MEMBER'} onClick={() => setTab('MEMBER')}>
-          Member
-        </TabButton>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-2">
+          <TabButton active={tab === 'VOUCHER'} onClick={() => gantiTab('VOUCHER')}>
+            Voucher
+          </TabButton>
+          <TabButton active={tab === 'MEMBER'} onClick={() => gantiTab('MEMBER')}>
+            Member
+          </TabButton>
+        </div>
+        <button
+          type="button"
+          onClick={() => bukaModal(tab)}
+          className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700"
+        >
+          + Buat {tab === 'VOUCHER' ? 'Voucher' : 'Member'}
+        </button>
       </div>
 
-      {error && (
+      {error && !modal && (
         <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>
       )}
 
-      {tab === 'VOUCHER' && (
-        <form onSubmit={handleCreateVoucher} className="mb-6">
-          <GradientCard
-            label="VOUCHER"
-            title="Buat Voucher Baru"
-            icon={
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-                <path
-                  fill="currentColor"
-                  d="M10.277 16.515c.005-.11.187-.154.24-.058c.254.45.686 1.111 1.177 1.412c.49.3 1.275.386 1.791.408c.11.005.154.186.058.24c-.45.254-1.111.686-1.412 1.176s-.386 1.276-.408 1.792c-.005.11-.187.153-.24.057c-.254-.45-.686-1.11-1.176-1.411s-1.276-.386-1.792-.408c-.11-.005-.153-.187-.057-.24c.45-.254 1.11-.686 1.411-1.177c.301-.49.386-1.276.408-1.791m8.215-1c-.008-.11-.2-.156-.257-.062c-.172.283-.421.623-.697.793s-.693.236-1.023.262c-.11.008-.155.2-.062.257c.283.172.624.42.793.697s.237.693.262 1.023c.009.11.2.155.258.061c.172-.282.42-.623.697-.792s.692-.237 1.022-.262c.11-.009.156-.2.062-.258c-.283-.172-.624-.42-.793-.697s-.236-.692-.262-1.022M14.704 4.002l-.242-.306c-.937-1.183-1.405-1.775-1.95-1.688c-.545.088-.806.796-1.327 2.213l-.134.366c-.149.403-.223.604-.364.752c-.143.148-.336.225-.724.38l-.353.141l-.248.1c-1.2.48-1.804.753-1.881 1.283c-.082.565.49 1.049 1.634 2.016l.296.25c.325.275.488.413.58.6c.094.187.107.403.134.835l.024.393c.093 1.52.14 2.28.634 2.542s1.108-.147 2.336-.966l.318-.212c.35-.233.524-.35.723-.381c.2-.032.402.024.806.136l.368.102c1.422.394 2.133.591 2.52.188c.388-.403.196-1.14-.19-2.613l-.099-.381c-.11-.419-.164-.628-.134-.835s.142-.389.365-.752l.203-.33c.786-1.276 1.179-1.914.924-2.426c-.254-.51-.987-.557-2.454-.648l-.379-.024c-.417-.026-.625-.039-.806-.135c-.18-.096-.314-.264-.58-.6m-5.869 9.324C6.698 14.37 4.919 16.024 4.248 18c-.752-4.707.292-7.747 1.965-9.637c.144.295.332.539.5.73c.35.396.852.82 1.362 1.251l.367.31l.17.145c.005.064.01.14.015.237l.03.485c.04.655.08 1.294.178 1.805"
-                />
-              </svg>
-            }
-          >
-            <div>
-              <label className="mb-1.5 block text-neutral-500">Nominal (kelipatan 500)</label>
-              <input
-                type="number"
-                step="500"
-                min="500"
-                required
-                value={nominalInput}
-                onChange={(e) => setNominalInput(e.target.value)}
-                placeholder="Contoh: 2000"
-                className={inputClass}
-              />
-            </div>
-            <p className="text-neutral-500">
-              Sisa waktu dihitung otomatis dari tarif per menit yang berlaku.
-            </p>
-            <button type="submit" disabled={busy} className={buttonClass}>
-              {busy ? 'Membuat...' : 'Buat Voucher'}
-            </button>
-          </GradientCard>
+      <Modal
+        open={modal !== null}
+        onClose={tutupModal}
+        locked={busy}
+        label={modal === 'MEMBER' ? 'Buat Member Baru' : 'Buat Voucher Baru'}
+      >
+        {modal === 'VOUCHER' && (
+          <form onSubmit={handleCreateVoucher}>
+            <GradientCard
+              label="VOUCHER"
+              title={createdVoucher ? 'Voucher berhasil dibuat' : 'Buat Voucher Baru'}
+              icon={
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
+                  <path
+                    fill="currentColor"
+                    d="M10.277 16.515c.005-.11.187-.154.24-.058c.254.45.686 1.111 1.177 1.412c.49.3 1.275.386 1.791.408c.11.005.154.186.058.24c-.45.254-1.111.686-1.412 1.176s-.386 1.276-.408 1.792c-.005.11-.187.153-.24.057c-.254-.45-.686-1.11-1.176-1.411s-1.276-.386-1.792-.408c-.11-.005-.153-.187-.057-.24c.45-.254 1.11-.686 1.411-1.177c.301-.49.386-1.276.408-1.791m8.215-1c-.008-.11-.2-.156-.257-.062c-.172.283-.421.623-.697.793s-.693.236-1.023.262c-.11.008-.155.2-.062.257c.283.172.624.42.793.697s.237.693.262 1.023c.009.11.2.155.258.061c.172-.282.42-.623.697-.792s.692-.237 1.022-.262c.11-.009.156-.2.062-.258c-.283-.172-.624-.42-.793-.697s-.236-.692-.262-1.022M14.704 4.002l-.242-.306c-.937-1.183-1.405-1.775-1.95-1.688c-.545.088-.806.796-1.327 2.213l-.134.366c-.149.403-.223.604-.364.752c-.143.148-.336.225-.724.38l-.353.141l-.248.1c-1.2.48-1.804.753-1.881 1.283c-.082.565.49 1.049 1.634 2.016l.296.25c.325.275.488.413.58.6c.094.187.107.403.134.835l.024.393c.093 1.52.14 2.28.634 2.542s1.108-.147 2.336-.966l.318-.212c.35-.233.524-.35.723-.381c.2-.032.402.024.806.136l.368.102c1.422.394 2.133.591 2.52.188c.388-.403.196-1.14-.19-2.613l-.099-.381c-.11-.419-.164-.628-.134-.835s.142-.389.365-.752l.203-.33c.786-1.276 1.179-1.914.924-2.426c-.254-.51-.987-.557-2.454-.648l-.379-.024c-.417-.026-.625-.039-.806-.135c-.18-.096-.314-.264-.58-.6m-5.869 9.324C6.698 14.37 4.919 16.024 4.248 18c-.752-4.707.292-7.747 1.965-9.637c.144.295.332.539.5.73c.35.396.852.82 1.362 1.251l.367.31l.17.145c.005.064.01.14.015.237l.03.485c.04.655.08 1.294.178 1.805"
+                  />
+                </svg>
+              }
+            >
+              {createdVoucher ? (
+                <>
+                  <div>
+                    <p className="text-neutral-500">Kode unik</p>
+                    <p className="font-mono text-3xl font-bold tracking-[0.3em] text-white">
+                      {createdVoucher.kodeUnik}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-neutral-500">Password</p>
+                    <p className="font-mono text-3xl font-bold tracking-[0.3em] text-white">
+                      {createdVoucher.password}
+                    </p>
+                  </div>
+                  <p className="text-neutral-500">
+                    Sisa waktu {formatDuration(createdVoucher.sisaWaktuDetik)}. Catat kode &amp;
+                    password di atas sebelum menutup.
+                  </p>
+                  <button type="button" onClick={tutupModal} className={buttonClass}>
+                    Selesai
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="mb-1.5 block text-neutral-500">
+                      Nominal (kelipatan 500)
+                    </label>
+                    <input
+                      type="number"
+                      step="500"
+                      min="500"
+                      required
+                      autoFocus
+                      value={nominalInput}
+                      onChange={(e) => setNominalInput(e.target.value)}
+                      placeholder="Contoh: 2000"
+                      className={inputClass}
+                    />
+                  </div>
+                  {error && (
+                    <p className="rounded-md bg-red-500/15 px-2.5 py-2 text-xs text-red-300">
+                      {error}
+                    </p>
+                  )}
+                  <p className="text-neutral-500">
+                    Sisa waktu dihitung otomatis dari tarif per menit yang berlaku.
+                  </p>
+                  <button type="submit" disabled={busy} className={buttonClass}>
+                    {busy ? 'Membuat...' : 'Buat Voucher'}
+                  </button>
+                </>
+              )}
+            </GradientCard>
+          </form>
+        )}
 
-          {createdVoucher && (
-            <div className="mt-4 rounded-md border border-orange-200 bg-orange-50 p-3 text-sm">
-              <div className="font-semibold text-orange-800">Voucher dibuat:</div>
-              <div className="mt-1">
-                Kode unik: <code className="font-bold">{createdVoucher.kodeUnik}</code>
+        {modal === 'MEMBER' && (
+          <form onSubmit={handleCreateMember}>
+            <GradientCard
+              label="MEMBER"
+              title="Buat Member Baru"
+              icon={
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+              }
+            >
+              <div>
+                <label className="mb-1.5 block text-neutral-500">Nama member</label>
+                <input
+                  type="text"
+                  value={memberNama}
+                  onChange={(e) => setMemberNama(e.target.value)}
+                  placeholder="Nama lengkap"
+                  required
+                  autoFocus
+                  className={inputClass}
+                />
               </div>
               <div>
-                Password: <code className="font-bold">{createdVoucher.password}</code>
+                <label className="mb-1.5 block text-neutral-500">Password</label>
+                <input
+                  type="text"
+                  value={memberPassword}
+                  onChange={(e) => setMemberPassword(e.target.value)}
+                  placeholder="Password member"
+                  required
+                  className={inputClass}
+                />
               </div>
-              <div className="text-xs text-orange-700">
-                {formatFourDigit(createdVoucher.kodeUnik)} — {formatDuration(createdVoucher.sisaWaktuDetik)}
+              <div>
+                <label className="mb-1.5 block text-neutral-500">
+                  Nominal (kelipatan 500)
+                </label>
+                <input
+                  type="number"
+                  step="500"
+                  min="500"
+                  required
+                  value={memberNominalInput}
+                  onChange={(e) => setMemberNominalInput(e.target.value)}
+                  placeholder="Contoh: 2000"
+                  className={inputClass}
+                />
               </div>
-            </div>
-          )}
-        </form>
-      )}
-
-      {tab === 'MEMBER' && (
-        <form onSubmit={handleCreateMember} className="mb-6">
-          <GradientCard
-            label="MEMBER"
-            title="Buat Member Baru"
-            icon={
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-            }
-          >
-            <div>
-              <label className="mb-1.5 block text-neutral-500">Nama member</label>
-              <input
-                type="text"
-                value={memberNama}
-                onChange={(e) => setMemberNama(e.target.value)}
-                placeholder="Nama lengkap"
-                required
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-neutral-500">Password</label>
-              <input
-                type="text"
-                value={memberPassword}
-                onChange={(e) => setMemberPassword(e.target.value)}
-                placeholder="Password member"
-                required
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-neutral-500">Nominal (kelipatan 500)</label>
-              <input
-                type="number"
-                step="500"
-                min="500"
-                required
-                value={memberNominalInput}
-                onChange={(e) => setMemberNominalInput(e.target.value)}
-                placeholder="Contoh: 2000"
-                className={inputClass}
-              />
-            </div>
-            <button type="submit" disabled={busy} className={buttonClass}>
-              {busy ? 'Membuat...' : 'Buat Member'}
-            </button>
-          </GradientCard>
-        </form>
-      )}
+              {error && (
+                <p className="rounded-md bg-red-500/15 px-2.5 py-2 text-xs text-red-300">{error}</p>
+              )}
+              <button type="submit" disabled={busy} className={buttonClass}>
+                {busy ? 'Membuat...' : 'Buat Member'}
+              </button>
+            </GradientCard>
+          </form>
+        )}
+      </Modal>
 
       <div className="mb-3 flex items-center gap-2">
         <div className="relative flex-1 max-w-md">
@@ -502,8 +565,4 @@ function DropdownMenu({
       </div>
     </div>
   )
-}
-
-function formatFourDigit(s: string | null): string {
-  return s ?? '—'
 }

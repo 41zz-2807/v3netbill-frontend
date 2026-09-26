@@ -3,4 +3,5 @@ export { Card, CardHeader, CardTitle, CardBody, CardFooter, type CardProps, type
 export { Badge, StatusBadge, type BadgeProps, type BadgeVariant, type BadgeSize } from './Badge'
 export { Table, TableSkeleton, type TableProps, type Column, type TableSkeletonProps } from './Table'
 export { GradientCard, type GradientCardProps } from './GradientCard'
+export { Modal, type ModalProps } from './Modal'
 export { inputClass, buttonClass } from './gradientCardStyles'
