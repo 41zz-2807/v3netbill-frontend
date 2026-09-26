@@ -71,7 +71,7 @@ const critical = [
     title: 'CORS Wildcard (WebSocket & REST)',
     location: 'session.gateway.ts:19, main.ts:7',
     risk: 'Semua domain bisa akses WebSocket & REST API → CSRF, data exfiltration, unauthorized control.',
-    fix: 'Batasi origin ke domain sah (mis. https://v3netbill.<domain>, http://localhost:5173). Set credentials: true bila perlu.'
+      fix: 'Batasi origin ke domain sah (isi daftar domain deploy Anda, mis. https://app.example.com, http://localhost:5173). Set credentials: true bila perlu.'
   },
   {
     id: 'C2',
