@@ -1,0 +1,10 @@
+node_modules
+backend/node_modules
+frontend/node_modules
+frontend/dist
+v3NetbillAgent
+data
+.verify
+.git
+*.log
+.env.local

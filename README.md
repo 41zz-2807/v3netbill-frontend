@@ -158,7 +158,7 @@ Akses (dev): http://localhost:5173 — Vite HMR aktif.
 | Dokumen | Isi |
 |---|---|
 | `../AGENTS.md` | Aturan kerja agent AI, status fase |
-| `../backend/README.md` | Arsitektur backend, endpoint, WS event, cron |
+| `v3netbill-server` (repo backend) | Arsitektur backend, endpoint, WS event, cron |
 | `../CONVERSATION_LOG.md` | Log kerja kronologis |
 | `../docs/DEPLOYMENT.md` | Topologi & deploy |
 | `../docs/DETEKSI-IP.md` | Mekanisme deteksi IP PC |
