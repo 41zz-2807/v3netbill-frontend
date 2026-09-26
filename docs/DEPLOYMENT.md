@@ -82,7 +82,8 @@ Tidak ada reverse proxy di host. `cloudflared` berjalan langsung di host:
 /usr/bin/cloudflared --no-autoupdate --config /etc/cloudflared/config.yml tunnel run
 ```
 
-Config saat ini (`/etc/cloudflared/config.yml`) meneruskan hostname berikut:
+Config saat ini (`/etc/cloudflared/config.yml`) meneruskan hostname berikut. Nilai hostname
+sesungguhnya ada di file lokal itu saja dan **tidak disimpan di repo**:
 
 | Hostname | Service lokal |
 |---|---|

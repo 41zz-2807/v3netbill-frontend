@@ -172,7 +172,8 @@ Logika bisnis yang sudah berjalan:
 - Config dibaca `GetConfig()` (`Agent.Service/Worker.cs:608`): **registry → appsettings.json → default**.
   Registry `HKLM\Software\v3Netbill\Agent`: `ServerUrl`, `PcId`, `AgentToken` ( ditulis MSI).
 - Wizard installer punya dialog `ServerConfigDialog` (`Installer/Product.wxs:194`) — field
-  **Server URL / PC ID / Agent Token**. Default property `SERVER_URL=https://v3netbill.<domain>`.
+  **Server URL / PC ID / Agent Token**. Default property `SERVER_URL` diisi saat build MSI
+  (lihat `Installer/Product.wxs`); nilai aslinya tidak disimpan di repo.
 - **WAJIB isi `ServerUrl` dengan skema lengkap** (`http://192.168.1.65:3000`), karena
   `Agent.Core/ServerConnection.cs:74` memanggil `new Uri(...)` — string tanpa skema gagal.
 - Transisi versi agent: `1.0.6.0` reconnect supervisor → `1.0.7.0` single reconnect authority

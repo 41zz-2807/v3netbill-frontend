@@ -88,7 +88,7 @@ Event yang dipakai di frontend:
 server: {
   host: '0.0.0.0',
   port: 5173,
-  allowedHosts: ['v3netbill.<domain>'],
+  allowedHosts: ['<domain-anda>'],
   proxy: {
     '/api':       { target: 'http://v3netbill-backend:3000', changeOrigin: true },
     '/socket.io': { target: 'http://v3netbill-backend:3000', changeOrigin: true, ws: true },
