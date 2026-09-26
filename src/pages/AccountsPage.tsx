@@ -8,12 +8,11 @@ import {
   changePassword,
   revokeAccount,
   formatDuration,
-  formatRupiah,
 } from '../lib/api.ts'
 import type { Account } from '../lib/types.ts'
 import Loader from '../components/Loader.tsx'
-
-const NOMINALS = [1500, 2000, 3000, 5000, 10000]
+import { GradientCard } from '../components/ui/GradientCard.tsx'
+import { inputClass, buttonClass } from '../components/ui/gradientCardStyles.ts'
 
 export default function AccountsPage() {
   const [tab, setTab] = useState<'VOUCHER' | 'MEMBER'>('VOUCHER')
@@ -21,11 +20,9 @@ export default function AccountsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const [nominal, setNominal] = useState(2000)
   const [nominalInput, setNominalInput] = useState('')
   const [memberNama, setMemberNama] = useState('')
   const [memberPassword, setMemberPassword] = useState('')
-  const [memberNominal, setMemberNominal] = useState(2000)
   const [memberNominalInput, setMemberNominalInput] = useState('')
   const [createdVoucher, setCreatedVoucher] = useState<
     (Account & { password: string }) | null
@@ -60,13 +57,29 @@ export default function AccountsPage() {
       })
     : accounts
 
+  /** Backend hanya menolak nominal yang bukan kelipatan 500 (0 lolos), jadi
+   *  minimum 500 dicek di sini agar nominal nol tidak pernah terkirim. */
+  function bacaNominal(input: string): number | null {
+    const nilai = Number(input)
+    if (input.trim() === '' || Number.isNaN(nilai) || nilai < 500 || nilai % 500 !== 0) {
+      return null
+    }
+    return nilai
+  }
+
   async function handleCreateVoucher(e: React.FormEvent) {
     e.preventDefault()
+    const nilai = bacaNominal(nominalInput)
+    if (nilai === null) {
+      setError('Nominal harus kelipatan 500 dan minimal 500')
+      return
+    }
     setBusy(true)
     setError(null)
     try {
-      const created = await createVoucher(nominal)
+      const created = await createVoucher(nilai)
       setCreatedVoucher(created)
+      setNominalInput('')
       await load()
     } catch (err: unknown) {
       setError(
@@ -80,12 +93,18 @@ export default function AccountsPage() {
 
   async function handleCreateMember(e: React.FormEvent) {
     e.preventDefault()
+    const nilai = bacaNominal(memberNominalInput)
+    if (nilai === null) {
+      setError('Nominal harus kelipatan 500 dan minimal 500')
+      return
+    }
     setBusy(true)
     setError(null)
     try {
-      await createMember(memberNama, memberPassword, memberNominal)
+      await createMember(memberNama, memberPassword, nilai)
       setMemberNama('')
       setMemberPassword('')
+      setMemberNominalInput('')
       await load()
     } catch (err: unknown) {
       setError(
@@ -162,45 +181,39 @@ export default function AccountsPage() {
       )}
 
       {tab === 'VOUCHER' && (
-        <form
-          onSubmit={handleCreateVoucher}
-          className="mb-6 rounded-lg border border-slate-200 bg-white p-4"
-        >
-          <h2 className="mb-3 font-semibold text-slate-800">Buat Voucher Baru</h2>
-          <div className="mb-3 flex flex-wrap gap-2 items-center">
-            <select
-              value={nominal}
-              onChange={(e) => setNominal(Number(e.target.value))}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
-            >
-              {NOMINALS.map((n) => (
-                <option key={n} value={n}>
-                  {formatRupiah(n)}
-                </option>
-              ))}
-            </select>
-            <span className="text-slate-400">atau</span>
-            <input
-              type="number"
-              step="500"
-              min="500"
-              value={nominalInput}
-              onChange={(e) => setNominalInput(e.target.value)}
-              onBlur={() => {
-                const val = Number(nominalInput)
-                if (!isNaN(val) && val >= 500) setNominal(val)
-              }}
-              placeholder="Custom (kelipatan 500)"
-              className="w-40 rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={busy}
-            className="rounded-md bg-slate-900 px-4 py-2 text-white hover:bg-slate-700 disabled:opacity-50"
+        <form onSubmit={handleCreateVoucher} className="mb-6">
+          <GradientCard
+            label="VOUCHER"
+            title="Buat Voucher Baru"
+            icon={
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
+                <path
+                  fill="currentColor"
+                  d="M10.277 16.515c.005-.11.187-.154.24-.058c.254.45.686 1.111 1.177 1.412c.49.3 1.275.386 1.791.408c.11.005.154.186.058.24c-.45.254-1.111.686-1.412 1.176s-.386 1.276-.408 1.792c-.005.11-.187.153-.24.057c-.254-.45-.686-1.11-1.176-1.411s-1.276-.386-1.792-.408c-.11-.005-.153-.187-.057-.24c.45-.254 1.11-.686 1.411-1.177c.301-.49.386-1.276.408-1.791m8.215-1c-.008-.11-.2-.156-.257-.062c-.172.283-.421.623-.697.793s-.693.236-1.023.262c-.11.008-.155.2-.062.257c.283.172.624.42.793.697s.237.693.262 1.023c.009.11.2.155.258.061c.172-.282.42-.623.697-.792s.692-.237 1.022-.262c.11-.009.156-.2.062-.258c-.283-.172-.624-.42-.793-.697s-.236-.692-.262-1.022M14.704 4.002l-.242-.306c-.937-1.183-1.405-1.775-1.95-1.688c-.545.088-.806.796-1.327 2.213l-.134.366c-.149.403-.223.604-.364.752c-.143.148-.336.225-.724.38l-.353.141l-.248.1c-1.2.48-1.804.753-1.881 1.283c-.082.565.49 1.049 1.634 2.016l.296.25c.325.275.488.413.58.6c.094.187.107.403.134.835l.024.393c.093 1.52.14 2.28.634 2.542s1.108-.147 2.336-.966l.318-.212c.35-.233.524-.35.723-.381c.2-.032.402.024.806.136l.368.102c1.422.394 2.133.591 2.52.188c.388-.403.196-1.14-.19-2.613l-.099-.381c-.11-.419-.164-.628-.134-.835s.142-.389.365-.752l.203-.33c.786-1.276 1.179-1.914.924-2.426c-.254-.51-.987-.557-2.454-.648l-.379-.024c-.417-.026-.625-.039-.806-.135c-.18-.096-.314-.264-.58-.6m-5.869 9.324C6.698 14.37 4.919 16.024 4.248 18c-.752-4.707.292-7.747 1.965-9.637c.144.295.332.539.5.73c.35.396.852.82 1.362 1.251l.367.31l.17.145c.005.064.01.14.015.237l.03.485c.04.655.08 1.294.178 1.805"
+                />
+              </svg>
+            }
           >
-            {busy ? 'Membuat...' : 'Buat Voucher'}
-          </button>
+            <div>
+              <label className="mb-1.5 block text-neutral-500">Nominal (kelipatan 500)</label>
+              <input
+                type="number"
+                step="500"
+                min="500"
+                required
+                value={nominalInput}
+                onChange={(e) => setNominalInput(e.target.value)}
+                placeholder="Contoh: 2000"
+                className={inputClass}
+              />
+            </div>
+            <p className="text-neutral-500">
+              Sisa waktu dihitung otomatis dari tarif per menit yang berlaku.
+            </p>
+            <button type="submit" disabled={busy} className={buttonClass}>
+              {busy ? 'Membuat...' : 'Buat Voucher'}
+            </button>
+          </GradientCard>
 
           {createdVoucher && (
             <div className="mt-4 rounded-md border border-orange-200 bg-orange-50 p-3 text-sm">
@@ -220,62 +233,66 @@ export default function AccountsPage() {
       )}
 
       {tab === 'MEMBER' && (
-        <form
-          onSubmit={handleCreateMember}
-          className="mb-6 rounded-lg border border-slate-200 bg-white p-4"
-        >
-          <h2 className="mb-3 font-semibold text-slate-800">Buat Member Baru</h2>
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <input
-              type="text"
-              value={memberNama}
-              onChange={(e) => setMemberNama(e.target.value)}
-              placeholder="Nama member"
-              required
-              className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-slate-900"
-            />
-            <input
-              type="text"
-              value={memberPassword}
-              onChange={(e) => setMemberPassword(e.target.value)}
-              placeholder="Password"
-              required
-              className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-slate-900"
-            />
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <select
-                value={memberNominal}
-                onChange={(e) => setMemberNominal(Number(e.target.value))}
-                className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
+        <form onSubmit={handleCreateMember} className="mb-6">
+          <GradientCard
+            label="MEMBER"
+            title="Buat Member Baru"
+            icon={
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
-                {NOMINALS.map((n) => (
-                  <option key={n} value={n}>
-                    {formatRupiah(n)}
-                  </option>
-                ))}
-              </select>
+                <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+            }
+          >
+            <div>
+              <label className="mb-1.5 block text-neutral-500">Nama member</label>
+              <input
+                type="text"
+                value={memberNama}
+                onChange={(e) => setMemberNama(e.target.value)}
+                placeholder="Nama lengkap"
+                required
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-neutral-500">Password</label>
+              <input
+                type="text"
+                value={memberPassword}
+                onChange={(e) => setMemberPassword(e.target.value)}
+                placeholder="Password member"
+                required
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-neutral-500">Nominal (kelipatan 500)</label>
               <input
                 type="number"
                 step="500"
                 min="500"
+                required
                 value={memberNominalInput}
                 onChange={(e) => setMemberNominalInput(e.target.value)}
-                onBlur={() => {
-                  const val = Number(memberNominalInput)
-                  if (!isNaN(val) && val >= 500) setMemberNominal(val)
-                }}
-                placeholder="Custom (kelipatan 500)"
-                className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
+                placeholder="Contoh: 2000"
+                className={inputClass}
               />
             </div>
-            <button
-              type="submit"
-              disabled={busy}
-              className="rounded-md bg-slate-900 px-4 py-2 text-white hover:bg-slate-700 disabled:opacity-50"
-            >
-              {busy ? 'Membuat...' : 'Buat'}
+            <button type="submit" disabled={busy} className={buttonClass}>
+              {busy ? 'Membuat...' : 'Buat Member'}
             </button>
-          </div>
+          </GradientCard>
         </form>
       )}
 
