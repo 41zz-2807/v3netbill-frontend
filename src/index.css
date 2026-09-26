@@ -1,0 +1,664 @@
+@import "tailwindcss";
+
+/* Login page — dari Uiverse.io (Smit-Prajapati) */
+.login-container {
+  max-width: 350px;
+  background: #F8F9FD;
+  background: linear-gradient(0deg, rgb(255, 255, 255) 0%, rgb(244, 247, 251) 100%);
+  border-radius: 40px;
+  padding: 25px 35px;
+  border: 5px solid rgb(255, 255, 255);
+  box-shadow: rgba(133, 189, 215, 0.8784313725) 0px 30px 30px -20px;
+  margin: 20px;
+}
+
+.heading {
+  text-align: center;
+  font-weight: 900;
+  font-size: 30px;
+  color: rgb(16, 137, 211);
+}
+
+.login-form {
+  margin-top: 20px;
+}
+
+.login-form .input {
+  width: 100%;
+  background: white;
+  border: none;
+  padding: 15px 20px;
+  border-radius: 20px;
+  margin-top: 15px;
+  box-shadow: #cff0ff 0px 10px 10px -5px;
+  border-inline: 2px solid transparent;
+}
+
+.login-form .input::-moz-placeholder {
+  color: rgb(170, 170, 170);
+}
+
+.login-form .input::placeholder {
+  color: rgb(170, 170, 170);
+}
+
+.login-form .input:focus {
+  outline: none;
+  border-inline: 2px solid #12B1D1;
+}
+
+.login-form .login-button {
+  display: block;
+  width: 100%;
+  font-weight: bold;
+  background: linear-gradient(45deg, rgb(16, 137, 211) 0%, rgb(18, 177, 209) 100%);
+  color: white;
+  padding-block: 15px;
+  margin: 20px auto;
+  border-radius: 20px;
+  box-shadow: rgba(133, 189, 215, 0.8784313725) 0px 20px 10px -15px;
+  border: none;
+  transition: all 0.2s ease-in-out;
+}
+
+.login-form .login-button:hover {
+  transform: scale(1.03);
+  box-shadow: rgba(133, 189, 215, 0.8784313725) 0px 23px 10px -20px;
+}
+
+.login-form .login-button:active {
+  transform: scale(0.95);
+  box-shadow: rgba(133, 189, 215, 0.8784313725) 0px 15px 10px -10px;
+}
+
+.login-form .login-button:disabled {
+  opacity: 0.6;
+}
+
+.agreement {
+  display: block;
+  text-align: center;
+  margin-top: 15px;
+}
+
+.agreement a {
+  text-decoration: none;
+  color: #0099ff;
+  font-size: 9px;
+}
+
+/* Loader — dari Uiverse.io (alexruix) */
+.loader {
+  width: 80px;
+  height: 50px;
+  position: relative;
+}
+
+.loader-text {
+  position: absolute;
+  top: 0;
+  padding: 0;
+  margin: 0;
+  color: #C8B6FF;
+  animation: text_713 3.5s ease both infinite;
+  font-size: .8rem;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  width: max-content;
+  max-width: none;
+}
+
+.load {
+  background-color: #9A79FF;
+  border-radius: 50px;
+  display: block;
+  height: 16px;
+  width: 16px;
+  bottom: 0;
+  position: absolute;
+  transform: translateX(64px);
+  animation: loading_713 3.5s ease both infinite;
+}
+
+.load::before {
+  position: absolute;
+  content: "";
+  width: 100%;
+  height: 100%;
+  background-color: #D1C2FF;
+  border-radius: inherit;
+  animation: loading2_713 3.5s ease both infinite;
+}
+
+@keyframes text_713 {
+  0% {
+    letter-spacing: 1px;
+    transform: translateX(0px);
+  }
+  40% {
+    letter-spacing: 2px;
+    transform: translateX(26px);
+  }
+  80% {
+    letter-spacing: 1px;
+    transform: translateX(32px);
+  }
+  90% {
+    letter-spacing: 2px;
+    transform: translateX(0px);
+  }
+  100% {
+    letter-spacing: 1px;
+    transform: translateX(0px);
+  }
+}
+
+@keyframes loading_713 {
+  0% {
+    width: 16px;
+    transform: translateX(0px);
+  }
+  40% {
+    width: 100%;
+    transform: translateX(0px);
+  }
+  80% {
+    width: 16px;
+    transform: translateX(64px);
+  }
+  90% {
+    width: 100%;
+    transform: translateX(0px);
+  }
+  100% {
+    width: 16px;
+    transform: translateX(0px);
+  }
+}
+
+@keyframes loading2_713 {
+  0% {
+    transform: translateX(0px);
+    width: 16px;
+  }
+  40% {
+    transform: translateX(0%);
+    width: 80%;
+  }
+  80% {
+    width: 100%;
+    transform: translateX(0px);
+  }
+  90% {
+    width: 80%;
+    transform: translateX(15px);
+  }
+  100% {
+    transform: translateX(0px);
+    width: 16px;
+  }
+}
+
+/* ============================================================
+   Dashboard — kartu PC
+   Diadaptasi dari Uiverse.io "Universe of UI" (adamgiebl).
+   Semua selector di-namespace jadi .uui-card supaya nama generik
+   (.title / .row / .item / .border) tidak bocor ke komponen lain.
+   ============================================================ */
+.uui-card {
+  width: 100%;
+  /* 340px dipilih agar item "IP" (mis. 192.168.100.24) muat penuh
+     tanpa ellipsis, bahkan di kolom tersempit (4 kolom @ max-w-6xl). */
+  max-width: 340px;
+  justify-self: center;
+  border-radius: 20px;
+  background: #1b233d;
+  padding: 5px;
+  overflow: hidden;
+  box-shadow: rgba(100, 100, 111, 0.2) 0 7px 20px 0;
+  transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+    box-shadow 0.3s ease;
+}
+
+.uui-card:hover {
+  transform: scale(1.03);
+  box-shadow: rgba(100, 100, 111, 0.28) 0 10px 26px 0;
+}
+
+/* ---------- Top: gradien + notch miring ---------- */
+.uui-card__top {
+  height: 158px;
+  border-radius: 15px;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(45deg, rgb(4, 159, 187) 0%, rgb(80, 246, 255) 100%);
+  position: relative;
+}
+
+/* Gradien per status — status tetap terbaca sekilas dari warna. */
+.uui-card--active .uui-card__top {
+  background: linear-gradient(45deg, rgb(4, 159, 187) 0%, rgb(80, 246, 255) 100%);
+}
+
+.uui-card--idle .uui-card__top {
+  background: linear-gradient(45deg, #3b5bdb 0%, #748ffc 100%);
+}
+
+.uui-card--offline .uui-card__top {
+  background: linear-gradient(45deg, #6b7280 0%, #9ca3af 100%);
+}
+
+/* Notch: kotak navy yang memotong sudut gradient (ilusi "lubang"). */
+.uui-card__top .uui-card__notch {
+  border-bottom-right-radius: 10px;
+  height: 30px;
+  width: 130px;
+  background: #1b233d;
+  position: relative;
+  transform: skew(-40deg);
+  box-shadow: -10px -10px 0 0 #1b233d;
+}
+
+.uui-card__top .uui-card__notch::before {
+  content: "";
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  top: 0;
+  right: -15px;
+  background: rgba(255, 255, 255, 0);
+  border-top-left-radius: 10px;
+  box-shadow: -5px -5px 0 2px #1b233d;
+}
+
+.uui-card__top::before {
+  content: "";
+  position: absolute;
+  top: 30px;
+  left: 0;
+  background: rgba(255, 255, 255, 0);
+  height: 15px;
+  width: 15px;
+  border-top-left-radius: 15px;
+  box-shadow: -5px -5px 0 2px #1b233d;
+}
+
+/* ---------- Baris atas: logo kiri, tombol aksi kanan ---------- */
+.uui-card__bar {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  width: 100%;
+  height: 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.uui-card__logo {
+  height: 100%;
+  aspect-ratio: 1;
+  padding: 6px 0 6px 14px;
+  display: flex;
+}
+
+.uui-card__logo svg {
+  height: 100%;
+  fill: #1b233d;
+}
+
+.uui-card__actions {
+  height: 100%;
+  padding: 0 12px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Tombol aksi: warna menandai tindakan (hijau = mulai, kuning = kunci,
+   merah = matikan). Ikon tetap navy agar kontras di ketiga gradien. */
+.uui-card__act {
+  border: none;
+  line-height: 1;
+  padding: 4px;
+  display: flex;
+  border-radius: 7px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(27, 35, 61, 0.22);
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.uui-card__act--start {
+  background: linear-gradient(45deg, #2f9e44 0%, #69db7c 100%);
+}
+
+.uui-card__act--lock {
+  background: linear-gradient(45deg, #f08c00 0%, #ffd43b 100%);
+}
+
+.uui-card__act--shutdown {
+  background: linear-gradient(45deg, #e03131 0%, #ff8787 100%);
+}
+
+.uui-card__act svg {
+  height: 16px;
+  width: 16px;
+  fill: #1b233d;
+}
+
+.uui-card__act:hover:not(:disabled) {
+  transform: scale(1.15);
+  filter: brightness(1.08);
+}
+
+.uui-card__act:hover:not(:disabled) svg {
+  fill: #ffffff;
+}
+
+.uui-card__act:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.uui-card__act:disabled {
+  opacity: 0.32;
+  cursor: not-allowed;
+  filter: grayscale(0.5);
+}
+
+/* ---------- Hero: angka besar di tengah gradient ---------- */
+.uui-card__hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 6px 10px 12px;
+  text-align: center;
+  min-width: 0;
+}
+
+.uui-card__hero-value {
+  font-size: 26px;
+  font-weight: 800;
+  color: #1b233d;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uui-card__hero-value--sm {
+  font-size: 20px;
+  letter-spacing: 1px;
+}
+
+/* Sisa waktu <= 5 menit → merah, penanda waktu mau habis. */
+.uui-card__hero-value--warn {
+  color: #c92a2a;
+}
+
+.uui-card__hero-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: rgba(27, 35, 61, 0.62);
+}
+
+/* ---------- Bottom: judul + 4 item ---------- */
+.uui-card__bottom {
+  margin-top: 15px;
+  padding: 10px 5px;
+}
+
+/* Judul memuat "namaPC - IP". Font 15px + letter-spacing 1px dipilih
+   supaya "PC001 - 192.168.100.254" (22 karakter) tetap muat satu baris
+   di card 340px. */
+.uui-card__title {
+  display: block;
+  font-size: 15px;
+  font-weight: 800;
+  color: #fff;
+  text-align: center;
+  letter-spacing: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uui-card__title-ip {
+  color: #8fa8d6;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.uui-card__row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+
+.uui-card__item {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: center;
+  padding: 5px 2px;
+  color: rgba(170, 222, 243, 0.721);
+}
+
+.uui-card__item + .uui-card__item {
+  border-left: 1px solid rgba(255, 255, 255, 0.126);
+}
+
+.uui-card__big {
+  font-size: 12px;
+  display: block;
+  color: #fff;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uui-card__big--warn {
+  color: #ffd166;
+}
+
+.uui-card__big--danger {
+  color: #ff8787;
+}
+
+.uui-card__big--ok {
+  color: #8ce99a;
+}
+
+.uui-card__big--muted {
+  color: #9fb2d8;
+}
+
+.uui-card__regular {
+  font-size: 9px;
+  display: block;
+  letter-spacing: 0.3px;
+}
+
+/* ---------- Responsif ---------- */
+/* HP: satu kolom, card mentokang di tengah. */
+@media (max-width: 479px) {
+  .uui-card {
+    max-width: 260px;
+  }
+
+  .uui-card__hero-value {
+    font-size: 23px;
+  }
+}
+
+/* Tablet & laptop:本格 desktop, hover scale dinonaktifkan agar
+   tidak memotong neighboring card saat cursor lewat. */
+@media (hover: none) {
+  .uui-card:hover {
+    transform: none;
+  }
+}
+
+
+/* ============================================================
+   Uiverse.io (Creatlydev) buttons — GLOBAL untuk SEMUA tombol.
+   Rollback: hapus atribut data-ui-buttons="uiverse" di index.html
+   (atau hapus blok CSS ini). Tidak mengubah file komponen.
+   Warna fill hover = var(--btn-clr), default navy #1b233d.
+  Dikecualikan: button.uui-card__act (tombol aksi kartu PC dashboard)
+   karena memakai warna semantik sendiri — hijau/kuning/merah.
+   ============================================================ */
+html[data-ui-buttons="uiverse"] button:not(.uui-card__act) {
+  position: relative;
+  line-height: 1;
+  border-radius: 1.5rem !important;
+  border: none;
+  cursor: pointer;
+  box-shadow: 10px 10px 20px rgba(0, 0, 0, 0.05);
+  background-image: linear-gradient(
+    90deg,
+    var(--btn-clr, #1b233d) 0%,
+    var(--btn-clr, #1b233d) 50%,
+    transparent 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  background-position: 100% 0;
+  background-repeat: no-repeat;
+  transition: background-position 0.3s ease, color 0.2s ease;
+}
+
+html[data-ui-buttons="uiverse"] button:not(.uui-card__act):hover {
+  background-position: 0 0;
+  color: #ffffff !important;
+}
+
+html[data-ui-buttons="uiverse"] button:not(.uui-card__act):disabled {
+  background-position: 100% 0;
+}
+
+/* ============================================================
+   Semantic UI-style Dropdown (minimal subset for AccountsPage)
+   ============================================================ */
+.ui.dropdown {
+  display: inline-block;
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+  min-width: 100px;
+}
+
+.ui.dropdown .text {
+  display: inline-block;
+  padding: 0.5rem 1.5rem 0.5rem 0.75rem;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #334155;
+  white-space: nowrap.
+}
+
+.ui.dropdown .text:hover {
+  background: #e2e8f0.
+}
+
+.ui.dropdown .dropdown.icon {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: #64748b.
+}
+
+.ui.dropdown .dropdown.icon::before {
+  content: '';
+  display: inline-block;
+  width: 0;
+  height: 0.
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid currentColor;
+}
+
+.ui.dropdown .menu {
+  position: absolute.
+  top: 100%.
+  right: 0.
+  z-index: 50.
+  margin-top: 0.25rem.
+  min-width: 180px.
+  background: white.
+  border: 1px solid #e2e8f0.
+  border-radius: 0.375rem.
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05).
+  overflow: hidden.
+  display: none.
+  flex-direction: column.
+}
+
+.ui.dropdown .menu.visible,
+.ui.dropdown.active .menu {
+  display: flex.
+}
+
+.ui.dropdown .item {
+  display: flex.
+  align-items: center.
+  gap: 0.5rem.
+  padding: 0.5rem 0.75rem.
+  font-size: 0.75rem.
+  font-weight: 500.
+  color: #334155.
+  white-space: nowrap.
+  transition: background-color 0.1s.
+}
+
+.ui.dropdown .item:hover:not(.disabled) {
+  background: #f1f5f9.
+}
+
+.ui.dropdown .item.disabled {
+  opacity: 0.5.
+  cursor: not-allowed.
+  pointer-events: none.
+}
+
+.ui.dropdown .item.text-red-600 {
+  color: #dc2626.
+}
+
+.ui.dropdown .item.text-red-600:hover:not(.disabled) {
+  background: #fef2f2.
+}
+
+.ui.dropdown .item .description {
+  margin-left: auto.
+  font-size: 0.625rem.
+  color: #94a3b8.
+  font-weight: 400.
+}
+
+.ui.dropdown .divider {
+  height: 1px.
+  background: #e2e8f0.
+  margin: 0.25rem 0.
+}
+
+.ui.dropdown .menu .menu {
+  position: absolute.
+  left: 100%.
+  top: 0.
+  margin-left: 0.25rem.
+  margin-top: -1px.
+  border-radius: 0.375rem.
+}
