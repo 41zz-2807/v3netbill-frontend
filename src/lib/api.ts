@@ -86,6 +86,11 @@ export async function fetchUsers(): Promise<OperatorUser[]> {
   return data
 }
 
+export async function deleteUser(id: string): Promise<{ deleted: string }> {
+  const { data } = await api.delete<{ deleted: string }>(`/auth/users/${id}`)
+  return data
+}
+
 export async function fetchPcs(): Promise<Pc[]> {
   const { data } = await api.get<Pc[]>('/pcs')
   return data

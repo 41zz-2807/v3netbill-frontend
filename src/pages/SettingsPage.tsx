@@ -13,6 +13,7 @@ import {
   parseMeta,
   createUser,
   fetchUsers,
+  deleteUser,
 } from '../lib/api.ts'
 import type {
   InstallerMeta,
@@ -68,7 +69,7 @@ function adaTanggal(dateStr: string | undefined): boolean {
 }
 
 export default function SettingsPage() {
-  const { role } = useAuth()
+  const { role, username } = useAuth()
 
   const [harga, setHarga] = useState('')
   const [grace, setGrace] = useState('')
@@ -166,6 +167,41 @@ export default function SettingsPage() {
     } finally {
       setBusy(null)
     }
+  }
+
+  async function hapusUser(u: OperatorUser) {
+    if (!confirm(
+      `Hapus user "${u.username}" (${u.role})?\n\n` +
+        'User ini tidak bisa login lagi setelah dihapus.',
+    )) return
+    setBusy('user')
+    setErr(null)
+    setUserMsg(null)
+    try {
+      await deleteUser(u.id)
+      setUserMsg(`User "${u.username}" dihapus`)
+      await loadUsers()
+    } catch (e: unknown) {
+      setErr(
+        (e as { response?: { data?: { message?: string } } }).response?.data?.message ??
+          (e instanceof Error ? e.message : String(e)),
+      )
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  /** Admin tidak boleh menghapus akunnya sendiri, dan admin terakhir tidak
+   *  boleh dihapus karena tidak akan ada yang bisa menambah user lagi.
+   *  Backend juga mengecek dua hal ini. */
+  const jumlahAdmin = users.filter((u) => u.role === 'ADMIN').length
+
+  function alasanTidakBisaHapus(u: OperatorUser): string | null {
+    if (u.username === username) return 'Anda tidak bisa menghapus akun Anda sendiri'
+    if (u.role === 'ADMIN' && jumlahAdmin <= 1) {
+      return 'Admin terakhir tidak bisa dihapus'
+    }
+    return null
   }
 
   if (role !== 'ADMIN') {
@@ -423,20 +459,49 @@ export default function SettingsPage() {
           )}
           {users.length > 0 && (
             <ul className="mt-3 space-y-1 border-t border-slate-200 pt-3">
-              {users.map((u) => (
-                <li key={u.id} className="flex items-center justify-between gap-2 text-xs">
-                  <span className="truncate font-medium text-slate-700">{u.username}</span>
-                  <span
-                    className={`shrink-0 rounded-full px-2 py-0.5 font-medium ${
-                      u.role === 'ADMIN'
-                        ? 'bg-slate-900 text-white'
-                        : 'bg-slate-100 text-slate-600'
-                    }`}
-                  >
-                    {u.role}
-                  </span>
-                </li>
-              ))}
+              {users.map((u) => {
+                const alasan = alasanTidakBisaHapus(u)
+                return (
+                  <li key={u.id} className="flex items-center gap-2 text-xs">
+                    <span className="truncate font-medium text-slate-700">{u.username}</span>
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 font-medium ${
+                        u.role === 'ADMIN'
+                          ? 'bg-slate-900 text-white'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      {u.role}
+                    </span>
+                    {u.username === username && (
+                      <span className="shrink-0 text-slate-400">(anda)</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void hapusUser(u)}
+                      disabled={busy !== null || alasan !== null}
+                      title={alasan ?? `Hapus user ${u.username}`}
+                      aria-label={`Hapus user ${u.username}`}
+                      className="ml-auto shrink-0 rounded p-1 text-slate-400 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:text-slate-200 disabled:hover:bg-transparent"
+                    >
+                      <svg
+                        className="h-4 w-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </section>
