@@ -11,15 +11,20 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   dotColor?: string
 }
 
-const variantStyles: Record<BadgeVariant, string> = {
-  default: 'bg-neutral-100 text-neutral-700 border border-neutral-200',
-  success: 'bg-success-light text-success-text border border-success-border',
-  warning: 'bg-warning-light text-warning-text border border-warning-border',
-  danger: 'bg-danger-light text-danger-text border border-danger-border',
-  info: 'bg-primary-light text-primary-text border border-primary-border',
-  primary: 'bg-primary text-white border border-primary',
-  neutral: 'bg-neutral-100 text-neutral-600 border border-neutral-200',
-}
+  // Warna memakai palet standar Tailwind yang sama dengan halaman lain
+  // (mis. `bg-green-100 text-green-700`). Versi sebelumnya memakai token
+  // custom seperti bg-success-light / text-primary-text yang tidak pernah
+  // didefinisikan di index.css, sehingga badge tampil tanpa warna sama sekali.
+  const variantStyles: Record<BadgeVariant, string> = {
+    default: 'bg-neutral-100 text-neutral-700 border border-neutral-200',
+    success: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
+    warning: 'bg-amber-100 text-amber-700 border border-amber-200',
+    danger: 'bg-red-100 text-red-700 border border-red-200',
+    info: 'bg-sky-100 text-sky-700 border border-sky-200',
+    primary: 'bg-slate-900 text-white border border-slate-900',
+    neutral: 'bg-neutral-100 text-neutral-600 border border-neutral-200',
+  }
+
 
 const sizeStyles: Record<BadgeSize, string> = {
   sm: 'px-2 py-0.5 text-xs gap-1',

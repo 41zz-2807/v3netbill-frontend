@@ -8,6 +8,45 @@ export interface PaginationProps {
   siblingCount?: number
 }
 
+/** Nomor halaman yang ditampilkan: pertama, terakhir, dan jendela di sekitar
+ *  halaman aktif. Set dipakai agar tidak ada nomor yang dobel. */
+function nomorTampil(
+  currentPage: number,
+  totalPages: number,
+  siblingCount: number,
+): Set<number> {
+  const hasil = new Set<number>()
+  const mulai = Math.max(1, currentPage - siblingCount)
+  const selesai = Math.min(totalPages, currentPage + siblingCount)
+  for (let n = mulai; n <= selesai; n++) hasil.add(n)
+  hasil.add(1)
+  hasil.add(totalPages)
+  return hasil
+}
+
+/** Sisipkan 'ellipsis' pada celah antar nomor. Celah selisih 1 ditampilkan
+ *  penuh, selisih 2 cukup menampilkan satu nomor di antaranya, selisih lebih
+ *  besar memakai ellipsis. */
+function denganEllipsis(nomor: number[]): (number | 'ellipsis')[] {
+  const urut = [...nomor].sort((a, b) => a - b)
+  const hasil: (number | 'ellipsis')[] = []
+  for (let i = 0; i < urut.length; i++) {
+    if (i > 0) {
+      const selisih = urut[i] - urut[i - 1]
+      if (selisih === 1) {
+        hasil.push(urut[i])
+      } else if (selisih === 2) {
+        hasil.push(urut[i - 1] + 1, urut[i])
+      } else {
+        hasil.push('ellipsis', urut[i])
+      }
+    } else {
+      hasil.push(urut[i])
+    }
+  }
+  return hasil
+}
+
 export function Pagination({
   currentPage,
   totalPages,
@@ -19,42 +58,13 @@ export function Pagination({
 }: PaginationProps) {
   if (totalPages <= 1) return null
 
-  const pages: (number | 'ellipsis')[] = []
-  const leftBound = Math.max(1, currentPage - siblingCount)
-  const rightBound = Math.min(totalPages, currentPage + siblingCount)
-
-  // First page
-  pages.push(1)
-
-  // Ellipsis after first
-  if (leftBound > 2) {
-    pages.push('ellipsis')
-  } else if (leftBound === 2) {
-    pages.push(2)
-  }
-
-  // Middle pages
-  for (let i = Math.max(2, leftBound); i <= Math.min(totalPages - 1, rightBound); i++) {
-    if (i !== 1 && i !== totalPages) {
-      pages.push(i)
-    }
-  }
-
-  // Ellipsis before last
-  if (rightBound < totalPages - 1) {
-    pages.push('ellipsis')
-  } else if (rightBound === totalPages - 1) {
-    pages.push(totalPages - 1)
-  }
-
-  // Last page
-  if (totalPages > 1) {
-    pages.push(totalPages)
-  }
+  const pages = denganEllipsis([
+    ...nomorTampil(currentPage, totalPages, siblingCount),
+  ])
 
   return (
     <nav className="flex items-center justify-between px-4 py-3 border-t border-neutral-200" aria-label="Pagination">
-      {showTotal && totalItems && (
+      {showTotal && totalItems !== undefined && (
         <div className="text-sm text-neutral-500">
           Menampilkan {Math.min((currentPage - 1) * (itemsPerPage || 10) + 1, totalItems)}–
             {Math.min(currentPage * (itemsPerPage || 10), totalItems)} dari {totalItems}
@@ -91,9 +101,10 @@ export function Pagination({
             <button
               key={page}
               onClick={() => onPageChange(page as number)}
+              aria-current={currentPage === page ? 'page' : undefined}
               className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${
                 currentPage === page
-                  ? 'bg-primary text-white'
+                  ? 'bg-slate-900 text-white'
                   : 'text-neutral-600 hover:bg-neutral-100'
               }`}
             >
