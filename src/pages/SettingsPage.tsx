@@ -52,6 +52,13 @@ function formatDateIndo(dateStr: string): string {
   })
 }
 
+/** installer_meta disimpan sebagai JSON bebas, jadi field tanggal bisa saja
+ *  tidak ada pada meta versi lama. new Date(undefined) menghasilkan
+ *  "Invalid Date", jadi periksa dulu sebelum menampilkan. */
+function adaTanggal(dateStr: string | undefined): boolean {
+  return typeof dateStr === 'string' && dateStr !== '' && !Number.isNaN(new Date(dateStr).getTime())
+}
+
 export default function SettingsPage() {
   const { role } = useAuth()
 
@@ -342,8 +349,16 @@ export default function SettingsPage() {
         <section className="flex flex-col rounded-lg border border-slate-200 bg-white p-4">
           <h2 className="mb-3 font-semibold text-slate-800">Installer Aplikasi</h2>
           {installed ? (
-            <div className="mb-3 truncate rounded-md bg-slate-50 p-2 text-xs text-slate-700">
-              <span className="font-medium">{installed.filename}</span> · {formatBytes(installed.sizeBytes)}
+            <div className="mb-3 rounded-md bg-slate-50 p-2 text-xs text-slate-700">
+              <div className="truncate">
+                <span className="font-medium">{installed.filename}</span> ·{' '}
+                {formatBytes(installed.sizeBytes)}
+              </div>
+              {adaTanggal(installed.uploadedAt) && (
+                <div className="mt-0.5 text-slate-500">
+                  Diunggah {formatDateIndo(installed.uploadedAt)}
+                </div>
+              )}
             </div>
           ) : (
             <p className="mb-3 text-xs text-slate-500">Belum ada installer terupload.</p>
