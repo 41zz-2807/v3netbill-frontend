@@ -41,6 +41,7 @@ services:
       - "5173:5173"
     environment:
       - VITE_API_URL=http://localhost:3000
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-}
     volumes:
       - ./frontend:/app
       - v3netbill-frontend-node-modules:/app/node_modules
