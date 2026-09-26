@@ -271,8 +271,8 @@ LAPORAN_EMAIL_TUJUAN=<isi dari .env>
      Postgres dan sesi aktif) — sebaiknya hanya saat jam tutup.
    - Detail & tradeoff: `docs/DETEKSI-IP.md`
 
-6. **Commit backend & frontend** — perubahan sudah terverifikasi build & lint, tapi masih di
-   working tree (lihat item 17). Menunggu instruksi user.
+6. ~~**Commit backend & frontend**~~ — **SELESAI 26 Sep**, sudah di-commit & ter-push ke GitHub.
+   Lihat bagian "Sesi 26 Sep — Commit, Push & Audit Keamanan" di bawah.
 
 ---
 
@@ -343,6 +343,95 @@ LAPORAN_EMAIL_TUJUAN=<isi dari .env>
 - Emergency PIN: nilai default ada di `Installer/Product.wxs` / `Agent.Overlay` — ambil dari sana
   bila perlu, jangan disalin ke dokumen teks
 - See `v3NetbillAgent/README.md` and `HANDOFF.md` for details
+
+---
+
+## Sesi 26 Sep (sesi terakhir) — Commit, Push & Audit Keamanan
+
+Ringkasan sesi ini: verifikasi semua 10 commit ter-push ke GitHub, percobaan membuat MSI baru,
+audit keamanan repo public, dan pembahasan .apk Android (hold, belum dikerjakan).
+
+### 1. Push 10 commit (frontend 8 + backend 2)
+
+Semua perubahan UI yang dibuat sesi-sesi sebelumnya **ternyata sudah ter-commit** tapi belum
+ter-push. Setelah user konfirmasi, keduanya dipush:
+
+```
+frontend  d3d937b..a2c2b35   8 commit
+backend   4826a4b..59bf2b4   2 commit
+agent     (tidak ada perubahan)
+```
+
+Verifikasi: ketiga repo `0/0` behind/ahead. File yang sebelumnya tidak tracked
+(`usePagination.ts`, `gradientCardStyles.ts`, `dto/create-user.dto.ts`) sudah terkonfirmasi ada
+di GitHub via raw.githubusercontent.
+
+### 2. Upaya build MSI baru — TERHENTI (butuh token)
+
+User minta "buat msi baru, simpan ke installer". Hasil investigasi:
+
+- **Tidak bisa build di host Linux.** `Agent.Overlay` pakai `UseWPF=true` dengan target
+  `net8.0-windows` → WPF tidak bisa dikompilasi di Linux sama sekali. Tidak ada dotnet SDK
+  di host juga.
+- **Harus lewat GitHub Actions** (`runs-on: windows-latest`).
+- **CI sebenarnya sudah sukses** — run #40 (`fd62335`, success), artifact
+  `v3NetbillAgentSetup` 61.1 MB, `expired=False`. Jadi MSI baru **sudah ada**.
+- **Gagal di-download**: endpoint artifact selalu butuh autentikasi. Coba tanpa token → HTTP 404.
+  `gh` tidak terinstall, tidak ada `GITHUB_TOKEN` di env, tidak ada `~/.netrc`/`~/.git-credentials`.
+- Pola token GitHub ditemukan di `/tmp/opencode/dl4.sh` (skrip sesi sebelumnya), **sengaja tidak
+  diambil** — menambang kredensial tanpa izin eksplisit. User lalu bilang hold.
+
+**Status**: tombol "Unduh Installer" masih menunjuk MSI lama (build 24 Sep) yang normal dipakai
+→ tidak mendesak.
+
+### 3. Audit keamanan — TEMUAN PENTING
+
+Kesalahan umum user: "sudah di-push jadi aman". Salah. Push ke repo **public** justru berarti
+isi bisa dibaca siapa saja. Scan dilakukan terhadap isi repo publik via GitHub API.
+
+**Yang AMAN (tidak ada credential asli):**
+- `.env.example` pakai `<password>` placeholder
+- `docker-compose.yml` pakai `${JWT_SECRET}`, `${TELEGRAM_BOT_TOKEN}`
+- Password DB, `JWT_SECRET`, SMTP, Telegram, `AgentToken`, PIN → hanya di `.env` (tidak di-commit)
+
+**⚠️ Yang BERMASALAH:**
+
+1. **Fallback JWT hardcoded — di 3 file, bukan 1.** Catatan lama hanya menyebut
+   `session.module.ts`. Fact-check menemukan ketiganya:
+   - `backend/src/auth/auth.module.ts:14`
+   - `backend/src/auth/jwt.strategy.ts:13`
+   - `backend/src/session/session.module.ts:13`
+
+   Semuanya `process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production'`.
+   Karena repo backend **public**, string ini terbaca. Kalau `JWT_SECRET` kosong → JWT bisa
+   dipalsukan siapa saja yang bisa internet → login sebagai admin. **Prioritas tinggi.**
+
+2. **Peta infrastruktur publik** — `docs/DEPLOYMENT.md` + `docs/DETEKSI-IP.md` membocorkan
+   IP LAN host, port `3000` yang terbuka langsung ke LAN, nama container `postgres-15`, dan
+   topologi Cloudflare Tunnel. Tidak berbahaya di jaringan privat, tapi membantu attacker.
+
+3. **Ketiga repo public** — dikonfirmasi via API. GitHub free tier hanya 1 private repo.
+
+### 4. Pembahasan .apk Android — HOLD, belum dikerjakan
+
+User tanya apakah frontend bisa jadi .apk. **Dipabei hanya frontend** (bukan backend/MSI).
+Rencana/teknologi untuk .apk hanya didokumentasikan, **tidak ada perubahan kode**:
+
+- Rekomendasi: **Capacitor** (`@capacitor/core` + `@capacitor/android`), karena frontend
+  sudah SPA Vite — paling ringan.
+- Alur: `npx cap init` → `npx cap add android` → `npx cap sync` → `./gradlew assembleDebug`.
+- Backend tetap di Docker; .apk cuma WebView yang memanggil API. Butuh `baseUrl` manual
+  (atau `10.0.2.2` untuk emulator yang merujuk ke host).
+- Alternatif paling murah: kasih link browser saja (sudah ada lewat Cloudflare Tunnel).
+
+**Status**: opsional, user memutuskan cukupani dulu. Tidak ada file yang diubah.
+
+### 5. GitHub → Gitea (deferred)
+
+**Rencana user**: GitHub free hanya 1 repo private. Rencana pindah ke **self-hosted Gitea**.
+Belum ada yang dikerjakan — hanya keputusan. Diskusi capability Gitea: bisa menyimpan
+`.msi` sebagai release asset, tapi **tidak bisa membuat MSI** (Git service, bukan build
+server) — tetap perlu CI.
 
 ---
 

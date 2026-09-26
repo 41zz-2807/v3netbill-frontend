@@ -197,31 +197,60 @@ Logika bisnis yang sudah berjalan:
 - Batas hari bisnis: 23:30 WIB. Endpoint manual `POST /api/laporan/kirim-tutup-hari` (ADMIN).
 - Kredensial SMTP/Telegram hanya di `.env` — jangan ditulis ke dokumen.
 
-## Status repository & perubahan per 2026-09-26
+## Status repository & perubahan per 2026-09-26 (sesi terakhir)
 
 Tiga repo, tidak ada lagi repo root terpisah. **Dokumentasi project (`AGENTS.md`,
 `CONVERSATION_LOG.md`, `docs/`, `docker-compose.yml`) berada di repo frontend ini.**
 
-| Repo | Isi | Remote |
-|---|---|---|
-| repo ini (frontend) | Dashboard React + dokumentasi project | `git@github.com:41zz-2807/v3netbill-frontend.git` |
-| backend | API NestJS + Prisma | `git@github.com:41zz-2807/v3netbill-server.git` |
-| agent | Agent Client Windows (.NET) | `git@github.com:41zz-2807/v3netbill-agent.git` |
+| Repo | Isi | Remote | Visibilitas |
+|---|---|---|---|
+| repo ini (frontend) | Dashboard React + dokumentasi project | `git@github.com:41zz-2807/v3netbill-frontend.git` | **PUBLIC** |
+| backend | API NestJS + Prisma | `git@github.com:41zz-2807/v3netbill-server.git` | **PUBLIC** |
+| agent | Agent Client Windows (.NET) | `git@github.com:41zz-2807/v3netbill-agent.git` | **PUBLIC** |
 
-Commit terakhir saat ini:
-- **backend** `4826a4b` — ActivityLog (schema + migrasi `20260925163314` + modul + integrasi ke
-  `app/session/settings/laporan`), pesan error topup spesifik (`REVOKED`/`EXPIRED`),
-  deteksi-duplikat nama member, auto-deteksi IP PC, README baru. Sudah ter-push.
-- **frontend** `ab43df0` — login JWT, 9 halaman, redesign card Uiverse, kolom IP otomatis.
-  Plus dokumentasi yang digabung di commit berikutnya.
-- **agent** `729a31f` — `HANDOFF.md` ke kondisi 1.0.9.0. Sudah ter-push (CI rebuild MSI).
+Ketiga repo **public** (dikonfirmasi via GitHub API). GitHub free tier hanya izinkan 1 repo
+private → dipakai untuk memindahkan repo yang paling sensitif (kandidat: backend).
+Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
 
-> **Penting**: ada fallback JWT hardcoded di `backend/src/session/session.module.ts`
-> (`'your-super-secret-jwt-key-change-in-production'`) — sudah ada sejak commit awal, **bukan**
-> dari perubahan 26 Sep, dan sudah tercatat di daftar pending security hardening.
+### Commit terakhir saat ini (semua sudah ter-push, `0/0` behind/ahead)
 
-> **Tidak ada credential di repo ini.** Password DB, `JWT_SECRET`, SMTP, Telegram, `AgentToken`,
-> dan PIN darurat hanya ada di `.env` (tidak di-commit) dan di registry PC. Password
-> PostgreSQL ada di container `postgres-15`.
+- **frontend** `a2c2b35` — 8 commit sesi ini: popup form voucher/member & tambah PC, bulk action
+  akun (checkbox), paginasi 15 baris semua tabel, fix nomor halaman, timestamp installer,
+  card Tambah User + tombol hapus user.
+- **backend** `59bf2b4` — 2 commit sesi ini: `POST/GET /api/auth/users` (ADMIN only),
+  `DELETE /api/auth/users/:id` dengan 3 pengaman.
+- **agent** `fd62335` — default `ServerUrl` di wizard MSI jadi `http://localhost:3000`
+  (bukan placeholder domain). CI rebuild MSI sukses (run #40).
 
-Semua perubahan terverifikasi: backend build 0 error TS, frontend build 0 error, lint 0 error.
+### Temuan audit keamanan (26 Sep, sudah di-scan ke repo public)
+
+**Tidak ada credential asli terekspos** — `.env.example` pakai `<password>`,
+`docker-compose.yml` pakai `${JWT_SECRET}`.
+
+⚠️ **Fallback JWT hardcoded ada di 3 file (bukan 1 seperti catatan lama):**
+- `backend/src/auth/auth.module.ts:14`
+- `backend/src/auth/jwt.strategy.ts:13`
+- `backend/src/session/session.module.ts:13`
+
+Ketiganya `process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production'`.
+Karena repo backend public, string ini **terbaca publik**. Kalau `JWT_SECRET` di `.env` kosong,
+JWT bisa dipalsukan siapa saja yang bisa internet → login sebagai admin. Fix: throw saat
+startup kalau env kosong (bukan fallback string). **Prioritas tinggi.**
+
+⚠️ **Peta infrastruktur juga publik** (di `docs/DEPLOYMENT.md` + `docs/DETEKSI-IP.md`):
+IP LAN host, port `3000` terbuka langsung di LAN, nama container `postgres-15`, topologi
+Cloudflare Tunnel. Tidak berbahaya pada jaringan privat, tapi sangat berguna
+untuk attacker yang menyisir.
+
+### Pending (per 26 Sep, sesi terakhir)
+
+- **Upload MSI baru ke `/data/installer/`** — CI sudah jadi (run #40, artifact
+  `v3NetbillAgentSetup` 61.1 MB, belum expired), tapi **belum di-download** karena download
+  artifact GitHub selalu butuh token. Tombol "Unduh Installer" masih menunjuk MSI lama
+  (build 24 Sep) yang normal dipakai → **tidak mendesak**. Akses GitHub token tidak ada di
+  host ini (`gh` tidak terinstall, tidak ada `~/.netrc`/`gh-token`).
+- **Hapus fallback JWT** (lihat di atas) — belum dikerjakan.
+- **Pindah repo ke private / Gitea** — deferred oleh user.
+- **Frontend jadi .apk Android** — sudah didiskusikan (Capacitor direkomendasikan), **belum
+  dikerjakan**. Sifatnya opsional; cukupani dulu untuk akses HP. Tidak ada perubahan kode.
+- Fallback JWT di `AGENTS.md` versi lama hanya menyebut 1 file — sudah dikoreksi di atas.
