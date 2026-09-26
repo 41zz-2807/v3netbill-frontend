@@ -7,6 +7,7 @@ import type {
   DailyReport,
   RangeReport,
   Role,
+  OperatorUser,
   InstallerMeta,
   BackupResult,
   BackupFile,
@@ -68,6 +69,20 @@ export function clearAuth(): void {
 
 export async function login(username: string, password: string): Promise<LoginResponse> {
   const { data } = await api.post<LoginResponse>('/auth/login', { username, password })
+  return data
+}
+
+export async function createUser(
+  username: string,
+  password: string,
+  role: Role,
+): Promise<OperatorUser> {
+  const { data } = await api.post<OperatorUser>('/auth/users', { username, password, role })
+  return data
+}
+
+export async function fetchUsers(): Promise<OperatorUser[]> {
+  const { data } = await api.get<OperatorUser[]>('/auth/users')
   return data
 }
 

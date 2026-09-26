@@ -16,6 +16,14 @@ export interface UserInfo {
   role: Role
 }
 
+/** User operator. passwordHash tidak pernah dikirim ke frontend. */
+export interface OperatorUser {
+  id: string
+  username: string
+  role: Role
+  createdAt: string
+}
+
 export interface Pc {
   id: string
   namaPc: string

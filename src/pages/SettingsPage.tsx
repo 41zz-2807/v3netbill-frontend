@@ -11,8 +11,16 @@ import {
   setPinUninstall,
   downloadAuth,
   parseMeta,
+  createUser,
+  fetchUsers,
 } from '../lib/api.ts'
-import type { InstallerMeta, BackupResult, BackupFile } from '../lib/types.ts'
+import type {
+  InstallerMeta,
+  BackupResult,
+  BackupFile,
+  OperatorUser,
+  Role,
+} from '../lib/types.ts'
 import { Pagination } from '../components/ui/Pagination.tsx'
 import {
   PER_HALAMAN,
@@ -74,6 +82,12 @@ export default function SettingsPage() {
   const [pinMsg, setPinMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
 
+  const [newUser, setNewUser] = useState('')
+  const [newUserPass, setNewUserPass] = useState('')
+  const [newUserRole, setNewUserRole] = useState<Role>('KASIR')
+  const [userMsg, setUserMsg] = useState<string | null>(null)
+  const [users, setUsers] = useState<OperatorUser[]>([])
+
   const installerRef = useRef<HTMLInputElement>(null)
   const wallRef = useRef<HTMLInputElement>(null)
   const [installed, setInstalled] = useState<InstallerMeta | null>(null)
@@ -113,10 +127,46 @@ export default function SettingsPage() {
     }
   }, [])
 
+  const loadUsers = useCallback(async () => {
+    try {
+      setUsers(await fetchUsers())
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    }
+  }, [])
+
   useEffect(() => {
     void load()
     void loadBackups()
-  }, [load, loadBackups])
+    void loadUsers()
+  }, [load, loadBackups, loadUsers])
+
+  async function submitUser() {
+    const username = newUser.trim()
+    if (!username || newUserPass.length < 6) {
+      setUserMsg(null)
+      setErr('Username wajib diisi dan password minimal 6 karakter')
+      return
+    }
+    setBusy('user')
+    setErr(null)
+    setUserMsg(null)
+    try {
+      const created = await createUser(username, newUserPass, newUserRole)
+      setUserMsg(`User "${created.username}" dibuat dengan role ${created.role}`)
+      setNewUser('')
+      setNewUserPass('')
+      setNewUserRole('KASIR')
+      await loadUsers()
+    } catch (e: unknown) {
+      setErr(
+        (e as { response?: { data?: { message?: string } } }).response?.data?.message ??
+          (e instanceof Error ? e.message : String(e)),
+      )
+    } finally {
+      setBusy(null)
+    }
+  }
 
   if (role !== 'ADMIN') {
     return (
@@ -320,6 +370,77 @@ export default function SettingsPage() {
       </div>
 
       <div className="grid gap-5 lg:grid-cols-3">
+        <section className="flex flex-col rounded-lg border border-slate-200 bg-white p-4">
+          <h2 className="mb-3 font-semibold text-slate-800">Tambah User</h2>
+          <input
+            type="text"
+            placeholder="Username"
+            value={newUser}
+            onChange={(e) => setNewUser(e.target.value)}
+            className="mb-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+          <input
+            type="password"
+            placeholder="Password (min. 6 karakter)"
+            value={newUserPass}
+            onChange={(e) => setNewUserPass(e.target.value)}
+            className="mb-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+          <div className="mb-3 grid grid-cols-2 gap-2">
+            {(['KASIR', 'ADMIN'] as const).map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setNewUserRole(r)}
+                aria-pressed={newUserRole === r}
+                className={`rounded-md border px-3 py-2 text-sm font-medium transition ${
+                  newUserRole === r
+                    ? 'border-slate-900 bg-slate-900 text-white'
+                    : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {r === 'KASIR' ? 'Kasir' : 'Admin'}
+              </button>
+            ))}
+          </div>
+          <p className="mb-3 text-xs text-slate-500">
+            {newUserRole === 'ADMIN'
+              ? 'Akses penuh: termasuk Pengaturan, data PC, dan tambah user.'
+              : 'Operasional harian: PC, voucher, transaksi, dan laporan.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => void submitUser()}
+            disabled={busy !== null}
+            className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
+          >
+            {busy === 'user' ? 'Menyimpan...' : 'Tambah User'}
+          </button>
+          {userMsg && (
+            <p className="mt-2 rounded-md bg-green-50 px-2 py-1.5 text-xs text-green-700">
+              {userMsg}
+            </p>
+          )}
+          {users.length > 0 && (
+            <ul className="mt-3 space-y-1 border-t border-slate-200 pt-3">
+              {users.map((u) => (
+                <li key={u.id} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="truncate font-medium text-slate-700">{u.username}</span>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 font-medium ${
+                      u.role === 'ADMIN'
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    {u.role}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
         <section className="flex flex-col rounded-lg border border-slate-200 bg-white p-4">
           <h2 className="mb-3 font-semibold text-slate-800">Ganti Kata Sandi</h2>
           <input
