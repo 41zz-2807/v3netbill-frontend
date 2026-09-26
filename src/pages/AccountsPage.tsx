@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   fetchAccounts,
   createVoucher,
@@ -31,12 +31,21 @@ export default function AccountsPage() {
   const [modal, setModal] = useState<'VOUCHER' | 'MEMBER' | null>(null)
   const [busy, setBusy] = useState(false)
   const [search, setSearch] = useState('')
+  const [terpilih, setTerpilih] = useState<Set<string>>(new Set())
+  const [sukses, setSukses] = useState<string | null>(null)
 
   async function load() {
     try {
       setLoading(true)
-      setAccounts(await fetchAccounts(tab))
+      const hasil = await fetchAccounts(tab)
+      setAccounts(hasil)
       setError(null)
+      // Buang id terpilih yang sudah tidak ada di list (mis. akun dihapus).
+      const ada = new Set(hasil.map((a) => a.id))
+      setTerpilih((prev) => {
+        const next = new Set([...prev].filter((id) => ada.has(id)))
+        return next.size === prev.size ? prev : next
+      })
     } catch (err: unknown) {
       setError((err as Error).message)
     } finally {
@@ -61,6 +70,7 @@ export default function AccountsPage() {
 
   function bukaModal(jenis: 'VOUCHER' | 'MEMBER') {
     setError(null)
+    setSukses(null)
     setCreatedVoucher(null)
     setModal(jenis)
   }
@@ -75,7 +85,92 @@ export default function AccountsPage() {
   function gantiTab(next: 'VOUCHER' | 'MEMBER') {
     setModal(null)
     setCreatedVoucher(null)
+    setTerpilih(new Set())
+    setSukses(null)
     setTab(next)
+  }
+
+  function ubahSearch(next: string) {
+    setSearch(next)
+    // Hide baris terpilih saat filter berubah, supaya aksi tidak pernah
+    // dijalankan pada baris yang tidak kelihatan.
+    setTerpilih(new Set())
+  }
+
+  function togglePilih(id: string) {
+    setTerpilih((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const semuaTerpilih = filtered.length > 0 && filtered.every((a) => terpilih.has(a.id))
+
+  function toggleSemua() {
+    setTerpilih(semuaTerpilih ? new Set() : new Set(filtered.map((a) => a.id)))
+  }
+
+  const terpilihList = accounts.filter((a) => terpilih.has(a.id))
+
+  /** Jalankan aksi pada semua akun terpilih. Kegagalan parsial tetap
+   *  dilaporkan per-akun supaya kasir tahu mana yang belum jadi. */
+  async function jalankanBulk(
+    label: string,
+    aksi: (a: Account) => Promise<unknown>,
+  ) {
+    const target = terpilihList
+    if (target.length === 0) return
+    setBusy(true)
+    setError(null)
+    setSukses(null)
+    const gagal: string[] = []
+    let sukses = 0
+    for (const a of target) {
+      try {
+        await aksi(a)
+        sukses++
+      } catch (err: unknown) {
+        gagal.push(`${a.kodeUnik ?? a.nama ?? a.id} (${(err as Error).message})`)
+      }
+    }
+    if (gagal.length === 0) {
+      setSukses(`${label} berhasil untuk ${sukses} akun.`)
+    } else {
+      setError(
+        `${label}: ${sukses} dari ${target.length} berhasil. Gagal — ${gagal.join('; ')}`,
+      )
+    }
+    setTerpilih(new Set())
+    await load()
+    setBusy(false)
+  }
+
+  async function bulkTopup() {
+    const nominal = prompt('Nominal topup (kelipatan 500):', '2000')
+    if (!nominal) return
+    await jalankanBulk('Topup', (a) => topup(a.id, Number(nominal)))
+  }
+
+  async function bulkKoreksi() {
+    const nominal = prompt('Nominal yang ditarik (kelipatan 500):', '500')
+    if (!nominal) return
+    await jalankanBulk('Penarikan', (a) => koreksi(a.id, Number(nominal)))
+  }
+
+  async function bulkPassword() {
+    if (terpilihList.length !== 1) return
+    const pw = prompt('Password baru:')
+    if (!pw) return
+    await jalankanBulk('Ubah password', (a) => changePassword(a.id, pw))
+  }
+
+  async function bulkRevoke() {
+    const n = terpilihList.length
+    if (n === 0) return
+    if (!confirm(`Nonaktifkan ${n} akun terpilih?`)) return
+    await jalankanBulk('Nonaktifkan', (a) => revokeAccount(a.id))
   }
 
   /** Backend hanya menolak nominal yang bukan kelipatan 500 (0 lolos), jadi
@@ -138,53 +233,6 @@ export default function AccountsPage() {
     }
   }
 
-  async function handleTopup(id: string) {
-    const nominalTopup = prompt('Nominal topup (kelipatan 500):', '2000')
-    if (!nominalTopup) return
-    try {
-      await topup(id, Number(nominalTopup))
-      await load()
-    } catch (err: unknown) {
-      setError((err as Error).message)
-    }
-  }
-
-  async function handleKoreksi(id: string, sisaDetik: number) {
-    const nominalKoreksi = prompt(
-      'Nominal yang ditarik (kelipatan 500):\n\n' +
-        `Sisa waktu saat ini: ${formatDuration(sisaDetik)}`,
-      '500',
-    )
-    if (!nominalKoreksi) return
-    try {
-      await koreksi(id, Number(nominalKoreksi))
-      await load()
-    } catch (err: unknown) {
-      setError((err as Error).message)
-    }
-  }
-
-  async function handleChangePassword(id: string) {
-    const pw = prompt('Password baru:')
-    if (!pw) return
-    try {
-      await changePassword(id, pw)
-      await load()
-    } catch (err: unknown) {
-      setError((err as Error).message)
-    }
-  }
-
-  async function handleRevoke(id: string) {
-    if (!confirm('Nonaktifkan akun ini?')) return
-    try {
-      await revokeAccount(id)
-      await load()
-    } catch (err: unknown) {
-      setError((err as Error).message)
-    }
-  }
-
   return (
     <div>
       <h1 className="mb-6 text-2xl font-bold text-slate-900">Voucher & Member</h1>
@@ -209,6 +257,10 @@ export default function AccountsPage() {
 
       {error && !modal && (
         <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>
+      )}
+
+      {sukses && !modal && (
+        <div className="mb-4 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{sukses}</div>
       )}
 
       <Modal
@@ -365,17 +417,72 @@ export default function AccountsPage() {
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => ubahSearch(e.target.value)}
             placeholder={`Cari ${tab === 'VOUCHER' ? 'kode unik' : 'nama member'} atau status...`}
             className="w-full rounded-md border border-slate-300 py-2 pl-9 pr-3 text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
           />
         </div>
         {search && (
           <button
-            onClick={() => setSearch('')}
+            onClick={() => ubahSearch('')}
             className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
           >
             Bersihkan
+          </button>
+        )}
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
+        <span className="text-sm text-slate-600">
+          <span className="font-semibold text-slate-900">{terpilihList.length}</span> dipilih
+        </span>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void bulkTopup()}
+            disabled={busy || terpilihList.length === 0}
+            className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Topup
+          </button>
+          <button
+            type="button"
+            onClick={() => void bulkKoreksi()}
+            disabled={busy || terpilihList.length === 0}
+            className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Tarik
+          </button>
+          <button
+            type="button"
+            onClick={() => void bulkPassword()}
+            disabled={busy || terpilihList.length !== 1}
+            title={
+              terpilihList.length === 1
+                ? 'Ubah password akun terpilih'
+                : 'Pilih tepat satu akun untuk ubah password'
+            }
+            className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Password
+          </button>
+          <button
+            type="button"
+            onClick={() => void bulkRevoke()}
+            disabled={busy || terpilihList.length === 0}
+            className="rounded-md bg-red-600 px-3 py-1.5 text-sm text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Nonaktifkan
+          </button>
+        </div>
+        {terpilihList.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setTerpilih(new Set())}
+            disabled={busy}
+            className="ml-auto rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+          >
+            Batal pilih
           </button>
         )}
       </div>
@@ -391,16 +498,36 @@ export default function AccountsPage() {
           <table className="w-full min-w-max text-left text-sm">
             <thead className="bg-slate-50 text-slate-500">
               <tr>
+                <th className="w-10 px-4 py-2">
+                  <input
+                    type="checkbox"
+                    checked={semuaTerpilih}
+                    onChange={toggleSemua}
+                    aria-label="Pilih semua"
+                    className="h-4 w-4 cursor-pointer rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                  />
+                </th>
                 <th className="px-4 py-2">{tab === 'VOUCHER' ? 'Kode Unik' : 'Nama'}</th>
                 <th className="px-4 py-2">Sisa Waktu</th>
                 <th className="px-4 py-2">Status</th>
                 <th className="px-4 py-2">Dibuat</th>
-                <th className="px-4 py-2 text-right">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.map((a) => (
-                <tr key={a.id} className="hover:bg-slate-50">
+                <tr
+                  key={a.id}
+                  className={`hover:bg-slate-50 ${terpilih.has(a.id) ? 'bg-slate-100' : ''}`}
+                >
+                  <td className="px-4 py-2">
+                    <input
+                      type="checkbox"
+                      checked={terpilih.has(a.id)}
+                      onChange={() => togglePilih(a.id)}
+                      aria-label={`Pilih ${a.kodeUnik ?? a.nama}`}
+                      className="h-4 w-4 cursor-pointer rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                    />
+                  </td>
                   <td className="px-4 py-2 font-medium text-slate-900">
                     {a.kodeUnik ?? a.nama}
                   </td>
@@ -420,18 +547,6 @@ export default function AccountsPage() {
                   </td>
                   <td className="px-4 py-2 text-slate-600">
                     {new Date(a.createdAt).toLocaleDateString('id-ID')}
-                  </td>
-                  <td className="px-4 py-2 text-right">
-                    <DropdownMenu
-                      items={[
-                        { label: 'Topup', onClick: () => void handleTopup(a.id) },
-                        { label: 'Tarik', onClick: () => void handleKoreksi(a.id, a.sisaWaktuDetik) },
-                        { label: 'Password', onClick: () => void handleChangePassword(a.id) },
-                        ...(a.status === 'ACTIVE'
-                          ? [{ label: 'Nonaktifkan', onClick: () => void handleRevoke(a.id), danger: true as const }]
-                          : []),
-                      ]}
-                    />
                   </td>
                 </tr>
               ))}
@@ -462,107 +577,5 @@ function TabButton({
     >
       {children}
     </button>
-  )
-}
-
-function DropdownMenu({
-  items,
-  triggerLabel = 'Aksi',
-  disabled = false,
-}: {
-  items: Array<{ label: string; onClick: () => void; danger?: boolean; disabled?: boolean; shortcut?: string; icon?: React.ReactNode }>
-  triggerLabel?: string
-  disabled?: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
-    }
-    if (open) {
-      document.addEventListener('mousedown', handleClickOutside)
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [open])
-
-  const toggle = () => {
-    if (!disabled) setOpen(!open)
-  }
-
-  return (
-    <div className="hs-dropdown relative inline-block" ref={ref}>
-      <button
-        type="button"
-        id="hs-dropdown-custom-trigger"
-        className="hs-dropdown-toggle py-1.5 px-3 inline-flex items-center gap-x-2 text-sm font-medium rounded-full border bg-white border-neutral-300 text-neutral-700 shadow-sm hover:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="Dropdown"
-        onClick={toggle}
-        disabled={disabled}
-      >
-        <span className="font-medium truncate max-w-30">{triggerLabel}</span>
-        <svg
-          className={`size-4 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
-          xmlns="http://www.w3.org/2000/svg"
-          width="24"
-          height="24"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="m6 9 6 6 6-6" />
-        </svg>
-      </button>
-
-      <div
-        className={`hs-dropdown-menu absolute right-0 top-full z-50 transition-[opacity,margin] duration-200 ease-out min-w-56 bg-white border border-neutral-200 rounded-lg shadow-md mt-1 ${
-          open ? 'opacity-100 visible' : 'opacity-0 invisible'
-        }`}
-        role="menu"
-        aria-orientation="vertical"
-        aria-labelledby="hs-dropdown-custom-trigger"
-      >
-        <div className="p-0.5 space-y-0.5">
-          {items.map((item, i) => (
-            <button
-              key={i}
-              type="button"
-              role="menuitem"
-              disabled={item.disabled || disabled}
-              onClick={() => {
-                if (!item.disabled && !disabled) {
-                  item.onClick()
-                  setOpen(false)
-                }
-              }}
-              className={`
-                flex items-center gap-x-2 py-1.5 px-3 rounded-lg text-sm w-full
-                ${item.disabled || disabled
-                  ? 'opacity-50 cursor-not-allowed pointer-events-none text-neutral-400'
-                  : item.danger
-                  ? 'text-red-600 hover:bg-red-50 focus:bg-red-50'
-                  : 'text-neutral-700 hover:bg-neutral-100 focus:bg-neutral-100'
-                }
-                focus:outline-none
-              `}
-            >
-              {item.icon && <span className="flex-shrink-0 w-4 h-4">{item.icon}</span>}
-              {item.label}
-              {item.shortcut && (
-                <span className="ml-auto text-xs text-neutral-400 font-mono">{item.shortcut}</span>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
   )
 }
