@@ -3,6 +3,9 @@ import { fetchPcs, createPc, deletePc, unlockPc } from '../lib/api.ts'
 import type { Pc } from '../lib/types.ts'
 import { useAuth } from '../context/AuthContext.tsx'
 import Loader from '../components/Loader.tsx'
+import { Modal } from '../components/ui/Modal.tsx'
+import { GradientCard } from '../components/ui/GradientCard.tsx'
+import { inputClass, buttonClass } from '../components/ui/gradientCardStyles.ts'
 import { Pagination } from '../components/ui/Pagination.tsx'
 import {
   PER_HALAMAN,
@@ -18,6 +21,7 @@ export default function PcPage() {
   const [namaPc, setNamaPc] = useState('')
   const [created, setCreated] = useState<Pc | null>(null)
   const [creating, setCreating] = useState(false)
+  const [modal, setModal] = useState(false)
 
   const terurut = useMemo(() => urutkanTerbaru(pcs, (pc) => pc.createdAt), [pcs])
   const {
@@ -43,6 +47,19 @@ export default function PcPage() {
   useEffect(() => {
     void load()
   }, [])
+
+  function bukaModal() {
+    setError(null)
+    setCreated(null)
+    setModal(true)
+  }
+
+  function tutupModal() {
+    if (creating) return
+    setModal(false)
+    setCreated(null)
+    setError(null)
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -106,51 +123,107 @@ export default function PcPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold text-slate-900">PC Management</h1>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-slate-900">PC Management</h1>
+        {role === 'ADMIN' && (
+          <button
+            type="button"
+            onClick={bukaModal}
+            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700"
+          >
+            + Tambah PC
+          </button>
+        )}
+      </div>
 
-      {role === 'ADMIN' && (
-        <form
-          onSubmit={handleCreate}
-          className="mb-6 rounded-lg border border-slate-200 bg-white p-4"
-        >
-          <h2 className="mb-3 font-semibold text-slate-800">Tambah PC Baru</h2>
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <input
-              type="text"
-              value={namaPc}
-              onChange={(e) => setNamaPc(e.target.value)}
-              placeholder="Nama PC (contoh: PC-01)"
-              required
-              className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none"
-            />
-            <button
-              type="submit"
-              disabled={creating}
-              className="rounded-md bg-slate-900 px-4 py-2 text-white hover:bg-slate-700 disabled:opacity-50"
-            >
-              {creating ? 'Membuat...' : 'Tambah'}
-            </button>
-          </div>
-          <p className="mt-2 text-xs text-slate-500">
-            IP tidak perlu diisi — server mencatatnya otomatis dari koneksi agent, jadi tetap akurat
-            walau IP PC berubah-ubah (DHCP).
-          </p>
-
-          {created && (
-            <div className="mt-4 rounded-md border border-orange-200 bg-orange-50 p-3 text-sm">
-              <div className="font-semibold text-orange-800">PC dibuat — salin agentToken untuk agent:</div>
-              <code className="mt-1 block break-all rounded bg-orange-100 px-2 py-1 text-orange-900">
-                {created.agentToken}
-              </code>
-              <div className="mt-1 text-xs text-orange-700">
-                PC ID: <code>{created.id}</code>
-              </div>
-            </div>
-          )}
+      <Modal open={modal} onClose={tutupModal} locked={creating} label="Tambah PC Baru">
+        <form onSubmit={handleCreate}>
+          <GradientCard
+            label="PC BARU"
+            title={created ? 'PC berhasil dibuat' : 'Tambah PC Baru'}
+            icon={
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect width="20" height="14" x="2" y="3" rx="2" />
+                <path d="M8 21h8M12 17v4" />
+              </svg>
+            }
+          >
+            {created ? (
+              <>
+                <div>
+                  <p className="text-neutral-500">agentToken</p>
+                  <code className="mt-1 block break-all rounded bg-white/5 px-2 py-1.5 font-mono text-xs text-white">
+                    {created.agentToken}
+                  </code>
+                </div>
+                <div>
+                  <p className="text-neutral-500">PC ID</p>
+                  <p className="break-all font-mono text-sm text-white">{created.id}</p>
+                </div>
+                <p className="text-neutral-500">
+                  agentToken dipakai agent untuk konek ke server. Salin sebelum
+                  menutup.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void copyToClipboard(created.agentToken, 'agentToken')}
+                    className={buttonClass}
+                  >
+                    Salin agentToken
+                  </button>
+                  <button
+                    type="button"
+                    onClick={tutupModal}
+                    className="w-full cursor-pointer rounded-lg border border-white/15 px-3 py-2.5 text-sm font-medium text-neutral-300 transition hover:border-white/30 hover:text-white"
+                  >
+                    Selesai
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className="mb-1.5 block text-neutral-500">Nama PC</label>
+                  <input
+                    type="text"
+                    value={namaPc}
+                    onChange={(e) => setNamaPc(e.target.value)}
+                    placeholder="Contoh: PC-01"
+                    required
+                    autoFocus
+                    className={inputClass}
+                  />
+                </div>
+                <p className="text-neutral-500">
+                  IP tidak perlu diisi — server mencatatnya otomatis dari koneksi
+                  agent, jadi tetap akurat walau IP PC berubah-ubah (DHCP).
+                </p>
+                {error && (
+                  <p className="rounded-md bg-red-500/15 px-2.5 py-2 text-xs text-red-300">
+                    {error}
+                  </p>
+                )}
+                <button type="submit" disabled={creating} className={buttonClass}>
+                  {creating ? 'Membuat...' : 'Tambah PC'}
+                </button>
+              </>
+            )}
+          </GradientCard>
         </form>
-      )}
+      </Modal>
 
-      {error && (
+      {error && !modal && (
         <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>
       )}
 
