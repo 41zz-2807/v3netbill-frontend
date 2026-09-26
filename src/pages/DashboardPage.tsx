@@ -3,6 +3,7 @@ import { io, type Socket } from 'socket.io-client'
 import type { DashboardPc, DashboardLog } from '../lib/types.ts'
 import { formatDuration, formatWaktu, getToken, getRole, fetchActivityLogs, type ActivityLogItem } from '../lib/api.ts'
 import { Card, CardBody, Badge, Table, Pagination } from '../components/ui'
+import { PER_HALAMAN } from '../hooks/usePagination.ts'
 
 const WS_URL = window.location.origin
 
@@ -41,7 +42,7 @@ export default function DashboardPage() {
   async function loadLogs() {
     setLogLoading(true)
     try {
-      const res = await fetchActivityLogs(logPage, 30)
+      const res = await fetchActivityLogs(logPage, PER_HALAMAN)
       const convertedLogs: DashboardLog[] = res.data.map((item: ActivityLogItem) => {
         let detail: Record<string, unknown> = {}
         try {
@@ -345,7 +346,7 @@ export default function DashboardPage() {
                       onPageChange={setLogPage}
                       showTotal={true}
                       totalItems={logTotal}
-                      itemsPerPage={30}
+                      itemsPerPage={PER_HALAMAN}
                     />
                   )}
                 </React.Fragment>

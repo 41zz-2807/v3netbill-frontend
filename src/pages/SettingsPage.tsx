@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext.tsx'
 import {
   fetchSettings,
@@ -13,6 +13,12 @@ import {
   parseMeta,
 } from '../lib/api.ts'
 import type { InstallerMeta, BackupResult, BackupFile } from '../lib/types.ts'
+import { Pagination } from '../components/ui/Pagination.tsx'
+import {
+  PER_HALAMAN,
+  usePagination,
+  urutkanTerbaru,
+} from '../hooks/usePagination.ts'
 import LoadingOverlay from '../components/LoadingOverlay.tsx'
 
 const BUSY_TEXT: Record<string, string> = {
@@ -67,6 +73,17 @@ export default function SettingsPage() {
   const [wallFname, setWallFname] = useState<string | null>(null)
   const [backupInfo, setBackupInfo] = useState<BackupResult | null>(null)
   const [backups, setBackups] = useState<BackupFile[]>([])
+  const backupTerurut = useMemo(
+    () => urutkanTerbaru(backups, (b) => b.createdAt),
+    [backups],
+  )
+  const {
+    data: barisBackup,
+    halaman,
+    totalHalaman,
+    total,
+    setHalaman,
+  } = usePagination(backupTerurut)
 
   const loadBackups = useCallback(async () => {
     try {
@@ -413,9 +430,9 @@ export default function SettingsPage() {
           )}
         </div>
         {backups.length > 0 ? (
-          <div className="mt-3 max-h-60 overflow-y-auto rounded-md border border-slate-200">
+          <div className="mt-3 rounded-md border border-slate-200">
             <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-slate-100 text-left text-slate-700">
+              <thead className="bg-slate-100 text-left text-slate-700">
                 <tr>
                   <th className="px-3 py-2 font-medium">Nama File</th>
                   <th className="px-3 py-2 font-medium">Tanggal</th>
@@ -424,7 +441,7 @@ export default function SettingsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {backups.map((bk) => (
+                {barisBackup.map((bk) => (
                   <tr key={bk.filename}>
                     <td className="max-w-[260px] truncate px-3 py-2 font-mono text-xs text-slate-700">{bk.filename}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-slate-600">{formatDateIndo(bk.createdAt)}</td>
@@ -443,6 +460,16 @@ export default function SettingsPage() {
                 ))}
               </tbody>
             </table>
+
+            {totalHalaman > 1 && (
+              <Pagination
+                currentPage={halaman}
+                totalPages={totalHalaman}
+                onPageChange={setHalaman}
+                totalItems={total}
+                itemsPerPage={PER_HALAMAN}
+              />
+            )}
           </div>
         ) : (
           <p className="mt-3 text-sm text-slate-500">Belum ada backup.</p>

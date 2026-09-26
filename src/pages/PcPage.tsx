@@ -1,8 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { fetchPcs, createPc, deletePc, unlockPc } from '../lib/api.ts'
 import type { Pc } from '../lib/types.ts'
 import { useAuth } from '../context/AuthContext.tsx'
 import Loader from '../components/Loader.tsx'
+import { Pagination } from '../components/ui/Pagination.tsx'
+import {
+  PER_HALAMAN,
+  usePagination,
+  urutkanTerbaru,
+} from '../hooks/usePagination.ts'
 
 export default function PcPage() {
   const { role } = useAuth()
@@ -12,6 +18,15 @@ export default function PcPage() {
   const [namaPc, setNamaPc] = useState('')
   const [created, setCreated] = useState<Pc | null>(null)
   const [creating, setCreating] = useState(false)
+
+  const terurut = useMemo(() => urutkanTerbaru(pcs, (pc) => pc.createdAt), [pcs])
+  const {
+    data: baris,
+    halaman,
+    totalHalaman,
+    total,
+    setHalaman,
+  } = usePagination(terurut)
 
   async function load() {
     try {
@@ -158,7 +173,7 @@ export default function PcPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {pcs.map((pc) => (
+              {baris.map((pc) => (
                 <tr key={pc.id} className="hover:bg-slate-50">
                   <td className="px-4 py-2 font-medium text-slate-900">{pc.namaPc}</td>
                   <td className="px-4 py-2 text-slate-600">{pc.ipClient || '— belum connect'}</td>
@@ -239,6 +254,16 @@ export default function PcPage() {
               ))}
             </tbody>
           </table>
+        )}
+
+        {!loading && totalHalaman > 1 && (
+          <Pagination
+            currentPage={halaman}
+            totalPages={totalHalaman}
+            onPageChange={setHalaman}
+            totalItems={total}
+            itemsPerPage={PER_HALAMAN}
+          />
         )}
       </div>
     </div>

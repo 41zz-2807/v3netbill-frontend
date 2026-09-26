@@ -1,7 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { fetchTransactions, batalTransaksi, formatRupiah } from '../lib/api.ts'
 import type { Transaction } from '../lib/types.ts'
 import Loader from '../components/Loader.tsx'
+import { Pagination } from '../components/ui/Pagination.tsx'
+import {
+  PER_HALAMAN,
+  usePagination,
+  urutkanTerbaru,
+} from '../hooks/usePagination.ts'
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
@@ -9,6 +15,19 @@ export default function TransactionsPage() {
   const [error, setError] = useState<string | null>(null)
   const [dari, setDari] = useState('')
   const [sampai, setSampai] = useState('')
+
+  const terurut = useMemo(
+    () => urutkanTerbaru(transactions, (t) => t.createdAt),
+    [transactions],
+  )
+  const {
+    data: baris,
+    halaman,
+    totalHalaman,
+    total,
+    setHalaman,
+    reset: resetHalaman,
+  } = usePagination(terurut)
 
   async function load() {
     try {
@@ -28,6 +47,7 @@ export default function TransactionsPage() {
 
   function applyFilter(e: React.FormEvent) {
     e.preventDefault()
+    resetHalaman()
     void load()
   }
 
@@ -119,7 +139,7 @@ export default function TransactionsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {transactions.map((t) => (
+              {baris.map((t) => (
                 <tr
                   key={t.id}
                   className={`hover:bg-slate-50 ${
@@ -170,6 +190,16 @@ export default function TransactionsPage() {
               ))}
             </tbody>
           </table>
+        )}
+
+        {!loading && totalHalaman > 1 && (
+          <Pagination
+            currentPage={halaman}
+            totalPages={totalHalaman}
+            onPageChange={setHalaman}
+            totalItems={total}
+            itemsPerPage={PER_HALAMAN}
+          />
         )}
       </div>
     </div>

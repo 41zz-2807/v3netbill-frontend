@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ResponsiveContainer,
   BarChart,
@@ -16,6 +16,12 @@ import {
   formatWaktu,
 } from '../lib/api.ts'
 import type { DailyReport, RangeReport } from '../lib/types.ts'
+import { Pagination } from '../components/ui/Pagination.tsx'
+import {
+  PER_HALAMAN,
+  usePagination,
+  urutkanTerbaru,
+} from '../hooks/usePagination.ts'
 import Loader from '../components/Loader.tsx'
 
 const WARNA_VOUCHER = '#8b5cf6'
@@ -122,10 +128,23 @@ export default function ReportsPage() {
 
   function applyRange(e: React.FormEvent) {
     e.preventDefault()
+    resetHalaman()
     void load()
   }
 
   const chartRows = range ? toChartRows(range.daftar) : []
+  const tabelLaporan = useMemo(
+    () => (range ? urutkanTerbaru(range.daftar, (d) => d.tanggal) : []),
+    [range],
+  )
+  const {
+    data: barisLaporan,
+    halaman,
+    totalHalaman,
+    total,
+    setHalaman,
+    reset: resetHalaman,
+  } = usePagination(tabelLaporan)
 
   return (
     <div>
@@ -305,7 +324,7 @@ export default function ReportsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {range.daftar.map((d) => (
+              {barisLaporan.map((d) => (
                 <tr key={d.tanggal} className="hover:bg-slate-50">
                   <td className="px-4 py-2 text-slate-600">{formatWaktu(d.tanggal + 'T00:00:00')}</td>
                   <td className="px-4 py-2 tabular-nums">{d.totalLogin}</td>
@@ -320,6 +339,16 @@ export default function ReportsPage() {
               ))}
             </tbody>
           </table>
+
+          {totalHalaman > 1 && (
+            <Pagination
+              currentPage={halaman}
+              totalPages={totalHalaman}
+              onPageChange={setHalaman}
+              totalItems={total}
+              itemsPerPage={PER_HALAMAN}
+            />
+          )}
         </div>
       )}
     </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   fetchAccounts,
   createVoucher,
@@ -13,6 +13,12 @@ import type { Account } from '../lib/types.ts'
 import Loader from '../components/Loader.tsx'
 import { GradientCard } from '../components/ui/GradientCard.tsx'
 import { Modal } from '../components/ui/Modal.tsx'
+import { Pagination } from '../components/ui/Pagination.tsx'
+import {
+  PER_HALAMAN,
+  usePagination,
+  urutkanTerbaru,
+} from '../hooks/usePagination.ts'
 import { inputClass, buttonClass } from '../components/ui/gradientCardStyles.ts'
 
 export default function AccountsPage() {
@@ -68,6 +74,19 @@ export default function AccountsPage() {
       })
     : accounts
 
+  const terurut = useMemo(
+    () => urutkanTerbaru(filtered, (a) => a.createdAt),
+    [filtered],
+  )
+  const {
+    data: baris,
+    halaman,
+    totalHalaman,
+    total,
+    setHalaman,
+    reset: resetHalaman,
+  } = usePagination(terurut)
+
   function bukaModal(jenis: 'VOUCHER' | 'MEMBER') {
     setError(null)
     setSukses(null)
@@ -83,6 +102,7 @@ export default function AccountsPage() {
   }
 
   function gantiTab(next: 'VOUCHER' | 'MEMBER') {
+    resetHalaman()
     setModal(null)
     setCreatedVoucher(null)
     setTerpilih(new Set())
@@ -91,6 +111,7 @@ export default function AccountsPage() {
   }
 
   function ubahSearch(next: string) {
+    resetHalaman()
     setSearch(next)
     // Hide baris terpilih saat filter berubah, supaya aksi tidak pernah
     // dijalankan pada baris yang tidak kelihatan.
@@ -106,10 +127,17 @@ export default function AccountsPage() {
     })
   }
 
-  const semuaTerpilih = filtered.length > 0 && filtered.every((a) => terpilih.has(a.id))
+  const semuaTerpilih = baris.length > 0 && baris.every((a) => terpilih.has(a.id))
 
+  /** Hanya baris di halaman aktif yang Affected — memilih semua dari 34
+   *  halaman lalu kena aksi bulk adalah cara mudah salah pilih. */
   function toggleSemua() {
-    setTerpilih(semuaTerpilih ? new Set() : new Set(filtered.map((a) => a.id)))
+    setTerpilih((prev) => {
+      const next = new Set(prev)
+      if (baris.every((a) => next.has(a.id))) baris.forEach((a) => next.delete(a.id))
+      else baris.forEach((a) => next.add(a.id))
+      return next
+    })
   }
 
   const terpilihList = accounts.filter((a) => terpilih.has(a.id))
@@ -514,7 +542,7 @@ export default function AccountsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map((a) => (
+              {baris.map((a) => (
                 <tr
                   key={a.id}
                   className={`hover:bg-slate-50 ${terpilih.has(a.id) ? 'bg-slate-100' : ''}`}
@@ -552,6 +580,16 @@ export default function AccountsPage() {
               ))}
             </tbody>
           </table>
+        )}
+
+        {!loading && totalHalaman > 1 && (
+          <Pagination
+            currentPage={halaman}
+            totalPages={totalHalaman}
+            onPageChange={setHalaman}
+            totalItems={total}
+            itemsPerPage={PER_HALAMAN}
+          />
         )}
       </div>
     </div>
