@@ -89,6 +89,11 @@ export default function SettingsPage() {
   const [userMsg, setUserMsg] = useState<string | null>(null)
   const [users, setUsers] = useState<OperatorUser[]>([])
 
+  const [otpToken, setOtpToken] = useState('')
+  const [otpChatId, setOtpChatId] = useState('')
+  const [otpTerisi, setOtpTerisi] = useState(false)
+  const [otpMsg, setOtpMsg] = useState<string | null>(null)
+
   const installerRef = useRef<HTMLInputElement>(null)
   const wallRef = useRef<HTMLInputElement>(null)
   const [installed, setInstalled] = useState<InstallerMeta | null>(null)
@@ -123,6 +128,8 @@ export default function SettingsPage() {
       setGrace(s.grace_period_detik ?? '')
       setInstalled(parseMeta<InstallerMeta>(s.installer_meta))
       setWallFname(s.wallpaper_lockscreen_path ?? null)
+      setOtpChatId(s.agent_otp_chat_id ?? '')
+      setOtpTerisi(Boolean(s.agent_otp_bot_token))
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     }
@@ -271,6 +278,29 @@ export default function SettingsPage() {
     })
   }
 
+  /**
+   * Simpan konfigurasi OTP Telegram. Kosongkan token untuk mematikan fitur —
+   * agent akan kembali memakai PIN emergency bawaan (rollback).
+   */
+  async function saveOtp(matikan: boolean) {
+    await run('otp', async () => {
+      try {
+        setErr(null)
+        await patchSetting('agent_otp_chat_id', matikan ? '' : otpChatId.trim())
+        await patchSetting('agent_otp_bot_token', matikan ? '' : otpToken.trim())
+        setOtpToken('')
+        setOtpTerisi(!matikan)
+        setOtpMsg(
+          matikan
+            ? 'OTP dimatikan. Agent kembali ke PIN emergency bawaan (123456).'
+            : 'OTP aktif. Config dikirim ke agent yang sedang terhubung.',
+        )
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e))
+      }
+    })
+  }
+
   async function onInstaller(file?: File) {
     if (!file) return
     await run('installer', async () => {
@@ -338,9 +368,8 @@ export default function SettingsPage() {
       )}
 
       <div className="grid gap-5 lg:grid-cols-3">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 lg:col-span-2">
+        <section className="flex flex-col rounded-lg border border-slate-200 bg-white p-4">
           <h2 className="mb-3 font-semibold text-slate-800">Tarif & Kebijakan</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
             <span className="mb-1 block text-sm text-slate-600">Harga per Menit (Rp)</span>
             <input
@@ -355,32 +384,31 @@ export default function SettingsPage() {
             type="button"
             onClick={saveTarif}
             disabled={busy !== null}
-            className="self-end rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
+            className="mt-2 self-start rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
           >
             {busy === 'tarif' ? 'Menyimpan...' : 'Simpan Tarif'}
           </button>
-        </div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="block">
-            <span className="mb-1 block text-sm text-slate-600">Grace Period (detik)</span>
-            <input
-              type="number"
-              value={grace}
-              min={0}
-              onChange={(e) => setGrace(e.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-          <button
-            type="button"
-            onClick={saveGrace}
-            disabled={busy !== null}
-            className="self-end rounded-md bg-slate-200 px-4 py-2 text-sm text-slate-800 hover:bg-slate-300 disabled:opacity-50"
-          >
-            {busy === 'grace' ? 'Menyimpan...' : 'Simpan Grace Period'}
-          </button>
-        </div>
-      </section>
+          <div className="mt-5">
+            <label className="block">
+              <span className="mb-1 block text-sm text-slate-600">Grace Period (detik)</span>
+              <input
+                type="number"
+                value={grace}
+                min={0}
+                onChange={(e) => setGrace(e.target.value)}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={saveGrace}
+              disabled={busy !== null}
+              className="mt-2 self-start rounded-md bg-slate-200 px-4 py-2 text-sm text-slate-800 hover:bg-slate-300 disabled:opacity-50"
+            >
+              {busy === 'grace' ? 'Menyimpan...' : 'Simpan Grace Period'}
+            </button>
+          </div>
+        </section>
 
         <section className="flex flex-col rounded-lg border border-slate-200 bg-white p-4">
           <h2 className="mb-3 font-semibold text-slate-800">PIN Uninstall Agent</h2>
@@ -402,6 +430,33 @@ export default function SettingsPage() {
           {pinMsg && (
             <div className="mt-2 text-sm text-green-700">{pinMsg}</div>
           )}
+        </section>
+
+        <section className="flex flex-col rounded-lg border border-slate-200 bg-white p-4">
+          <h2 className="mb-3 font-semibold text-slate-800">Lock Screen</h2>
+          <input
+            ref={wallRef}
+            type="file"
+            accept=".jpg,.jpeg,.png"
+            className="hidden"
+            onChange={(e) => void onWallpaper(e.target.files?.[0])}
+          />
+          {wallFname ? (
+            <p className="mb-3 truncate rounded-md bg-slate-50 p-2 text-xs text-slate-700">
+              Wallpaper aktif: <span className="font-medium">{wallFname}</span>
+            </p>
+          ) : (
+            <p className="mb-3 text-xs text-slate-500">Belum ada wallpaper terupload.</p>
+          )}
+          <button
+            type="button"
+            onClick={() => wallRef.current?.click()}
+            disabled={busy !== null}
+            className="mt-auto w-full rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
+          >
+            {busy === 'wallpaper' ? 'Mengunggah...' : 'Upload Wallpaper'}
+          </button>
+          <p className="mt-2 text-xs text-slate-500">Format .jpg/.jpeg/.png, maks 10 MB.</p>
         </section>
       </div>
 
@@ -587,29 +642,61 @@ export default function SettingsPage() {
         </section>
 
         <section className="flex flex-col rounded-lg border border-slate-200 bg-white p-4">
-          <h2 className="mb-3 font-semibold text-slate-800">Wallpaper Lock Screen</h2>
-          <input
-            ref={wallRef}
-            type="file"
-            accept=".jpg,.jpeg,.png"
-            className="hidden"
-            onChange={(e) => void onWallpaper(e.target.files?.[0])}
-          />
-          {wallFname ? (
-            <p className="mb-3 truncate rounded-md bg-slate-50 p-2 text-xs text-slate-700">
-              Wallpaper aktif: <span className="font-medium">{wallFname}</span>
-            </p>
-          ) : (
-            <p className="mb-3 text-xs text-slate-500">Belum ada wallpaper terupload.</p>
-          )}
-          <button
-            type="button"
-            onClick={() => wallRef.current?.click()}
-            disabled={busy !== null}
-            className="mt-auto w-full rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
-          >
-            {busy === 'wallpaper' ? 'Mengunggah...' : 'Upload (.jpg/.jpeg/.png, maks 10 MB)'}
-          </button>
+          <h2 className="mb-3 font-semibold text-slate-800">OTP Telegram</h2>
+          <p className="mb-3 text-xs text-slate-500">
+            Dipakai untuk membuka layar lock saat mode maintenance. Kode OTP dikirim ke
+            Telegram, berlaku 5 menit, dan hanya bisa dipakai sekali.
+          </p>
+
+          <label className="block">
+            <span className="mb-1 block text-sm text-slate-600">Bot Token</span>
+            <input
+              type="password"
+              value={otpToken}
+              onChange={(e) => setOtpToken(e.target.value)}
+              placeholder={otpTerisi ? 'Sudah tersimpan — isi lagi untuk mengganti' : '123456789:AA...'}
+              autoComplete="off"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="mt-3 block">
+            <span className="mb-1 block text-sm text-slate-600">Chat ID</span>
+            <input
+              value={otpChatId}
+              onChange={(e) => setOtpChatId(e.target.value)}
+              placeholder="Contoh: 123456789"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void saveOtp(false)}
+              disabled={busy !== null || !otpToken.trim() || !otpChatId.trim()}
+              className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
+            >
+              {busy === 'otp' ? 'Menyimpan...' : 'Simpan & Kirim ke Agent'}
+            </button>
+            {otpTerisi && (
+              <button
+                type="button"
+                onClick={() => void saveOtp(true)}
+                disabled={busy !== null}
+                className="rounded-md bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                Matikan OTP
+              </button>
+            )}
+          </div>
+
+          <p className="mt-3 text-xs text-slate-500">
+            {otpTerisi
+              ? 'Status: aktif. Config tersimpan di tiap PC, jadi OTP tetap terkirim walau server mati.'
+              : 'Status: tidak aktif. Agent memakai PIN emergency bawaan (123456).'}
+          </p>
+          {otpMsg && <div className="mt-2 text-sm text-green-700">{otpMsg}</div>}
         </section>
       </div>
 
