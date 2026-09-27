@@ -130,10 +130,12 @@ export async function createVoucher(
 
 export async function createMember(
   nama: string,
-  password: string,
   nominal: number,
 ): Promise<Account> {
-  const { data } = await api.post<Account>('/accounts/member', { nama, password, nominal })
+  // `password` tidak dikirim lagi. Backend memberi semua akun baru password
+  // bawaan yang sama, dan pelanggan bisa menggantinya sendiri dari komputer
+  // lewat tombol "Buat Password" di agent.
+  const { data } = await api.post<Account>('/accounts/member', { nama, nominal })
   return data
 }
 

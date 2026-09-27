@@ -29,7 +29,6 @@ export default function AccountsPage() {
 
   const [nominalInput, setNominalInput] = useState('')
   const [memberNama, setMemberNama] = useState('')
-  const [memberPassword, setMemberPassword] = useState('')
   const [memberNominalInput, setMemberNominalInput] = useState('')
   const [createdVoucher, setCreatedVoucher] = useState<
     (Account & { password: string }) | null
@@ -245,9 +244,8 @@ export default function AccountsPage() {
     setBusy(true)
     setError(null)
     try {
-      await createMember(memberNama, memberPassword, nilai)
+      await createMember(memberNama, nilai)
       setMemberNama('')
-      setMemberPassword('')
       setMemberNominalInput('')
       setModal(null)
       await load()
@@ -390,6 +388,10 @@ export default function AccountsPage() {
                 </svg>
               }
             >
+              <p className="mb-3 rounded-md bg-white/5 px-2.5 py-2 text-[11px] leading-relaxed text-neutral-400">
+                Password awal semua akun 0000. Pelanggan bisa menggantinya sendiri dari
+                komputer lewat tombol &quot;Buat Password&quot; di layar login.
+              </p>
               <div>
                 <label className="mb-1.5 block text-neutral-500">Nama member</label>
                 <input
@@ -399,17 +401,6 @@ export default function AccountsPage() {
                   placeholder="Nama lengkap"
                   required
                   autoFocus
-                  className={inputClass}
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-neutral-500">Password</label>
-                <input
-                  type="text"
-                  value={memberPassword}
-                  onChange={(e) => setMemberPassword(e.target.value)}
-                  placeholder="Password member"
-                  required
                   className={inputClass}
                 />
               </div>
