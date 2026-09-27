@@ -561,6 +561,15 @@ export default function AccountsPage() {
                   </td>
                   <td className="px-4 py-2 tabular-nums text-slate-600">
                     {formatDuration(a.sisaWaktuDetik)}
+                    {/* Sisa 0 dengan status ACTIVE adalah voucher yang waktunya
+                        sudah habis dipakai, bukan voucher invalid. Status tetap
+                        ACTIVE karena itu siklus hidup akun di sisi server, jadi
+                        penanda ditambahkan di kolom waktu saja. */}
+                    {a.sisaWaktuDetik === 0 && a.status === 'ACTIVE' && (
+                      <span className="ml-2 rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                        Habis
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2">
                     <span

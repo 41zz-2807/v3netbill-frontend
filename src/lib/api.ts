@@ -309,7 +309,10 @@ export function formatDuration(detik: number): string {
   const menit = Math.floor((d % 3600) / 60)
   const sec = d % 60
   const pad = (n: number) => n.toString().padStart(2, '0')
-  if (jam > 0) return `${jam}:${pad(menit)}:${pad(sec)}`
+  // Batas 1 jam memakai jam didahulukan ("2j 00:00"), bukan "2:00:00".
+  // Alasannya: bentuk H:MM:SS terlihat seperti format jam-menit yang
+  // biasa, sehingga dalam satu kolom terbaca seperti dua format berbeda.
+  if (jam > 0) return `${jam}j ${pad(menit)}:${pad(sec)}`
   return `${pad(menit)}:${pad(sec)}`
 }
 
@@ -317,12 +320,22 @@ export function formatRupiah(n: number): string {
   return 'Rp ' + n.toLocaleString('id-ID')
 }
 
+/**
+ * Waktu ringkas untuk tabel log aktivitas: "27 Sep 05.17".
+ *
+ * Tahun tidak dicetak karena log hanya disimpan 30 hari (ada cron
+ * cleanup-activity-logs jam 02:00), jadi data yang bisa muncul selalu
+ * bulan berjalan atau bulan sebelumnya. Tahun baru dikembalikan hanya
+ * pada desember, supaya "05 Jan" tidak tertukar dengan entry yang
+ * satu tahun lalu.
+ */
 export function formatWaktu(dateStr: string): string {
   const d = new Date(dateStr)
+  const tahunBerbeda = d.getFullYear() !== new Date().getFullYear()
   return d.toLocaleString('id-ID', {
     day: '2-digit',
     month: 'short',
-    year: 'numeric',
+    year: tahunBerbeda ? 'numeric' : undefined,
     hour: '2-digit',
     minute: '2-digit',
   })

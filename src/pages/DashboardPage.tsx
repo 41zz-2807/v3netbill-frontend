@@ -531,11 +531,16 @@ function IconMatikan() {
 }
 
 const LOG_EVENT_LABEL: Record<string, string> = {
-  'session:started_dashboard': 'Sesi Mulai',
-  'session:started': 'Sesi Mulai',
-  'session:stopped': 'Sesi Stop',
+  'session:started_dashboard': 'Sesi Berjalan',
+  'session:started': 'Sesi Berjalan',
+  'session:stopped': 'Sesi Berakhir',
   'transaction:created': 'Transaksi',
+  'voucher:created_dashboard': 'Voucher Dibuat',
+  'voucher:created': 'Voucher Dibuat',
   pc_lock: 'PC Dikunci',
+  pc_locked: 'PC Dikunci',
+  pc_unlock: 'PC Dibuka',
+  pc_unlocked: 'PC Dibuka',
   pc_shutdown: 'PC Dimatikan',
 }
 
@@ -544,8 +549,20 @@ const LOG_EVENT_VARIANT: Record<string, 'default' | 'success' | 'warning' | 'dan
   'session:started': 'success',
   'session:stopped': 'warning',
   'transaction:created': 'info',
+  'voucher:created_dashboard': 'success',
+  'voucher:created': 'success',
   pc_lock: 'warning',
+  pc_locked: 'warning',
+  pc_unlock: 'info',
+  pc_unlocked: 'info',
   pc_shutdown: 'danger',
+}
+
+/** Alasan berhenti sesi, dari kode internal ke bahasa yang dimengerti kasir. */
+const STOP_REASON: Record<string, string> = {
+  habis: 'Waktu habis',
+  manual: 'Dihentikan manual',
+  disconnect_timeout: 'Koneksi terputus',
 }
 
 function logEventLabel(event: string): string {
@@ -562,12 +579,18 @@ function formatLogDetail(log: DashboardLog, pcName?: string): string {
     case 'session:started_dashboard':
     case 'session:started':
       return `${pc} mulai dipakai akun ${log.akun ?? '-'}${log.by ? ` oleh ${log.by}` : ''}`
-    case 'session:stopped':
-      return `Alasan ${log.alasan ?? '-'}, sisa kembali ${formatDuration(log.sisaWaktuKembali ?? 0)}`
+    case 'session:stopped': {
+      const alasan = STOP_REASON[log.alasan ?? ''] ?? log.alasan ?? '-'
+      return `${alasan}, sisa kembali ${formatDuration(log.sisaWaktuKembali ?? 0)}`
+    }
     case 'transaction:created':
       return `${log.jenis ?? '-'} ${log.kodeUnik ?? log.nama ?? '-'} — Rp ${log.nominal?.toLocaleString('id-ID') ?? '-'}`
     case 'pc_lock':
+    case 'pc_locked':
       return `${pc} dikunci oleh ${log.by ?? '-'}`
+    case 'pc_unlock':
+    case 'pc_unlocked':
+      return `${pc} dibuka oleh ${log.by ?? '-'}`
     case 'pc_shutdown':
       return `${pc} dimatikan oleh ${log.by ?? '-'}`
     default:
