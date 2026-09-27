@@ -6,8 +6,12 @@ Panduan untuk AI agent (opencode) mengerjakan project ini. Baca penuh sebelum mu
 
 v3Netbill adalah sistem billing warnet yang dibangun ulang TOTAl dari `v2netbill` (hasil develop
 sebelumnya, dishare dari `/tmp/opencode/v2netbill-ref/`). Backend = NestJS 12 (ESM), Frontend =
-React + TS + Vite + Tailwind (masih scaffold). SEMUA development harus berjalan di dalam Docker
-— JANGAN pernah jalankan npm/npx/node/psql di host.
+React + TS + Vite + Tailwind, Mobile = Flutter Android, Agent PC = .NET WPF. SEMUA development
+harus berjalan di dalam Docker — JANGAN pernah jalankan npm/npx/node/psql/flutter/dotnet di host.
+
+Project ini sekarang **4 repo terpisah** (semua public, semua punya git sendiri):
+backend, frontend (berisi dokumentasi project), agent, mobile. Lihat bagian
+"Status repository" untuk checkout host masing-masing.
 
 ## Aturan mutlak (harus selalu dipatuhi)
 
@@ -122,6 +126,8 @@ Logika bisnis yang sudah berjalan:
   dari Transaction+Session, upsert `DailyReport.tanggal` unik); 5b dashboard realtime WS
   (`dashboard:pc_update` detail PC+session + `dashboard:log`); 5c Frontend React+TS+Vite+Tailwind v4
   (login JWT + AuthContext, halaman Dashboard/PC/Voucher&Member/Transaksi/Laporan).
+- FASE 8 ✅ Mobile Flutter Android (repo terpisah `v3netbill-mobile`) + distribusi APK lewat
+  Settings web. Detail: bagian "FASE 8 — Mobile app" di bawah.
 
 ## Frontend (FASE 5c) — catatan
 
@@ -236,6 +242,80 @@ dan trigger hover mati diam-diam.
 `_stopConfirmArmed` / `_stopConfirmAt` dihapus. Penjaga "pipe belum tersambung"
 **tetap dipertahankan** — itu kondisi teknis, bukan konfirmasi.
 
+## FASE 8 — Mobile app (Flutter Android) ✅
+
+Repo keempat, terpisah: `git@github.com:41zz-2807/v3netbill-mobile.git` (public).
+Checkout di host: `/home/warnet/mobile/v3netbill-mobile` (**bukan** di dalam
+`/home/warnet/docker/v3netbill`). Build memakai image `mobiledevops/flutter-sdk-image:3.44.4`
+(10.7 GB) + cache mount `/home/warnet/cache/pub` & `/home/warnet/cache/gradle`. Tidak ada
+Flutter di host — semua lewat `docker run`.
+
+- **Fitur**: login + `flutter_secure_storage`, Dashboard/Home, PC, Voucher, Member, Transaksi,
+  Profile, Logout. Dark mode, status hijau/oranye/merah, bottom navigation, realtime Socket.IO.
+  PC: Start / **Akhiri Sesi** / Matikan. Akun: buat voucher & member, search, bulk select,
+  Topup, Koreksi/Tarik, Revoke.
+- **Semua path URL wajib `/api`**: base URL sudah memuat `/api` di akhirnya
+  (`api_config.dart`), jadi pemanggil cukup `'/pcs'`, bukan `'/api/pcs'`.
+- **Namespace WebSocket adalah `/session`, bukan `/socket.io`.** Ini kesalahan yang sudah
+  pernah terjadi: string `/socket.io` yang muncul di `libapp.so` itu default library
+  socket_io_client sendiri, bukan konfigurasi kita. Cara memastikan = `strings`/grep
+  `wss://v3netbill.bilmary.my.id/session` di `lib/arm64-v8a/libapp.so`.
+- **Operator tidak boleh pakai `client:stop_session`** — event itu hanya untuk agent PC
+  (butuh `pcId` + `agentToken`). Operator memakainya `dashboard:lock_pc`, yang sekaligus
+  juga mengakhiri sesi. Event operator: `dashboard:subscribe`, `dashboard:start_pc`
+  (payload `{pcId,kode}` — tanpa password), `dashboard:lock_pc`, `dashboard:shutdown_pc`.
+- **Animasi dashboard yang bergerak sendiri dihapus.** Untuk aplikasi billing, angka yang
+  beranimasi tanpa sumber data = menampilkan info yang salah.
+
+### Build APK & GitHub Actions
+
+Workflow `.github/workflows/build-apk.yml`: Java 17, Flutter 3.44.4, analyze + test, lalu
+build. Commit `ff366d8` menambah build **universal** (`flutter build apk --release` tanpa
+`--split-per-abi`) sebagai Artifact `v3netbill-apk-universal`, sementara build per-ABI tetap
+dipertahankan untuk yang mau unduh lebih kecil. Retensi artifact 60 hari.
+
+⚠️ **Signing di CI bergantung pada 4 secret repo** — `KEYS_BASE64` (keystore `.jks` di
+base64), `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`. Kalau kosong, workflow **tetap
+jalan** dengan fallback debug key, dan hasilnya **tidak layak dibagikan** (Android
+menandainya "tidak dari sumber tepercaya"). Jadi `gh secret list` harus dicek sebelum
+menganggap APK CI siap pakai. Secret sudah terpasang 27 Sep.
+
+Keystore rilis ada di mesin ini (di-gitignore, **jangan di-commit**):
+`android/app/v3netbill-release.jks` + `android/key.properties`. Kehilangan keystore =
+tidak bisa menerbitkan update APK tanpa uninstall.
+
+### Cara set secret GitHub dari host
+
+`gh` **tidak terinstall** di host dan tidak ada `~/.netrc`. Yang berhasil: unduh binary `gh`
+ke dalam container playwright, lalu `gh secret set` (dijalankan lewat `GH_TOKEN`).
+⚠️ **Janganenkripsi sendiri lewat API** — `POST .../actions/secrets/{name}` minta
+sealed box libsodium; implementasi tweetnacl ditolak GitHub dengan
+`"improperly encrypted secret"` meski panjang ciphertext sudah benar 81 byte. Pakai `gh`.
+Token cukup disimpan di `/tmp/opencode` dengan `umask 077`, lalu **wajib dihapus** setelah
+selesai.
+
+⚠️ **Download artifact GitHub selalu butuh token**, meski repo public. Zip artifact selalu
+belum lengkap saat curl pertama — pakai `curl -C - --retry 5 --retry-all-errors` untuk
+lanjutkan. Ukuran artifact GitHub **tidak** sama dengan jumlah byte APK di dalamnya
+(49.9 MB artifact → 53.3 MB APK + 3 APK per-ABI), jangan dipakai untuk sanity check.
+
+### Distribusi lewat Settings web ✅
+
+Backend `308cd02` — `POST /api/settings/apk` (ADMIN, multipart, filter `.apk`, maks 200 MB)
+menyimpan ke `/data/apk/` + Setting `apk_meta`; `GET /api/settings/apk` **`res.download`**
+`v3netbill.apk`. **Dua endpoint ini wajib JWT** (bukan `@Public()`), jadi `curl` tanpa token
+balas `401` — itu normal, bukan bug.
+
+Frontend `39fa0f6` — link `Download APK (Android)` di card `Installer Aplikasi`
+(`SettingsPage.tsx`), lewat `downloadAuth` yang menempelkan token sebagai query string.
+
+⚠️ **Upload lewat domain dari host kadang putus di ~18 MB** (`HTTP 000`, Cloudflare).
+Always upload lewat `http://localhost:3000/api/settings/apk` (53 MB lolos). Setelah upload,
+verifikasi dengan download ulang + bandingkan `sha256sum` — bukan cuma cek HTTP 200.
+
+APK aktif di server: `v3netbill-1790515676761.apk`, 53.303.412 byte, universal,
+release-signed `CN=v3Netbill`, dari artifact GitHub run `36321151526`.
+
 ## Menu header web — glass pill (27 Sep) ✅ `af4f250`
 
 - Dari Uiverse.io (mymiamo). Selector di-prefix `.navmenu` supaya tidak bentrok dengan
@@ -310,6 +390,16 @@ Temuan dari **data nyata** (71 voucher, 9 sisa 0, 3 di antaranya `ACTIVE`):
    Bila perlu, simpan di `/tmp` saja dan kirim lewat cara lain.
 4. **Verifikasi visual selalu mungkin** lewat Playwright image — jangan lagi bilang
    "saya tidak bisa melihat tampilan" tanpa mencoba dulu. `curl` tidak cukup untuk SPA.
+5. **Jangan menyimpulkan apa pun tanpa memeriksa output.** `curl` yang gagal diam-diam
+   (exit != 0) bikin `&&` berhenti tanpa pesan, dan `unzip` yang tidak terpasang bikin
+   `unzip -tq` salah mengira "zip rusak". Sebelum menyimpulkan: print ukuran file, dan
+   pastikan tool-nya benar-benar ada.
+6. **Kerjakan dari host, lalu hapus jejaknya.** Setelah pakai token atau password untuk
+   satu operasi, langsung `rm` file-nya, lalu `grep -rI` untuk memastikan tidak ada sisa
+   di `/tmp/opencode`. Sesi ini menemukan `dl4.sh` berisi token rusak dari 2 hari
+   sebelumnya — tidak sengaja, tapi bukti bahwa scan itu perlu.
+
+
 
 ## Jejak aktivitas (ActivityLog) ✅
 
@@ -332,28 +422,35 @@ Temuan dari **data nyata** (71 voucher, 9 sisa 0, 3 di antaranya `ACTIVE`):
 Tiga repo, tidak ada lagi repo root terpisah. **Dokumentasi project (`AGENTS.md`,
 `CONVERSATION_LOG.md`, `docs/`, `docker-compose.yml`) berada di repo frontend ini.**
 
-| Repo | Isi | Remote | Visibilitas |
-|---|---|---|---|
-| repo ini (frontend) | Dashboard React + dokumentasi project | `git@github.com:41zz-2807/v3netbill-frontend.git` | **PUBLIC** |
-| backend | API NestJS + Prisma | `git@github.com:41zz-2807/v3netbill-server.git` | **PUBLIC** |
-| agent | Agent Client Windows (.NET) | `git@github.com:41zz-2807/v3netbill-agent.git` | **PUBLIC** |
+| Repo | Isi | Remote | Visibilitas | Checkout di host |
+|---|---|---|---|---|
+| repo ini (frontend) | Dashboard React + dokumentasi project | `git@github.com:41zz-2807/v3netbill-frontend.git` | **PUBLIC** | `/home/warnet/docker/v3netbill/frontend` |
+| backend | API NestJS + Prisma | `git@github.com:41zz-2807/v3netbill-server.git` | **PUBLIC** | `/home/warnet/docker/v3netbill/backend` |
+| agent | Agent Client Windows (.NET) | `git@github.com:41zz-2807/v3netbill-agent.git` | **PUBLIC** | `/home/warnet/docker/v3netbill/v3NetbillAgent` |
+| mobile | Aplikasi Android (Flutter) | `git@github.com:41zz-2807/v3netbill-mobile.git` | **PUBLIC** | `/home/warnet/mobile/v3netbill-mobile` |
 
-Ketiga repo **public** (dikonfirmasi via GitHub API). GitHub free tier hanya izinkan 1 repo
+Keempat repo **public** (dikonfirmasi via GitHub API). GitHub free tier hanya izinkan 1 repo
 private → dipakai untuk memindahkan repo yang paling sensitif (kandidat: backend).
 Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
+⚠️ Kalau pindah, **4 secret keystore APK harus di-set ulang** di hosting yang baru.
 
 ### Commit terakhir (27 Sep, sesi terakhir — semua ter-push)
 
-- **frontend** `af4f250` — 5 commit sesi ini: redesign menu header jadi glass pill
-  (Uiverse), tombol Keluar masuk ke dalam pill, user login pindah ke sebelah nama
-  aplikasi, hamburger + drawer dihapus total, plus perbaikan UI/UX (lihat bagian
-  "Audit UI/UX 27 Sep").
-- **backend** `e9e2635` — push konfigurasi OTP Telegram ke agent aktif
-  (`session.gateway.ts:113` saat agent register, `settings.service.ts:99` saat
-  Setting diubah).
+- **frontend** `39fa0f6` — link `Download APK (Android)` di card `Installer Aplikasi`
+  (`SettingsPage.tsx`), pakai `downloadAuth` (token sebagai query string). Build + lint
+  0 error, sudah live di domain.
+- **backend** `308cd02` — endpoint `POST /api/settings/apk` (ADMIN, 200 MB) +
+  `GET /api/settings/apk` (`res.download`), simpan ke `/data/apk/`, Setting `apk_meta`.
+  (`e9e2635` sebelumnya: push konfigurasi OTP Telegram ke agent aktif.)
 - **agent** `e0c1908` — 3 commit sesi ini: stop sesi 1 klik, redesign overlay
   (login + mini panel), mini panel jadi ala music player (lingkaran = tombol
   stop). CI sukses, artifact `v3NetbillAgentSetup` 61.1 MB (run `36294859940`).
+- **mobile** `e910090` — workflow CI ditambah build **universal** (`ff366d8`) dan
+  `API_WS_URL` dikoreksi `/socket.io` → `/session`; `e910090` commit kosong untuk
+  memicu rebuild setelah 4 secret keystore dipasang. Run `36321151526` sukses,
+  artifact `v3netbill-apk-universal` 49.9 MB, dipakai untuk upload ke backend.
+  Commit inti aplikasi: `f9991b6` (fitur + perbaikan).
+
 
 ### Temuan audit keamanan (26 Sep, sudah di-scan ke repo public)
 
@@ -377,11 +474,14 @@ untuk attacker yang menyisir.
 
 ### Pending (per 27 Sep, sesi terakhir)
 
+- ~~**Frontend jadi .apk Android**~~ — **SELESAI 27 Sep**, tapi bukan lewat Capacitor.
+  Yang dipakai adalah aplikasi Flutter native penuh (repo `v3netbill-mobile`), hasilnya
+  dikirim lewat Settings web. Lihat bagian "FASE 8".
 - **Upload MSI baru ke `/data/installer/`** — CI sudah jadi (run `36294859940`, artifact
   `v3NetbillAgentSetup` 61.1 MB, belum expired), tapi **belum di-download** karena download
   artifact GitHub selalu butuh token. Tombol "Unduh Installer" masih menunjuk MSI lama
-  → **tidak mendesak**. Akses GitHub token tidak ada di host ini (`gh` tidak terinstall,
-  tidak ada `~/.netrc`/`gh-token`).
+  → **tidak mendesak**. Token GitHub sempat dipakai 27 Sep lalu dihapus dari disk, jadi
+  akses token tidak ada di host ini (`gh` tidak terinstall, tidak ada `~/.netrc`/`gh-token`).
 - **Hapus fallback JWT** (lihat di atas) — belum dikerjakan. Masih prioritas tinggi.
 - **Tampilan log aktivitas di HP** — kolom Detail terpotong di layar sempit. Usulan:
   ubah tiap baris jadi kartu bertumpuk, atau pindahkan Detail ke bawah Event.
@@ -390,12 +490,14 @@ untuk attacker yang menyisir.
   label "Habis" (perkampilan tampilan saja). Kalau user mau statusnya benar-benar
   jadi `TERPAKAI`, itu **perubahan logika bisnis di backend** + enum, bukan
   front-end. Belum dikerjakan.
-- **Pindah repo ke private / Gitea** — deferred oleh user.
-- **Frontend jadi .apk Android** — sudah didiskusikan (Capacitor direkomendasikan), **belum
-  dikerjakan**. Sifatnya opsional; cukupani dulu untuk akses HP. Tidak ada perubahan kode.
+- **Pindah repo ke private / Gitea** — deferred oleh user. Kalau jadi dilakukan, jangan
+  lupa set ulang 4 secret keystore APK.
+- **Rapi `/data/apk/`** — ada 2 APK lama (105 MB) selain yang aktif
+  (`v3netbill-1790515676761.apk`). Tidak mendesak, disk masih 66 GB kosong.
 - **`/tmp/opencode/pw`** — sisa `node_modules` playwright-core (8.6 MB, owner `root`,
   hasil `npm i` di dalam container). Perlu `sudo rm -rf` manual. Tidak ada kredensial
   di dalamnya, hilang sendiri saat reboot.
+
 
 ---
 
