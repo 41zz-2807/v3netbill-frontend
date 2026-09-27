@@ -36,6 +36,7 @@ const BUSY_TEXT: Record<string, string> = {
   backup: 'Membuat backup',
   'backup-download': 'Mengunduh backup',
   download: 'Mengunduh installer',
+  downloadApk: 'Mengunduh APK',
   tarif: 'Menyimpan tarif',
   grace: 'Menyimpan pengaturan',
   password: 'Menyimpan',
@@ -97,6 +98,7 @@ export default function SettingsPage() {
   const installerRef = useRef<HTMLInputElement>(null)
   const wallRef = useRef<HTMLInputElement>(null)
   const [installed, setInstalled] = useState<InstallerMeta | null>(null)
+  const [apk, setApk] = useState<InstallerMeta | null>(null)
   const [wallFname, setWallFname] = useState<string | null>(null)
   const [backupInfo, setBackupInfo] = useState<BackupResult | null>(null)
   const [backups, setBackups] = useState<BackupFile[]>([])
@@ -127,6 +129,7 @@ export default function SettingsPage() {
       setHarga(s.harga_per_menit ?? '')
       setGrace(s.grace_period_detik ?? '')
       setInstalled(parseMeta<InstallerMeta>(s.installer_meta))
+      setApk(parseMeta<InstallerMeta>(s.apk_meta))
       setWallFname(s.wallpaper_lockscreen_path ?? null)
       setOtpChatId(s.agent_otp_chat_id ?? '')
       setOtpTerisi(Boolean(s.agent_otp_bot_token))
@@ -545,6 +548,38 @@ export default function SettingsPage() {
                 {busy === 'download' ? 'Mengunduh...' : 'Unduh Installer'}
               </button>
             )}
+
+            {/* Aplikasi Android. Sengaja dibuat sebagai link tulisan, bukan
+                tombol, supaya tidak bersaing dengan tombol installer di atas
+                dan tidak menambah satu tombol lagi di card yang sama. */}
+            <div className="border-t border-slate-100 pt-2">
+              {apk ? (
+                <button
+                  type="button"
+                  onClick={() => void run('downloadApk', async () => {
+                    try {
+                      await downloadAuth('/settings/apk', 'v3netbill.apk')
+                      setMsg('APK Android diunduh')
+                    } catch (e) {
+                      setErr(e instanceof Error ? e.message : String(e))
+                    }
+                  })}
+                  disabled={busy !== null}
+                  className="text-xs text-blue-700 underline underline-offset-2 hover:text-blue-900 disabled:opacity-50"
+                >
+                  {busy === 'downloadApk' ? 'Mengunduh APK...' : 'Download APK (Android)'}
+                </button>
+              ) : (
+                <p className="text-xs text-slate-400">
+                  Belum ada APK Android terupload.
+                </p>
+              )}
+              {apk && (
+                <span className="ml-1.5 text-xs text-slate-400">
+                  {formatBytes(apk.sizeBytes)}
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="mt-5 border-t border-slate-100 pt-4">
