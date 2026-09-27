@@ -536,7 +536,7 @@
        + teks putih). Tanpa pengecualian ini, background-image uiverse menimpa
        gradient-nya sehingga teks putih jadi tidak terlihat saat tidak di-hover.
    ============================================================ */
-html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button) {
+html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):not(.navmenu__exit) {
   position: relative;
   line-height: 1;
   border-radius: 1.5rem !important;
@@ -556,12 +556,12 @@ html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button) {
   transition: background-position 0.3s ease, color 0.2s ease;
 }
 
-html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):hover {
+html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):not(.navmenu__exit):hover {
   background-position: 0 0;
   color: #ffffff !important;
 }
 
-html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):disabled {
+html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):not(.navmenu__exit):disabled {
   background-position: 100% 0;
 }
 
@@ -581,7 +581,11 @@ html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):di
   --item-text: rgba(255, 255, 255, 0.92);
 
   width: 100%;
-  max-width: 560px;
+  /* 620px: dengan 7 item (6 rute + tombol Keluar untuk admin) menyisakan
+     ±79px per item. Label terpanjang "Transaksi" di 0.8rem butuh ±70px
+     termasuk padding, jadi masih muat tanpa ellipsis. Pada 560px (nilai
+     asli Uiverse) ruangnya cuma ±71px dan label itu sudah menyentuh batas. */
+  max-width: 620px;
   backdrop-filter: blur(12px) saturate(180%) contrast(200%);
   -webkit-backdrop-filter: blur(12px) saturate(180%) contrast(200%);
   background: rgba(0, 122, 255, 0.404);
@@ -609,7 +613,10 @@ html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):di
   z-index: -1;
 }
 
-.navmenu a {
+/* Item navigasi berupa <a>, item keluar berupa <button>. Keduanya diberi
+   gaya yang sama supaya baris pill tetap seragam. */
+.navmenu a,
+.navmenu button {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -618,6 +625,9 @@ html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):di
   color: var(--item-text);
   text-decoration: none;
   padding: 10px 6px;
+  border: none;
+  background: transparent;
+  font: inherit;
   border-radius: 999rem;
   -webkit-tap-highlight-color: transparent;
   transition:
@@ -627,13 +637,15 @@ html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):di
     box-shadow 0.3s ease-in-out;
 }
 
-.navmenu a svg {
+.navmenu a svg,
+.navmenu button svg {
   width: 1.4rem;
   height: 1.4rem;
   flex: none;
 }
 
-.navmenu a span {
+.navmenu a span,
+.navmenu button span {
   font-size: 0.8rem;
   font-weight: 600;
   line-height: 1;
@@ -644,7 +656,8 @@ html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):di
   white-space: nowrap;
 }
 
-.navmenu a:hover {
+.navmenu a:hover,
+.navmenu button:hover {
   background-color: rgba(255, 255, 255, 0.3);
   box-shadow:
     inset 2px 2px 5px -2px rgba(255, 255, 255, 0.4),
@@ -661,14 +674,32 @@ html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):di
   color: rgba(0, 84, 178, 0.95);
 }
 
-.navmenu a:active {
+.navmenu a:active,
+.navmenu button:active {
   transform: scale(0.98);
+}
+
+/* Item keluar: satu-satunya tindakan yang menghapus akses, jadi diberi
+   warna merah agar tidak tertukar dengan navigasi biasa. */
+.navmenu .navmenu__exit {
+  color: rgba(255, 226, 226, 0.92);
+  cursor: pointer;
+}
+
+.navmenu .navmenu__exit:hover {
+  background-color: rgba(255, 107, 107, 0.26);
+  box-shadow:
+    inset 2px 2px 5px -2px rgba(255, 255, 255, 0.35),
+    inset -2px -1px 5px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -2px 0 rgba(255, 255, 255, 0.18);
+  color: #ffffff;
 }
 
 /* Tanpa hover (HP/tablet): efek rotate()/scale() tidak perlu, karena di
    HP membuat posisi item bergeser saat diklik. */
 @media (hover: none) {
-  .navmenu a:hover {
+  .navmenu a:hover,
+  .navmenu button:hover {
     transform: none;
   }
 }

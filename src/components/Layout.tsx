@@ -46,6 +46,11 @@ const navItems = [
 
 type NavItem = { to: string; label: string; full: string; icon: string }
 
+// Ikon keluar (arrow-right-on-rectangle). Dipisah dari navItems karena bukan
+// tujuan rute, melainkan aksi.
+const logoutIcon =
+  'M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9'
+
 function NavIcon({ d }: { d: string }) {
   return (
     <svg
@@ -95,6 +100,17 @@ function Layout() {
                 <span>{item.label}</span>
               </NavLink>
             ))}
+
+            <button
+              type="button"
+              onClick={logout}
+              className="navmenu__exit"
+              title="Keluar dari sesi"
+              aria-label="Keluar dari sesi"
+            >
+              <NavIcon d={logoutIcon} />
+              <span>Keluar</span>
+            </button>
           </nav>
 
           <div className="flex items-center gap-2">
@@ -117,13 +133,10 @@ function Layout() {
               )}
             </button>
 
-            <button
-              type="button"
-              onClick={logout}
-              className="rounded-md bg-slate-700 px-3 py-1.5 text-sm text-white hover:bg-slate-600"
-            >
-              {username} ({role}) — Keluar
-            </button>
+            {/* Chip identitas — aksi keluar sudah pindah ke dalam pill */}
+            <span className="rounded-md bg-slate-700 px-3 py-1.5 text-sm text-white">
+              {username} ({role})
+            </span>
           </div>
         </div>
       </header>
@@ -153,6 +166,14 @@ function Layout() {
                   {item.full}
                 </NavLink>
               ))}
+
+              <button
+                type="button"
+                onClick={logout}
+                className="rounded-md px-3 py-2 text-left text-base text-red-400 hover:bg-slate-800"
+              >
+                Keluar
+              </button>
             </div>
           </div>
         </>
