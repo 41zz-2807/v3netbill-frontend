@@ -67,7 +67,7 @@ function NavIcon({ d }: { d: string }) {
 }
 
 function Layout() {
-  const { role, username, logout } = useAuth()
+  const { role, logout } = useAuth()
 
   const items: NavItem[] = navItems.filter(
     (i) => i.to !== '/settings' || role === 'ADMIN',
@@ -79,18 +79,26 @@ function Layout() {
     <div className="min-h-screen overflow-x-clip bg-gray-100">
       <header className="bg-[#1b233d]">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
-          {/* Identitas pindah ke sebelah nama aplikasi. Strip pemisah supaya
-              "v3netbill" dan nama user tidak menyatu jadi satu kata. */}
-          <div className="text-lg font-bold text-white">
-            v3netbill
-            <span className="mx-1.5 font-normal text-slate-400">-</span>
-            <span className="font-semibold text-slate-200">{username}</span>
+          {/* Brand berupa logo. Dari JPG 1760x576 berlatar putih, dibuat
+              transparan lalu dipangkas jadi PNG 411x144 (rasio 2.854:1).
+              h-9 = 36px di desktop, h-7 = 28px di HP. Di HP lebar logo jadi
+              80px, sehingga 80 + pill 213px + gap masih muat dalam 358px
+              yang tersedia di layar 390px. */}
+          <div className="flex shrink-0 items-center">
+            <img
+              src="/logo-v3netbill.png"
+              alt="v3Netbill"
+              title="v3Netbill"
+              width={411}
+              height={144}
+              className="h-7 w-auto lg:h-9"
+            />
           </div>
 
-          {/* Menu selalu tampil, termasuk di HP. Lebarnya w-full di bawah lg
-              supaya mengisi baris sendiri, lalu w-auto agar nempel kanan di
-              desktop dan tepi kanannya rata dengan konten body. */}
-          <nav className="navmenu w-full lg:w-auto" aria-label="Menu utama">
+          {/* Menu pill. w-auto supaya lebarnya mengikuti isi item, bukan
+              memaksa baris sendiri. Sebelumnya w-full yang membuat logo dan
+              menu selalu jadi dua baris di HP. */}
+          <nav className="navmenu w-auto shrink" aria-label="Menu utama">
             {items.map((item) => (
               <NavLink
                 key={item.to}

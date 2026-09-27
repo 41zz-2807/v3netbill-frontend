@@ -515,7 +515,7 @@
   }
 }
 
-/* Tablet & laptop:本格 desktop, hover scale dinonaktifkan agar
+/* Tablet & laptop: Pointer desktop, hover scale dinonaktifkan agar
    tidak memotong neighboring card saat cursor lewat. */
 @media (hover: none) {
   .uui-card:hover {
@@ -576,23 +576,23 @@ html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):no
    .ui.dropdown .menu di bawah (dipakai AccountsPage).
    ============================================================ */
 .navmenu {
-  --glass-border: rgba(255, 255, 255, 0.45);
+  --glass-border: rgba(255, 255, 255, 0.30);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --item-text: rgba(255, 255, 255, 0.92);
 
-  /* Lebar diatur lewat utility w-full / lg:w-auto di Layout.tsx supaya bisa
-     mengikuti mode ikon-saja di layar kecil. */
+  /* Lebar mengikuti isi item, bukan dipaksa 620px. Dibatasi max-width supaya
+     tidak melebar di laptop besar. */
   max-width: 620px;
   backdrop-filter: blur(12px) saturate(180%) contrast(200%);
   -webkit-backdrop-filter: blur(12px) saturate(180%) contrast(200%);
   background: rgba(0, 122, 255, 0.404);
   border: 1px solid var(--glass-border);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
-  padding: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.05);
+  padding: 4px;
   border-radius: 99rem;
   display: flex;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   position: relative;
   z-index: 50;
 }
@@ -603,9 +603,9 @@ html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):no
   inset: 0;
   border-radius: inherit;
   box-shadow:
-    inset 2px 2px 5px -2px rgba(255, 255, 255, 0.4),
-    inset -2px -2px 5px 2px rgba(255, 255, 255, 0.4),
-    inset 0 -2px 0 rgba(255, 255, 255, 0.2);
+    inset 1px 1px 3px -1px rgba(255, 255, 255, 0.28),
+    inset -1px -1px 3px 1px rgba(255, 255, 255, 0.28),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.14);
   pointer-events: none;
   z-index: -1;
 }
@@ -621,7 +621,7 @@ html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):no
   min-width: 0;
   color: var(--item-text);
   text-decoration: none;
-  padding: 10px 6px;
+  padding: 4px 7px;
   border: none;
   background: transparent;
   font: inherit;
@@ -636,17 +636,17 @@ html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):no
 
 .navmenu a svg,
 .navmenu button svg {
-  width: 1.4rem;
-  height: 1.4rem;
+  width: 16px;
+  height: 16px;
   flex: none;
 }
 
 .navmenu a span,
 .navmenu button span {
-  font-size: 0.8rem;
+  font-size: 11px;
   font-weight: 600;
   line-height: 1;
-  margin-top: 4px;
+  margin-top: 2px;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -655,11 +655,11 @@ html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):no
 
 .navmenu a:hover,
 .navmenu button:hover {
-  background-color: rgba(255, 255, 255, 0.3);
+  background-color: rgba(255, 255, 255, 0.28);
   box-shadow:
-    inset 2px 2px 5px -2px rgba(255, 255, 255, 0.4),
-    inset -2px -1px 5px 0 rgba(255, 255, 255, 0.4),
-    inset 0 -2px 0 rgba(255, 255, 255, 0.2);
+    inset 1px 1px 3px -1px rgba(255, 255, 255, 0.28),
+    inset -1px -1px 3px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.14);
   transform: rotate(2.2deg);
   /* Aslinya color: rgba(0,122,255,0.7) — teks biru di atas kaca biru,
      kontrasnya rendah. Dipakaikan teks putih agar tetap terbaca. */
@@ -707,17 +707,35 @@ html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):no
    item, sedangkan label terpanjang "Transaksi" butuh sekitar 70px.
    Ikon 22px masih muat. Label penuh dikembalikan mulai 1024px.
    ============================================================ */
+@media (min-width: 1024px) {
+  /* Hanya di sini flex diubah. Di bawah 1024px item tetap flex: 1 1 0
+     supaya ikon evenly membagi lebar pill yang w-full.
+     flex: 1 1 0 memaksa semua item sama lebar dan ikut menyusut, sehingga
+     label seperti "Transaksi" terpotong ellipsis. flex: 0 1 auto membuat
+     item mengikuti isi labelnya dulu, baru menyusut kalau memang tidak muat. */
+  .navmenu a,
+  .navmenu button {
+    flex: 0 1 auto;
+  }
+}
+
 @media (max-width: 1023px) {
   .navmenu {
-    gap: 4px;
-    padding: 6px;
+    gap: 3px;
+    padding: 3px;
   }
 
   .navmenu a,
   .navmenu button {
-    /* Padding vertikal 11px menjaga tinggi area sentuh di atas 44px
-       meski isinya hanya ikon. */
-    padding: 11px 3px;
+    /* Padding 8px vertikal menjaga area sentuh di atas 40px, tapi cukup
+       rendah supaya logo dan pill masih muat satu baris di HP. */
+    padding: 8px 4px;
+  }
+
+  .navmenu a svg,
+  .navmenu button svg {
+    width: 19px;
+    height: 19px;
   }
 
   .navmenu a span,
