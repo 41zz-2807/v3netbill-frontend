@@ -10,8 +10,12 @@ React + TS + Vite + Tailwind, Mobile = Flutter Android, Agent PC = .NET WPF. SEM
 harus berjalan di dalam Docker — JANGAN pernah jalankan npm/npx/node/psql/flutter/dotnet di host.
 
 Project ini sekarang **4 repo terpisah** (semua public, semua punya git sendiri):
-backend, frontend (berisi dokumentasi project), agent, mobile. Lihat bagian
-"Status repository" untuk checkout host masing-masing.
+backend, frontend (berisi dokumentasi project), agent, mobile. **Semuanya sudah berada
+dalam satu folder project** di `/home/warnet/docker/v3netbill/`. Lihat bagian
+"Status repository" untuk checkout masing-masing.
+
+Selain repo, ada dua skrip pembantu di root project: `dk` (dart) dan `fl` (flutter),
+keduanya menjalankan perintah di dalam container Flutter SDK.
 
 ## Aturan mutlak (harus selalu dipatuhi)
 
@@ -150,6 +154,21 @@ Logika bisnis yang sudah berjalan:
   memakai `socket.io-client` (sudah devDep) + `PrismaClient` untuk inspeksi DB.
   Hapus file test dari ./backend & container setelah selesai.
 - Selalu cek `docker compose logs v3netbill-backend` untuk 0 error.
+- Mobile (Flutter): tidak ada Flutter di host, jadi selalu lewat skrip di root project:
+  ```
+  cd /home/warnet/docker/v3netbill
+  ./fl analyze            # statis
+  ./fl test               # 21 test
+  ./fl build apk --release --dart-define=API_BASE_URL=https://v3netbill.bilmary.my.id/api \
+                                --dart-define=API_WS_URL=wss://v3netbill.bilmary.my.id/session
+  ./dk format lib test    # dart biasa
+  ```
+  `--dart-define` dua-duanya **wajib** saat build, kalau tidak build memakai default yang
+  kebetulan sama dengan produksi. Kalau build APK untuk produksi, lebih baik ambil dari
+  artifact CI (lihat bagian FASE 8) daripada build lokal.
+- Mobile (data nyata): dump jawaban API ke fixture JSON lalu pakai di widget test.
+  `test/fixture_accounts.json` berisi 97 akun asli dari server; ini yang duluan
+  terbukti menangkap bug `LocaleDataException`.
 
 ## Catatan migrasi
 
@@ -245,15 +264,45 @@ dan trigger hover mati diam-diam.
 ## FASE 8 — Mobile app (Flutter Android) ✅
 
 Repo keempat, terpisah: `git@github.com:41zz-2807/v3netbill-mobile.git` (public).
-Checkout di host: `/home/warnet/mobile/v3netbill-mobile` (**bukan** di dalam
-`/home/warnet/docker/v3netbill`). Build memakai image `mobiledevops/flutter-sdk-image:3.44.4`
-(10.7 GB) + cache mount `/home/warnet/cache/pub` & `/home/warnet/cache/gradle`. Tidak ada
-Flutter di host — semua lewat `docker run`.
+Checkout di host: `/home/warnet/docker/v3netbill/v3netbill-mobile` — sudah dipindahkan
+ke dalam satu folder project pada 27 Sep, sebelumnya di `/home/warnet/mobile/`.
+Build memakai image `mobiledevops/flutter-sdk-image:3.44.4` (10.7 GB) + cache mount
+`/home/warnet/cache/pub` & `/home/warnet/cache/gradle`. Tidak ada Flutter di host — semua
+lewat `docker run`.
 
-- **Fitur**: login + `flutter_secure_storage`, Dashboard/Home, PC, Voucher, Member, Transaksi,
-  Profile, Logout. Dark mode, status hijau/oranye/merah, bottom navigation, realtime Socket.IO.
+### Dua skrip pembantu di root project
+
+`dk` dan `fl` ada di `/home/warnet/docker/v3netbill/`, bukan di dalam repo (jadi tidak
+ikut ter-commit). Keduanya memanggil `docker run` dengan mount yang sama:
+
+```
+dk <args>                 -> dart, untuk analyze / test / perintah dart lain
+fl analyze|test|build ... -> flutter, mis. ./fl analyze
+```
+
+⚠️ **Kalau repo mobile dipindah lagi, dua skrip ini wajib ikut diperbarui** — keduanya
+hardcode `-v /home/warnet/docker/v3netbill/v3netbill-mobile:/app`. Tidak ada cron,
+systemd, atau container yang mengaitkan path itu, jadi selain `dk`/`fl` tidak ada lagi
+yang perlu disentuh.
+
+### Token GitHub
+
+Disimpan di `github-token.txt` di **root repo mobile**, izin `600`, dan sudah masuk
+`.gitignore` (baris 36). Repo ini public, jadi file itu **tidak boleh** pernah ikut
+commit. Pakai: `GH_TOKEN="$(cat github-token.txt)" gh ...`.
+
+- **Fitur**: login + `flutter_secure_storage`, Dashboard/Home, Voucher, Member, Profile, Logout.
+  Dark mode, status hijau/oranye/merah, bottom navigation 3 tab, realtime Socket.IO.
   PC: Start / **Akhiri Sesi** / Matikan. Akun: buat voucher & member, search, bulk select,
   Topup, Koreksi/Tarik, Revoke.
+- **Halaman PC dan halaman Transaksi sudah dihapus** (27 Sep). Semua PC sudah tampil di
+  dashboard, jadi tab PC hanya menduplikasi isi yang sama. Navigasi jadi Home / Voucher /
+  Profile. `lib/features/transactions/` dihapus seluruhnya.
+- **Heartbeat tidak lagi punya baris sendiri.** Sempat diganti jadi icon komputer kecil,
+  tapi itu salah karena kartu PC sudah punya icon komputer di sebelah kiri nama PC — jadi
+  ada dua icon dalam satu kartu. Sekarang heartbeat cuma terlihat dari **warna icon yang sudah
+  ada**: hijau kalau agent heartbeat < 30 detik, kembali ke warna status PC kalau sudah
+  lama tidak heartbeat (`Pc.heartbeatSehat` di `models/pc.dart`).
 - **Semua path URL wajib `/api`**: base URL sudah memuat `/api` di akhirnya
   (`api_config.dart`), jadi pemanggil cukup `'/pcs'`, bukan `'/api/pcs'`.
 - **Namespace WebSocket adalah `/session`, bukan `/socket.io`.** Ini kesalahan yang sudah
@@ -264,8 +313,29 @@ Flutter di host — semua lewat `docker run`.
   (butuh `pcId` + `agentToken`). Operator memakainya `dashboard:lock_pc`, yang sekaligus
   juga mengakhiri sesi. Event operator: `dashboard:subscribe`, `dashboard:start_pc`
   (payload `{pcId,kode}` — tanpa password), `dashboard:lock_pc`, `dashboard:shutdown_pc`.
+- **Kredensial sesi untuk member itu `nama`, bukan kode.** Backend mencari akun dari
+  `kodeUnik` dulu, lalu jatuh ke pencocokan `nama` (`session.service.ts:198-205`). Member
+  memang tidak punya `kodeUnik` sama sekali — data server menunjukkan 17 dari 17 member
+  punya kolom itu kosong. Jadi kalau membuat member lalu langsung memulai sesi, yang
+  dikirim adalah `nama`, bukan `kodeUnik`. Ini sudah diuji ke backend sungguhan.
 - **Animasi dashboard yang bergerak sendiri dihapus.** Untuk aplikasi billing, angka yang
   beranimasi tanpa sumber data = menampilkan info yang salah.
+
+### ⚠️ `intl` WAJIB diinisialisasi sebelum `runApp` (bug yang pernah ada)
+
+`Formatters` memakai `DateFormat('d MMM', 'id_ID')`, tapi paket `intl` **tidak** memuat
+data locale secara otomatis. Tanpa `await initializeDateFormatting('id_ID', null)` di
+`main()`, setiap pemakaian `DateFormat` melempar `LocaleDataException`.
+
+Akibatnya dashboard dan daftar voucher/member **tampil kosong tanpa pesan error apa pun**,
+karena setiap kartu gagal dibangun. Tombol aksi ikut hilang karena tidak ada kartu untuk
+dipilih. Nomor format (`rupiah`) dan `duration` tidak terpengaruh karena tidak butuh
+data locale — itu sebabnya bug ini sempat tidak ketahuan.
+
+Tes regresi ada di `test/accounts_page_test.dart` (memakai 97 akun nyata dari server
+sebagai fixture `test/fixture_accounts.json`) supaya masalah yang sama tidak muncul lagi
+tanpa terdeteksi.
+
 
 ### Build APK & GitHub Actions
 
@@ -398,6 +468,36 @@ Temuan dari **data nyata** (71 voucher, 9 sisa 0, 3 di antaranya `ACTIVE`):
    satu operasi, langsung `rm` file-nya, lalu `grep -rI` untuk memastikan tidak ada sisa
    di `/tmp/opencode`. Sesi ini menemukan `dl4.sh` berisi token rusak dari 2 hari
    sebelumnya — tidak sengaja, tapi bukti bahwa scan itu perlu.
+7. **"Fiturnya belum ada" dan "fiturnya ada tapi rusak" itu dua hal berbeda.** User
+   melaporkan halaman voucher/member tidak menampilkan daftar dan tidak ada tombol aksi.
+   Halaman itu **sudah ada** dari awal, tapi gagal total diam-diam karena
+   `LocaleDataException`. Dua cara menemukan ini:
+   - Jangan percaya kode yang "sudah dibaca". `accounts_page.dart` memang sudah
+     menampilkan daftar dan SelectionBar secara lengkap.
+   - **Render halamannya sungguhan dengan data nyata.** `test/accounts_page_test.dart`
+     memompa `AccountsPage` dengan 97 akun asli dari server, dan exception-nya langsung
+     terlihat. Fixture-nya disimpan sebagai `test/fixture_accounts.json`.
+   Widget test dengan data nyata juga menangkap hal yang tak terlihat dari kode saja:
+   mengetuk `Text` tidak selalu merambat ke `GestureDetector`, sementara mengetuk
+   `Checkbox` langsung bekerja.
+8. **Uji asumsi ke server, jangan ke asumsi sendiri.** Untuk fitur "buat member lalu mulai
+   sesi" saya menulis kode yang memakai `kodeUnik` untuk dua tipe akun. Baru dicoba ke
+   server, `POST /api/accounts/member` ternyata mengembalikan `kodeUnik` bernilai `null`.
+   Setelah dicek di DB: **17 dari 17 member punya kolom `kodeUnik` kosong**, jadi
+   `session.service.ts` mencari member lewat `nama`. Kalau tidak diuji ke server, alurnya
+   gagal total di tangan user. Pola yang sama terulang dua kali pada sesi ini: `rupiah`
+   dan `duration` aman, `dateShort` justru yang meledak. **Selalu panggil endpointnya
+   sekali dengan `curl` sebelum menulis kode yang bergantung pada bentuk jawabannya.**
+9. **Pindah lokasi repo: periksa dulu, baru `mv`.** Repo mobile dipindah dari
+   `/home/warnet/mobile/` ke dalam `/home/warnet/docker/v3netbill/`. Yang diperiksa
+   sebelum pindah: `df` dan `stat` untuk memastikan satu filesystem (kalau beda, `mv`
+   jadi salin lalu hapus, butuh 2x ruang disk sementara), `grep -rI` path lama di dalam
+   repo **dan** di luar (cron, systemd, `docker inspect`), `key.properties` (kalau
+   `storeFile`-nya absolut, signing langsung rusak), lalu checksum daftar file sebelum dan
+   sesudah. Hasilnya nol dependensi, kecuali dua skrip `dk` dan `fl` yang memang
+   hardcode path. Verifikasi akhir: `flutter build apk --release` dari path baru menghasilkan
+   APK **53.955.947 byte**, ukuran identik dengan artifact CI, dan tetap release-signed.
+
 
 
 
@@ -419,7 +519,7 @@ Temuan dari **data nyata** (71 voucher, 9 sisa 0, 3 di antaranya `ACTIVE`):
 
 ## Status repository & perubahan per 2026-09-27 (sesi terakhir)
 
-Tiga repo, tidak ada lagi repo root terpisah. **Dokumentasi project (`AGENTS.md`,
+Empat repo, tidak ada repo root terpisah. **Dokumentasi project (`AGENTS.md`,
 `CONVERSATION_LOG.md`, `docs/`, `docker-compose.yml`) berada di repo frontend ini.**
 
 | Repo | Isi | Remote | Visibilitas | Checkout di host |
@@ -427,7 +527,7 @@ Tiga repo, tidak ada lagi repo root terpisah. **Dokumentasi project (`AGENTS.md`
 | repo ini (frontend) | Dashboard React + dokumentasi project | `git@github.com:41zz-2807/v3netbill-frontend.git` | **PUBLIC** | `/home/warnet/docker/v3netbill/frontend` |
 | backend | API NestJS + Prisma | `git@github.com:41zz-2807/v3netbill-server.git` | **PUBLIC** | `/home/warnet/docker/v3netbill/backend` |
 | agent | Agent Client Windows (.NET) | `git@github.com:41zz-2807/v3netbill-agent.git` | **PUBLIC** | `/home/warnet/docker/v3netbill/v3NetbillAgent` |
-| mobile | Aplikasi Android (Flutter) | `git@github.com:41zz-2807/v3netbill-mobile.git` | **PUBLIC** | `/home/warnet/mobile/v3netbill-mobile` |
+| mobile | Aplikasi Android (Flutter) | `git@github.com:41zz-2807/v3netbill-mobile.git` | **PUBLIC** | `/home/warnet/docker/v3netbill/v3netbill-mobile` |
 
 Keempat repo **public** (dikonfirmasi via GitHub API). GitHub free tier hanya izinkan 1 repo
 private → dipakai untuk memindahkan repo yang paling sensitif (kandidat: backend).
@@ -436,20 +536,28 @@ Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
 
 ### Commit terakhir (27 Sep, sesi terakhir — semua ter-push)
 
-- **frontend** `39fa0f6` — link `Download APK (Android)` di card `Installer Aplikasi`
-  (`SettingsPage.tsx`), pakai `downloadAuth` (token sebagai query string). Build + lint
-  0 error, sudah live di domain.
+- **frontend** `01c419c` — dokumentasi sesi 27 Sep (FASE 8 mobile, distro APK via
+  Settings, pelajaran proses). Sebelumnya `39fa0f6` — link `Download APK (Android)` di
+  card `Installer Aplikasi` (`SettingsPage.tsx`), pakai `downloadAuth` (token sebagai query
+  string). Build + lint 0 error, sudah live di domain.
 - **backend** `308cd02` — endpoint `POST /api/settings/apk` (ADMIN, 200 MB) +
   `GET /api/settings/apk` (`res.download`), simpan ke `/data/apk/`, Setting `apk_meta`.
   (`e9e2635` sebelumnya: push konfigurasi OTP Telegram ke agent aktif.)
 - **agent** `e0c1908` — 3 commit sesi ini: stop sesi 1 klik, redesign overlay
   (login + mini panel), mini panel jadi ala music player (lingkaran = tombol
   stop). CI sukses, artifact `v3NetbillAgentSetup` 61.1 MB (run `36294859940`).
-- **mobile** `e910090` — workflow CI ditambah build **universal** (`ff366d8`) dan
-  `API_WS_URL` dikoreksi `/socket.io` → `/session`; `e910090` commit kosong untuk
-  memicu rebuild setelah 4 secret keystore dipasang. Run `36321151526` sukses,
-  artifact `v3netbill-apk-universal` 49.9 MB, dipakai untuk upload ke backend.
-  Commit inti aplikasi: `f9991b6` (fitur + perbaikan).
+- **mobile** `0615ef4` — sesi terakhir: heartbeat jadi warna icon PC yang sudah ada
+  (`9c8de73`), dan **perbaikan bug daftar voucher/member kosong** karena
+  `initializeDateFormatting` tidak pernah dipanggil. Sebelumnya `36c382d` (buat
+  voucher/member dari dialog Mulai Sesi), `e910090` + `ff366d8` (build universal di CI,
+  `API_WS_URL` dikoreksi ke `/session`). APK aktif di server:
+  `v3netbill-1790526912990.apk`, 53.955.947 byte, universal, release-signed `CN=v3Netbill`,
+  dari artifact run `36333233467`.
+- Repo mobile **dipindahkan** dari `/home/warnet/mobile/v3netbill-mobile` ke
+  `/home/warnet/docker/v3netbill/v3netbill-mobile` supaya semua dalam satu folder project.
+  Rename atomik (satu filesystem, `/dev/sda3`), 2968 file, checksum sebelum-sesudah sama,
+  tidak ada path absolut di dalam repo. Build release dari path baru menghasilkan APK
+  **53.955.947 byte** — ukuran identik dengan artifact CI, dan tetap release-signed.
 
 
 ### Temuan audit keamanan (26 Sep, sudah di-scan ke repo public)
@@ -492,8 +600,11 @@ untuk attacker yang menyisir.
   front-end. Belum dikerjakan.
 - **Pindah repo ke private / Gitea** — deferred oleh user. Kalau jadi dilakukan, jangan
   lupa set ulang 4 secret keystore APK.
-- **Rapi `/data/apk/`** — ada 2 APK lama (105 MB) selain yang aktif
-  (`v3netbill-1790515676761.apk`). Tidak mendesak, disk masih 66 GB kosong.
+- **Rapi `/data/apk/`** — ada 5 APK menumpuk (270 MB) selain yang aktif
+  (`v3netbill-1790526912990.apk`). Setiap upload tidak menghapus yang lama, jadi file
+  bertambah terus. Tidak mendesak, disk masih 71 GB kosong.
+- **`/home/warnet/mobile/`** — sekarang kosong setelah repo mobile dipindah ke dalam
+  `/home/warnet/docker/v3netbill/`. Boleh dihapus kalau mau.
 - **`/tmp/opencode/pw`** — sisa `node_modules` playwright-core (8.6 MB, owner `root`,
   hasil `npm i` di dalam container). Perlu `sudo rm -rf` manual. Tidak ada kredensial
   di dalamnya, hilang sendiri saat reboot.
