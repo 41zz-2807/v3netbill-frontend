@@ -181,6 +181,136 @@ Logika bisnis yang sudah berjalan:
   Commit terbaru `86a4b87`. Riwayat detail: `v3NetbillAgent/HANDOFF.md`.
 - Detail arsitektur & prosedur deploy: `v3NetbillAgent/README.md`.
 
+### Redesign UI Agent Client (27 Sep) ✅ `e0c1908`
+
+⚠️ **Penting: ada DUA kartu sesi, dan hanya satu yang pernah tampil.**
+`CountdownCard` (`MainWindow.xaml:36-70`) adalah **dead code** — satu-satunya baris kode
+yang menyentuhnya `MainWindow.xaml.cs:181` selalu `Collapsed`, dan kartu itu ada di dalam
+`ContentPanel` yang di-collapse saat sesi aktif. Isinya juga 100% statis tanpa binding.
+**Sudah dihapus di `c0e6852`.** Kartu yang benar-benar tampil saat sesi berjalan = `MiniPanel`.
+
+**Login card** (`MainWindow.xaml`, gaya Uiverse + aksen teal):
+- Card `#F21A1A22`, radius 20, padding `34,30`
+- Field bentuk pil (radius 23, tinggi 46) — bukan lebar tetap 280px + label 70px lagi
+- Ikon (Path Geometry) + caption kecil 11px di atas field
+- **Inset shadow**: WPF tidak punya inner shadow, dipakai `LinearGradientBrush`
+  `FieldInsetBrush` (gelap di atas → memudar ke bawah). Alternatif yang lebih akurat
+  adalah Border bersarang, tapi butuh 3-4 elemen.
+- Border field menyala teal saat `IsKeyboardFocusWithin`
+- `hover scale` dari CSS asal **sengaja tidak dipakai**: di layar lock, cursor masuk form
+  akan menggeser posisi field → risk klik keliru
+
+**Mini panel** (300px, gaya audio player):
+- **Lingkaran 72px = tombol stop sesi** (ikon kotak stop + label "STOP"). Tombol
+  "STOP SESI" yang terpisah sudah dihapus.
+- Countdown 46px dipindah ke bawah baris lingkaran+identitas supaya tetap terbaca dari jauh
+- Baris kanan lingkaran: `AKUN` (label 10px), `AkunLabel` (judul 16px),
+  `PcLabelText` (subjudul 12px) — diisi `PcId` dari registry via `MainWindow.SetPcLabel()`
+- Timeline 4px, ujung membulat lewat `Border` + `ClipToBounds`. **Template `ProgressBar`
+  bawaan sengaja tidak diganti** agar binding `ProgressPercent` dari server tetap andal.
+- **Warna timeline ikut sisa waktu** (properti baru di `SessionStateProxy.cs`):
+  | Ambang | Warna |
+  |---|---|
+  | `>= 60%` | hijau `#2FBF71` (`IsWaktuAman`) |
+  | `30% – 59%` | kuning `#F0B429` (`IsWaktuSedang`) |
+  | `< 30%` | merah `#FF5252` (`IsWaktuKritis`) |
+
+⚠️ **Jangan pernah pakai animasi dekoratif untuk progress bar.** CSS Uiverse memakai
+`scaleX(0→1)` selama 10 detik looping — itu **tidak terkait sisa waktu sama sekali**.
+Di aplikasi billing, bar yang bergerak sendiri adalah **kerugian nyata**: customer
+melihat bar menunjukkan "hampir habis" padahal masih 1 jam. Nilai bar harus selalu dari
+`ProgressPercent` server.
+
+**Akses mode teknisi disembunyikan**: tombol "Admin PIN" 110x36 diganti teks samar
+`maintenance` 11px `#45FFFFFF` di kiri bawah, tanpa bentuk tombol, tetap diklik membuka
+dialog PIN (`ShowPinDialog`, logikanya tidak diubah).
+
+⚠️ **WPF: `Background="Transparent"` TIDAK cukup untuk menghilangkan bentuk tombol.**
+Template bawaan (Aero2) punya trigger `IsMouseOver` **di dalam `ControlTemplate` itu
+sendiri** yang menggambar background terang. Harus dipasang `ControlTemplate` minimal
+(isi `ContentPresenter` saja) supaya tidak ada yang bisa menggambar. Field `Foreground`
+harus ditaruh di dalam `Style` — kalau ditulis sebagai atribut biasa, atribut itu menang
+dan trigger hover mati diam-diam.
+
+**Stop sesi 1 klik** (`9e0741f`): konfirmasi 2 langkah dihapus, field
+`_stopConfirmArmed` / `_stopConfirmAt` dihapus. Penjaga "pipe belum tersambung"
+**tetap dipertahankan** — itu kondisi teknis, bukan konfirmasi.
+
+## Menu header web — glass pill (27 Sep) ✅ `af4f250`
+
+- Dari Uiverse.io (mymiamo). Selector di-prefix `.navmenu` supaya tidak bentrok dengan
+  `.ui.dropdown .menu` yang dipakai `AccountsPage`.
+- **Bug di CSS sumber yang sudah diperbaiki:**
+  | Asli | Masalah |
+  |---|---|
+  | `transform: rotate(2.2)` | Tidak ada satuan `deg` → **tidak valid, diabaikan browser** |
+  | `rgba(255,255,255,90%)` | Alpha persen **tidak sah** di `rgba()` |
+  | `rgba(0,122,255,70%)` | Sama |
+  | `--glass-border` | Tidak pernah didefinisikan → border hilang |
+  | `--ease-spring` | Tidak pernah didefinisikan → timing jatuh ke default |
+  | `color` biru di hover | Teks biru di atas kaca biru, kontras rendah → diganti putih |
+- **Tombol Keluar masuk ke dalam pill** sebagai item terakhir + ikon logout, warna merah
+  lewat `.navmenu__exit`. Karena itu ia `<button>`, bukan `<a>`, dan **wajib dikecualikan
+  dari aturan tombol global** `html[data-ui-buttons="uiverse"] button:...` yang memakai
+  `border-radius: 1.5rem !important` + `background-image` gradient — kalau tidak, tombolnya
+  dapat latar navy di dalam pill kaca. Selektor `.navmenu` juga harus mencakup `button`,
+  bukan hanya `a`.
+- Brand di kiri: `v3netbill - {username}`.
+- **Mobile (< 1024px): hamburger + drawer DIHAPUS TOTAL.** Pill selalu tampil, label
+  disembunyikan jadi ikon saja. Padding vertikal 11px supaya tinggi area sentuh tetap
+  di atas 44px. Efek `rotate()` dimatikan lewat `@media (hover: none)`.
+- Lebar pill `max-width: 620px` (nilai Uiverse 520px tidak cukup untuk 7 item).
+
+## Audit UI/UX 27 Sep + perbaikan ✅ (4 file, belum commit)
+
+Diaudit dengan merender SPA-nya sungguhan (lihat "Kemampuan verifikasi visual").
+Temuan dari **data nyata** (71 voucher, 9 sisa 0, 3 di antaranya `ACTIVE`):
+
+1. **Label menu terpotong** (`Dash...`, `Trans...`, `Lapo...`) — `flex: 1 1 0` memaksa
+   semua item sama lebar dan ikut menyusut. Diubah ke `flex: 0 1 auto` **hanya di
+   `@media (min-width: 1024px)`**; di bawah itu tetap `flex: 1 1 0` supaya ikon evenly
+   membagi pill yang `w-full`. *User minta HP jangan terganggu.*
+2. **Nama event internal bocor ke user** — `logEventLabel()` jatuh ke `?? event` kalau
+   nama tidak ada di peta. Data nyata memakai `voucher:created_dashboard` yang **tidak ada**
+   di peta. Sekarang dipetakan: "Voucher Dibuat". Ditambah juga `pc_locked` / `pc_unlocked`
+   (peta lama hanya punya `pc_lock`, padahal `AGENTS.md` menyebut `pc_locked`).
+   "Sesi Mulai" → "Sesi Berjalan", "Sesi Stop" → "Sesi Berakhir".
+3. **Alasan stop diterjemahkan** lewat peta `STOP_REASON`: `habis` → "Waktu habis",
+   `manual` → "Dihentikan manual", `disconnect_timeout` → "Koneksi terputus".
+4. **`formatDuration`**: `H:MM:SS` (`2:00:00`) → `2j 00:00` supaya tidak terlihat seperti
+   dua format berbeda dalam satu kolom.
+5. **`formatWaktu`**: tahun dihilangkan (`27 Sep 05.17`), tapi **dikembalikan lagi kalau
+   bedanya tahun** — log retensi 30 hari, jadi aman, kecuali kalau melintasi pergantian tahun.
+6. **Voucher `ACTIVE` dengan sisa 0** — diberi label kecil "Habis" **di kolom waktu saja**.
+   ⚠️ Status **tidak** diubah ke `TERPAKAI`: berdasarkan `AGENTS.md`, session stop dengan
+   alasan `habis` sengaja me-reset `sisaWaktuDetik` ke 0 **tanpa** mengubah status —
+   itu siklus hidup akun di sisi server. Mengubahnya = perubahan logika bisnis backend.
+   Data mengonfirmasi 3 voucher itu memang sudah terpakai (`lastUsedAt` terisi).
+
+## Pelajaran proses (penting untuk sesi berikutnya)
+
+1. **Karakter asing nyasar di commit message — sudah 5 kali.** CJK, Korea, dan Rusia
+   muncul tanpa sengaja. Karena commit message masuk repo **public**, ini tidak boleh
+   terjadi.
+   **Prosedur wajib:** tulis pesan ke file terpisah → scan karakter non-ASCII dengan
+   skrip → **baru** `git commit`. Contoh:
+   ```bash
+   python3 -c "
+   t=open('/tmp/msg.txt').read()
+   s=[c for c in t if 0x2E80<=ord(c)<=0xFFEF or 0xAC00<=ord(c)<=0xD7AF]
+   print('bersih' if not s else sorted(set(s)))"
+   ```
+   Hal sama bisa terjadi di **komentar kode** — scan `src/` sebelum commit juga.
+2. **`git add -A src` menyapu pekerjaan lain yang belum di-commit.** Pernah ikut
+   membawa 4 file (SettingsPage 295 baris) dari sesi sebelumnya ke commit yang tidak
+   related. **Stage eksplisit per file**; kalau ada uncommitted lain, commit terpisah.
+3. **Jangan pernah menaruh file sensitif di `frontend/dist`.** Itu langsung publik tanpa
+   autentikasi (lihat bagian DEPLOYMENT). Screenshot yang memuat IP server / kode voucher
+   / riwayat sesi **tidak boleh** di-onlinekan tanpa peringatan eksplisit ke user lebih dulu.
+   Bila perlu, simpan di `/tmp` saja dan kirim lewat cara lain.
+4. **Verifikasi visual selalu mungkin** lewat Playwright image — jangan lagi bilang
+   "saya tidak bisa melihat tampilan" tanpa mencoba dulu. `curl` tidak cukup untuk SPA.
+
 ## Jejak aktivitas (ActivityLog) ✅
 
 - `GET /api/activity-log?limit&cursor` (paginate) dan `GET /api/activity-log/today`.
@@ -197,7 +327,7 @@ Logika bisnis yang sudah berjalan:
 - Batas hari bisnis: 23:30 WIB. Endpoint manual `POST /api/laporan/kirim-tutup-hari` (ADMIN).
 - Kredensial SMTP/Telegram hanya di `.env` — jangan ditulis ke dokumen.
 
-## Status repository & perubahan per 2026-09-26 (sesi terakhir)
+## Status repository & perubahan per 2026-09-27 (sesi terakhir)
 
 Tiga repo, tidak ada lagi repo root terpisah. **Dokumentasi project (`AGENTS.md`,
 `CONVERSATION_LOG.md`, `docs/`, `docker-compose.yml`) berada di repo frontend ini.**
@@ -212,15 +342,18 @@ Ketiga repo **public** (dikonfirmasi via GitHub API). GitHub free tier hanya izi
 private → dipakai untuk memindahkan repo yang paling sensitif (kandidat: backend).
 Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
 
-### Commit terakhir saat ini (semua sudah ter-push, `0/0` behind/ahead)
+### Commit terakhir (27 Sep, sesi terakhir — semua ter-push)
 
-- **frontend** `a2c2b35` — 8 commit sesi ini: popup form voucher/member & tambah PC, bulk action
-  akun (checkbox), paginasi 15 baris semua tabel, fix nomor halaman, timestamp installer,
-  card Tambah User + tombol hapus user.
-- **backend** `59bf2b4` — 2 commit sesi ini: `POST/GET /api/auth/users` (ADMIN only),
-  `DELETE /api/auth/users/:id` dengan 3 pengaman.
-- **agent** `fd62335` — default `ServerUrl` di wizard MSI jadi `http://localhost:3000`
-  (bukan placeholder domain). CI rebuild MSI sukses (run #40).
+- **frontend** `af4f250` — 5 commit sesi ini: redesign menu header jadi glass pill
+  (Uiverse), tombol Keluar masuk ke dalam pill, user login pindah ke sebelah nama
+  aplikasi, hamburger + drawer dihapus total, plus perbaikan UI/UX (lihat bagian
+  "Audit UI/UX 27 Sep").
+- **backend** `e9e2635` — push konfigurasi OTP Telegram ke agent aktif
+  (`session.gateway.ts:113` saat agent register, `settings.service.ts:99` saat
+  Setting diubah).
+- **agent** `e0c1908` — 3 commit sesi ini: stop sesi 1 klik, redesign overlay
+  (login + mini panel), mini panel jadi ala music player (lingkaran = tombol
+  stop). CI sukses, artifact `v3NetbillAgentSetup` 61.1 MB (run `36294859940`).
 
 ### Temuan audit keamanan (26 Sep, sudah di-scan ke repo public)
 
@@ -242,15 +375,114 @@ IP LAN host, port `3000` terbuka langsung di LAN, nama container `postgres-15`, 
 Cloudflare Tunnel. Tidak berbahaya pada jaringan privat, tapi sangat berguna
 untuk attacker yang menyisir.
 
-### Pending (per 26 Sep, sesi terakhir)
+### Pending (per 27 Sep, sesi terakhir)
 
-- **Upload MSI baru ke `/data/installer/`** — CI sudah jadi (run #40, artifact
+- **Upload MSI baru ke `/data/installer/`** — CI sudah jadi (run `36294859940`, artifact
   `v3NetbillAgentSetup` 61.1 MB, belum expired), tapi **belum di-download** karena download
   artifact GitHub selalu butuh token. Tombol "Unduh Installer" masih menunjuk MSI lama
-  (build 24 Sep) yang normal dipakai → **tidak mendesak**. Akses GitHub token tidak ada di
-  host ini (`gh` tidak terinstall, tidak ada `~/.netrc`/`gh-token`).
-- **Hapus fallback JWT** (lihat di atas) — belum dikerjakan.
+  → **tidak mendesak**. Akses GitHub token tidak ada di host ini (`gh` tidak terinstall,
+  tidak ada `~/.netrc`/`gh-token`).
+- **Hapus fallback JWT** (lihat di atas) — belum dikerjakan. Masih prioritas tinggi.
+- **Tampilan log aktivitas di HP** — kolom Detail terpotong di layar sempit. Usulan:
+  ubah tiap baris jadi kartu bertumpuk, atau pindahkan Detail ke bawah Event.
+  Belum dikerjakan, menunggu keputusan user.
+- **Status voucher sisa 0** — 3 voucher `ACTIVE` dengan sisa 0 ditampilkan dengan
+  label "Habis" (perkampilan tampilan saja). Kalau user mau statusnya benar-benar
+  jadi `TERPAKAI`, itu **perubahan logika bisnis di backend** + enum, bukan
+  front-end. Belum dikerjakan.
 - **Pindah repo ke private / Gitea** — deferred oleh user.
 - **Frontend jadi .apk Android** — sudah didiskusikan (Capacitor direkomendasikan), **belum
   dikerjakan**. Sifatnya opsional; cukupani dulu untuk akses HP. Tidak ada perubahan kode.
-- Fallback JWT di `AGENTS.md` versi lama hanya menyebut 1 file — sudah dikoreksi di atas.
+- **`/tmp/opencode/pw`** — sisa `node_modules` playwright-core (8.6 MB, owner `root`,
+  hasil `npm i` di dalam container). Perlu `sudo rm -rf` manual. Tidak ada kredensial
+  di dalamnya, hilang sendiri saat reboot.
+
+---
+
+## DEPLOYMENT — bagaimana situs benar-benar disajikan
+
+⚠️ **Bagian ini tidak ada di versi lama dan sering disalahpahami. Baca sebelum
+menaruh file apa pun.**
+
+Rantai: `https://v3netbill.bilmary.my.id` → `cloudflared` (host) → **`localhost:3000`**
+→ **container `v3netbill-backend`** (BUKAN frontend di 5173).
+
+- `backend/src/app.module.ts:23` — `ServeStaticModule.forRoot({ rootPath: join(process.cwd(),
+  'frontend-dist'), exclude: ['/api/{*splat}', '/session/{*splat}', '/socket.io/{*splat}'] })`.
+  Jadi backend menyajikan **bundle frontend yang sudah di-build**.
+- Bundle itu di-build di tahap pertama `backend/Dockerfile` (`COPY frontend/ ./` +
+  `npm run build`) lalu di-copy ke `/app/frontend-dist` pada tahap kedua.
+- Dev server Vite di 5173 **tidak** dipakai langsung oleh user. Mengubah kode frontend tidak
+  langsung terlihat di domain: harus `docker compose up -d --build v3netbill-backend`
+  supaya bundle di-build ulang.
+
+### ⚠️ `frontend/dist` adalah bind mount di KEDUA container
+
+```
+backend  : ./frontend/dist -> /app/frontend-dist
+frontend : ./frontend      -> /app          (jadi /app/dist = frontend/dist)
+```
+
+Konsekuensi penting:
+
+1. **File apa pun yang ditaruh di `frontend/dist` langsung bisa diakses publik tanpa
+   autentikasi** di `https://v3netbill.bilmary.my.id/<namafile>`. Hanya `/api`,
+   `/session`, `/socket.io` yang dikecualikan. Ini sempat dipakai untuk menyajikan
+   screenshot mockup berisi data produksi (IP server, kode voucher, riwayat sesi) —
+   **berbahaya**, sudah dihapus. Jangan ulangi tanpa peringatan eksplisit ke user.
+2. Isi host `/app/dist` **root-owned** (dibuat saat `docker build`), jadi user non-root
+   tidak bisa menulis. Pakai `docker cp` ke dalam container.
+3. File yang ditaruh manual **hilang** saat container di-recreate atau image di-rebuild.
+   Untuk aset permanen harus lewat `frontend/public/` lalu build ulang image (tetapi
+   berarti ikut masuk repo).
+
+### ⚠️ ServeStaticModule jatuh ke SPA fallback
+
+Path yang tidak ada **tidak** mengembalikan 404, melainkan `index.html` dengan
+**HTTP 200** dan `content-type: text/html`. Jadi jangan memakai kode HTTP untuk
+memeriksa apakah sebuah file publik benar-benar ada — periksa `content-type` atau
+ukuran body. Contoh setelah mockup dihapus: `/moc-1.png` tetap `HTTP 200` tapi isinya
+HTML 503 B, bukan PNG.
+
+## Kunci localStorage frontend
+
+ bukan `token`/`role`/`username` — kalau salah, inject token saat tes akan gagal diam-diam
+dan halaman jatuh ke login:
+
+```
+v3netbill_token      (src/lib/api.ts:16)
+v3netbill_role       (src/lib/api.ts:17)
+v3netbill_username   (src/lib/api.ts:18)
+```
+
+## Kemampuan verifikasi visual
+
+Host ini **tidak** punya browser, tapi ada image Playwright yang sudah ter-cache:
+
+```
+mcr.microsoft.com/playwright:v1.55.0-noble
+```
+
+Chromium ada di `/ms-playwright/chromium-1187/chrome-linux/chrome`. Cara termudah
+screenshot **halaman SPA** (React butuh JS, `curl` tidak cukup):
+
+```bash
+# 1. ambil token
+curl -s -X POST https://v3netbill.bilmary.my.id/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"admin123"}'
+# kunci respons: access_token  (BUKAN accessToken)
+
+# 2. inject localStorage + screenshot lewat playwright-core
+docker run --rm -v /tmp/shot:/w -v /tmp/pw:/pw --entrypoint node \
+  mcr.microsoft.com/playwright:v1.55.0-noble /w/cap.mjs
+```
+
+`playwright-core` perlu `npm i playwright-core@1.55.0` di dalam container (pakai Chromium
+yang sudah ada lewat `executablePath`, tidak perlu download browser). Cookie/localStorage
+per origin, jadi suntik lewat `addInitScript` **sebelum** `goto`.
+
+Stub HTML di `file://` tidak bisa menulis localStorage untuk origin https — itu sebabnya
+stub pertama gagal.
+
+
