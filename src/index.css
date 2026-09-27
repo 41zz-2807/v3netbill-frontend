@@ -580,11 +580,8 @@ html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):no
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --item-text: rgba(255, 255, 255, 0.92);
 
-  width: 100%;
-  /* 620px: dengan 7 item (6 rute + tombol Keluar untuk admin) menyisakan
-     ±79px per item. Label terpanjang "Transaksi" di 0.8rem butuh ±70px
-     termasuk padding, jadi masih muat tanpa ellipsis. Pada 560px (nilai
-     asli Uiverse) ruangnya cuma ±71px dan label itu sudah menyentuh batas. */
+  /* Lebar diatur lewat utility w-full / lg:w-auto di Layout.tsx supaya bisa
+     mengikuti mode ikon-saja di layar kecil. */
   max-width: 620px;
   backdrop-filter: blur(12px) saturate(180%) contrast(200%);
   -webkit-backdrop-filter: blur(12px) saturate(180%) contrast(200%);
@@ -701,6 +698,31 @@ html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):no
   .navmenu a:hover,
   .navmenu button:hover {
     transform: none;
+  }
+}
+
+/* ============================================================
+   Layar kecil (< 1024px): label disembunyikan, pill jadi ikon saja.
+   Alasan: tujuh item di layar 360px hanya menyisakan sekitar 38px per
+   item, sedangkan label terpanjang "Transaksi" butuh sekitar 70px.
+   Ikon 22px masih muat. Label penuh dikembalikan mulai 1024px.
+   ============================================================ */
+@media (max-width: 1023px) {
+  .navmenu {
+    gap: 4px;
+    padding: 6px;
+  }
+
+  .navmenu a,
+  .navmenu button {
+    /* Padding vertikal 11px menjaga tinggi area sentuh di atas 44px
+       meski isinya hanya ikon. */
+    padding: 11px 3px;
+  }
+
+  .navmenu a span,
+  .navmenu button span {
+    display: none;
   }
 }
 

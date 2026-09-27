@@ -1,6 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.tsx'
-import { useState } from 'react'
 
 // `label` = teks pendek yang tampil di dalam pill glass (harus muat satu baris
 // di max-width 560px dengan 6 item). `full` = nama lengkap, dipakai sebagai
@@ -69,13 +68,10 @@ function NavIcon({ d }: { d: string }) {
 
 function Layout() {
   const { role, username, logout } = useAuth()
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const items: NavItem[] = navItems.filter(
     (i) => i.to !== '/settings' || role === 'ADMIN',
   )
-
-  const closeMobileMenu = () => setMobileMenuOpen(false)
 
   return (
     // overflow-x-clip: halaman TIDAK boleh bisa di-scroll ke samping di HP. Card & tabel
@@ -91,9 +87,10 @@ function Layout() {
             <span className="font-semibold text-slate-200">{username}</span>
           </div>
 
-          {/* Menu didorong ke kanan oleh justify-between, jadi tepi kanannya
-              rata dengan konten body: header dan body sama-sama max-w-6xl px-4. */}
-          <nav className="navmenu hidden lg:flex" aria-label="Menu utama">
+          {/* Menu selalu tampil, termasuk di HP. Lebarnya w-full di bawah lg
+              supaya mengisi baris sendiri, lalu w-auto agar nempel kanan di
+              desktop dan tepi kanannya rata dengan konten body. */}
+          <nav className="navmenu w-full lg:w-auto" aria-label="Menu utama">
             {items.map((item) => (
               <NavLink
                 key={item.to}
@@ -119,66 +116,8 @@ function Layout() {
               <span>Keluar</span>
             </button>
           </nav>
-
-          {/* Mobile hamburger. Di desktop tersembunyi, jadi justify-between
-              tetap menyisakan dua anak: brand di kiri, pill di kanan. */}
-          <button
-            type="button"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="lg:hidden rounded-md bg-slate-700 px-3 py-2 text-slate-100 hover:bg-slate-600"
-            aria-label={mobileMenuOpen ? 'Tutup menu' : 'Buka menu'}
-            aria-expanded={mobileMenuOpen}
-          >
-            {mobileMenuOpen ? (
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            ) : (
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            )}
-          </button>
         </div>
       </header>
-
-      {/* Mobile nav drawer - overlay */}
-      {mobileMenuOpen && (
-        <>
-          <div
-            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-            onClick={closeMobileMenu}
-            aria-hidden="true"
-          />
-          <div className="fixed inset-y-0 right-0 w-64 bg-slate-900 z-50 lg:hidden shadow-xl">
-            <div className="flex flex-col p-4 space-y-2">
-              {items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.to === '/'}
-                  onClick={closeMobileMenu}
-                  className={({ isActive }) =>
-                    `rounded-md px-3 py-2 text-base ${
-                      isActive ? 'bg-slate-700 text-white' : 'text-slate-200 hover:bg-slate-800'
-                    }`
-                  }
-                >
-                  {item.full}
-                </NavLink>
-              ))}
-
-              <button
-                type="button"
-                onClick={logout}
-                className="rounded-md px-3 py-2 text-left text-base text-red-400 hover:bg-slate-800"
-              >
-                Keluar
-              </button>
-            </div>
-          </div>
-        </>
-      )}
 
       <main className="mx-auto max-w-6xl px-4 py-6">
         <Outlet />
