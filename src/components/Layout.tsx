@@ -2,30 +2,101 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.tsx'
 import { useState } from 'react'
 
+// `label` = teks pendek yang tampil di dalam pill glass (harus muat satu baris
+// di max-width 560px dengan 6 item). `full` = nama lengkap, dipakai sebagai
+// title tooltip + aria-label supaya tetap terbaca maksudnya.
 const navItems = [
-  { to: '/', label: 'Dashboard' },
-  { to: '/pcs', label: 'PC Management' },
-  { to: '/accounts', label: 'Voucher & Member' },
-  { to: '/transactions', label: 'Transaksi' },
-  { to: '/reports', label: 'Laporan' },
+  {
+    to: '/',
+    label: 'Dashboard',
+    full: 'Dashboard',
+    icon: 'M3 12l9-9 9 9M5 10v10h5v-6h4v6h5V10',
+  },
+  {
+    to: '/pcs',
+    label: 'PC',
+    full: 'PC Management',
+    icon: 'M4 4h16v12H4zM9 20h6M12 16v4',
+  },
+  {
+    to: '/accounts',
+    label: 'Voucher',
+    full: 'Voucher & Member',
+    icon: 'M3 7h18v10H3zM3 11h18M7 15h4',
+  },
+  {
+    to: '/transactions',
+    label: 'Transaksi',
+    full: 'Transaksi',
+    icon: 'M4 7h13l-3-3M20 17H7l3 3',
+  },
+  {
+    to: '/reports',
+    label: 'Laporan',
+    full: 'Laporan',
+    icon: 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7',
+  },
+  {
+    to: '/settings',
+    label: 'Setting',
+    full: 'Pengaturan',
+    icon: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1A1.7 1.7 0 008 19.4a1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H2a2 2 0 110-4h.1A1.7 1.7 0 004.6 8a1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V2a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H22a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z',
+  },
 ]
+
+type NavItem = { to: string; label: string; full: string; icon: string }
+
+function NavIcon({ d }: { d: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={d} />
+    </svg>
+  )
+}
 
 function Layout() {
   const { role, username, logout } = useAuth()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
-  const items = [...navItems]
-  if (role === 'ADMIN') {
-    items.push({ to: '/settings', label: 'Pengaturan' })
-  }
+  const items: NavItem[] = navItems.filter(
+    (i) => i.to !== '/settings' || role === 'ADMIN',
+  )
 
   const closeMobileMenu = () => setMobileMenuOpen(false)
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <nav className="bg-slate-900 text-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <div className="text-lg font-bold">v3Netbill</div>
+    // overflow-x-clip: halaman TIDAK boleh bisa di-scroll ke samping di HP. Card & tabel
+    // yang lebar tetap bisa di-scroll di dalam lewat `overflow-x-auto` masing-masing.
+    <div className="min-h-screen overflow-x-clip bg-gray-100">
+      <header className="bg-[#1b233d]">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <div className="text-lg font-bold text-white">v3Netbill</div>
+
+          {/* Menu desktop: pill glass. Di bawah md disembunyikan, pakai drawer. */}
+          <nav className="navmenu hidden md:flex" aria-label="Menu utama">
+            {items.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.to === '/'}
+                title={item.full}
+                aria-label={item.full}
+                className={({ isActive }) => (isActive ? 'active' : undefined)}
+              >
+                <NavIcon d={item.icon} />
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
+          </nav>
+
           <div className="flex items-center gap-2">
             {/* Mobile hamburger button */}
             <button
@@ -46,64 +117,47 @@ function Layout() {
               )}
             </button>
 
-            {/* Desktop nav - hidden on mobile */}
-            <div className="hidden gap-1 md:flex">
-              {items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.to === '/'}
-                  className={({ isActive }) =>
-                    `rounded-md px-3 py-1.5 text-sm ${
-                      isActive ? 'bg-slate-700 text-white' : 'text-slate-300 hover:bg-slate-800'
-                    }`
-                  }
-                >
-                  {item.label}
-                </NavLink>
-              ))}
-            </div>
-
-            {/* Mobile nav drawer - overlay */}
-            {mobileMenuOpen && (
-              <>
-                <div
-                  className="fixed inset-0 bg-black/50 z-40 md:hidden"
-                  onClick={closeMobileMenu}
-                  aria-hidden="true"
-                />
-                <div className="fixed inset-y-0 right-0 w-64 bg-slate-900 z-50 md:hidden shadow-xl">
-                  <div className="flex flex-col p-4 space-y-2">
-                    {items.map((item) => (
-                      <NavLink
-                        key={item.to}
-                        to={item.to}
-                        end={item.to === '/'}
-                        onClick={closeMobileMenu}
-                        className={({ isActive }) =>
-                          `rounded-md px-3 py-2 text-base ${
-                            isActive ? 'bg-slate-700 text-white' : 'text-slate-200 hover:bg-slate-800'
-                          }`
-                        }
-                      >
-                        {item.label}
-                      </NavLink>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-
             <button
               type="button"
               onClick={logout}
-              className="rounded-md bg-slate-700 px-3 py-1.5 text-sm hover:bg-slate-600"
+              className="rounded-md bg-slate-700 px-3 py-1.5 text-sm text-white hover:bg-slate-600"
             >
               {username} ({role}) — Keluar
             </button>
           </div>
         </div>
-      </nav>
+      </header>
+
+      {/* Mobile nav drawer - overlay */}
+      {mobileMenuOpen && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/50 z-40 md:hidden"
+            onClick={closeMobileMenu}
+            aria-hidden="true"
+          />
+          <div className="fixed inset-y-0 right-0 w-64 bg-slate-900 z-50 md:hidden shadow-xl">
+            <div className="flex flex-col p-4 space-y-2">
+              {items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === '/'}
+                  onClick={closeMobileMenu}
+                  className={({ isActive }) =>
+                    `rounded-md px-3 py-2 text-base ${
+                      isActive ? 'bg-slate-700 text-white' : 'text-slate-200 hover:bg-slate-800'
+                    }`
+                  }
+                >
+                  {item.full}
+                </NavLink>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
       <main className="mx-auto max-w-6xl px-4 py-6">
         <Outlet />
       </main>
