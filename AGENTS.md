@@ -126,6 +126,15 @@ Logika bisnis yang sudah berjalan:
   koneksi agent (`session.gateway.ts#alamatIp`), TIDAK diisi manual lagi di form PC.
   Urutan sumber IP: `ip dari agent` → `cf-connecting-ip` → `x-real-ip` → `x-forwarded-for` →
   `handshake.address`. Detail & batasan topologi: `docs/DETEKSI-IP.md`.
+- **`Pc.status` di database TIDAK PERNAH berisi `OFFLINE`.** Kolom itu hanya ditulis
+  `ACTIVE`/`IDLE` di `registerPc` dan saat sesi start/stop, jadi PC yang dimatikan
+  akan menampilkan status lamanya selamanya. Status yang ditampilkan selalu dihitung
+  ulang dari `lastHeartbeatAt` lewat `statusPcEfektif()` di `backend/src/pc/pc-status.ts`,
+  dipakai bersama oleh `GET /api/pcs` (mobile) dan `getDashboardData()` (dashboard web).
+  `lastHeartbeatAt: null` juga berarti OFFLINE, bukan IDLE. Ambang **30 detik** mengikuti
+  `HEARTBEAT_INTERVAL_DETIK = 15` di agent (`Agent.Core/ServerConnection.cs:31`).
+  `SessionService.checkPcOffline()` tiap 10 detik menulis OFFLINE ke DB lalu broadcast,
+  karena `broadcastPcUpdate()` sebelumnya hanya jalan saat register/start/stop.
 
 ## Status fase
 
