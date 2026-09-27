@@ -174,7 +174,7 @@ export default function PcPage() {
                   agentToken dipakai agent untuk konek ke server. Salin sebelum
                   menutup.
                 </p>
-                <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={() => void copyToClipboard(created.agentToken, 'agentToken')}

@@ -72,8 +72,8 @@ function rupiahCompact(n: number): string {
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md bg-slate-50 p-3">
-      <div className="text-2xl font-bold tabular-nums text-slate-900">{value}</div>
+    <div className="min-w-0 rounded-md bg-slate-50 p-3">
+      <div className="text-2xl font-bold tabular-nums text-slate-900 break-words">{value}</div>
       <div className="mt-1 text-xs text-slate-500">{label}</div>
     </div>
   )

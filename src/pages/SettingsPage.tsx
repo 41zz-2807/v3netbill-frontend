@@ -368,7 +368,7 @@ export default function SettingsPage() {
       )}
 
       <div className="grid gap-5 lg:grid-cols-3">
-        <section className="flex flex-col rounded-lg border border-slate-200 bg-white p-4">
+        <section className="flex min-w-0 flex-col rounded-lg border border-slate-200 bg-white p-4">
           <h2 className="mb-3 font-semibold text-slate-800">Tarif & Kebijakan</h2>
           <label className="block">
             <span className="mb-1 block text-sm text-slate-600">Harga per Menit (Rp)</span>
@@ -410,8 +410,12 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        <section className="flex flex-col rounded-lg border border-slate-200 bg-white p-4">
-          <h2 className="mb-3 font-semibold text-slate-800">PIN Uninstall Agent</h2>
+        <section className="flex min-w-0 flex-col rounded-lg border border-slate-200 bg-white p-4">
+          <h2 className="mb-3 font-semibold text-slate-800">Akses Agent</h2>
+
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            PIN Uninstall
+          </h3>
           <input
             type="password"
             placeholder="PIN (contoh: 2468)"
@@ -423,45 +427,159 @@ export default function SettingsPage() {
             type="button"
             onClick={submitPin}
             disabled={busy !== null}
-            className="mt-3 w-full rounded-md bg-slate-200 px-4 py-2 text-sm text-slate-800 hover:bg-slate-300 disabled:opacity-50"
+            className="mt-2 self-start rounded-md bg-slate-200 px-4 py-2 text-sm text-slate-800 hover:bg-slate-300 disabled:opacity-50"
           >
             {busy === 'pin' ? 'Menyimpan...' : 'Simpan PIN'}
           </button>
-          {pinMsg && (
-            <div className="mt-2 text-sm text-green-700">{pinMsg}</div>
-          )}
+          {pinMsg && <div className="mt-2 text-sm text-green-700">{pinMsg}</div>}
+
+          <div className="mt-5 border-t border-slate-100 pt-4">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              OTP Telegram
+            </h3>
+            <p className="mb-3 text-xs text-slate-500">
+              Untuk membuka layar lock saat mode maintenance. Kode dikirim ke Telegram,
+              berlaku 5 menit, dan hanya bisa dipakai sekali.
+            </p>
+
+            <label className="block">
+              <span className="mb-1 block text-sm text-slate-600">Bot Token</span>
+              <input
+                type="password"
+                value={otpToken}
+                onChange={(e) => setOtpToken(e.target.value)}
+                placeholder={otpTerisi ? 'Sudah tersimpan — isi lagi untuk mengganti' : '123456789:AA...'}
+                autoComplete="off"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
+
+            <label className="mt-2 block">
+              <span className="mb-1 block text-sm text-slate-600">Chat ID</span>
+              <input
+                value={otpChatId}
+                onChange={(e) => setOtpChatId(e.target.value)}
+                placeholder="Contoh: 123456789"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void saveOtp(false)}
+                disabled={busy !== null || !otpToken.trim() || !otpChatId.trim()}
+                className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
+              >
+                {busy === 'otp' ? 'Menyimpan...' : 'Simpan & Kirim'}
+              </button>
+              {otpTerisi && (
+                <button
+                  type="button"
+                  onClick={() => void saveOtp(true)}
+                  disabled={busy !== null}
+                  className="rounded-md bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  Matikan
+                </button>
+              )}
+            </div>
+
+            <p className="mt-3 text-xs text-slate-500">
+              {otpTerisi
+                ? 'Status: aktif. Config tersimpan di tiap PC, jadi OTP tetap terkirim walau server mati.'
+                : 'Status: tidak aktif. Agent memakai PIN emergency bawaan (123456).'}
+            </p>
+            {otpMsg && <div className="mt-2 text-sm text-green-700">{otpMsg}</div>}
+          </div>
         </section>
 
-        <section className="flex flex-col rounded-lg border border-slate-200 bg-white p-4">
-          <h2 className="mb-3 font-semibold text-slate-800">Lock Screen</h2>
-          <input
-            ref={wallRef}
-            type="file"
-            accept=".jpg,.jpeg,.png"
-            className="hidden"
-            onChange={(e) => void onWallpaper(e.target.files?.[0])}
-          />
-          {wallFname ? (
-            <p className="mb-3 truncate rounded-md bg-slate-50 p-2 text-xs text-slate-700">
-              Wallpaper aktif: <span className="font-medium">{wallFname}</span>
-            </p>
+        <section className="flex min-w-0 flex-col rounded-lg border border-slate-200 bg-white p-4">
+          <h2 className="mb-3 font-semibold text-slate-800">Installer Aplikasi</h2>
+          {installed ? (
+            <div className="mb-3 rounded-md bg-slate-50 p-2 text-xs text-slate-700">
+              <div className="truncate">
+                <span className="font-medium">{installed.filename}</span> ·{' '}
+                {formatBytes(installed.sizeBytes)}
+              </div>
+              {adaTanggal(installed.uploadedAt) && (
+                <div className="mt-0.5 text-slate-500">
+                  Diunggah {formatDateIndo(installed.uploadedAt)}
+                </div>
+              )}
+            </div>
           ) : (
-            <p className="mb-3 text-xs text-slate-500">Belum ada wallpaper terupload.</p>
+            <p className="mb-3 text-xs text-slate-500">Belum ada installer terupload.</p>
           )}
-          <button
-            type="button"
-            onClick={() => wallRef.current?.click()}
-            disabled={busy !== null}
-            className="mt-auto w-full rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
-          >
-            {busy === 'wallpaper' ? 'Mengunggah...' : 'Upload Wallpaper'}
-          </button>
-          <p className="mt-2 text-xs text-slate-500">Format .jpg/.jpeg/.png, maks 10 MB.</p>
+          <input
+            ref={installerRef}
+            type="file"
+            accept=".exe,.msi"
+            className="hidden"
+            onChange={(e) => void onInstaller(e.target.files?.[0])}
+          />
+          <div className="mt-auto flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => installerRef.current?.click()}
+              disabled={busy !== null}
+              className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
+            >
+              {busy === 'installer' ? 'Mengunggah...' : 'Upload (.exe/.msi, maks 200 MB)'}
+            </button>
+            {installed && (
+              <button
+                type="button"
+                onClick={() => void run('download', async () => {
+                  try {
+                    const fname = installed?.filename ?? 'v3netbill-installer.msi'
+                    await downloadAuth('/settings/installer', fname)
+                    setMsg('Installer diunduh')
+                  } catch (e) {
+                    setErr(e instanceof Error ? e.message : String(e))
+                  }
+                })}
+                disabled={busy !== null}
+                className="rounded-md bg-slate-200 px-4 py-2 text-sm text-slate-800 hover:bg-slate-300 disabled:opacity-50"
+              >
+                {busy === 'download' ? 'Mengunduh...' : 'Unduh Installer'}
+              </button>
+            )}
+          </div>
+
+          <div className="mt-5 border-t border-slate-100 pt-4">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Lock Screen
+            </h3>
+            <input
+              ref={wallRef}
+              type="file"
+              accept=".jpg,.jpeg,.png"
+              className="hidden"
+              onChange={(e) => void onWallpaper(e.target.files?.[0])}
+            />
+            {wallFname ? (
+              <p className="mb-2 truncate rounded-md bg-slate-50 p-2 text-xs text-slate-700">
+                Aktif: <span className="font-medium">{wallFname}</span>
+              </p>
+            ) : (
+              <p className="mb-2 text-xs text-slate-500">Belum ada wallpaper terupload.</p>
+            )}
+            <button
+              type="button"
+              onClick={() => wallRef.current?.click()}
+              disabled={busy !== null}
+              className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
+            >
+              {busy === 'wallpaper' ? 'Mengunggah...' : 'Upload Wallpaper'}
+            </button>
+            <p className="mt-2 text-xs text-slate-500">Format .jpg/.jpeg/.png, maks 10 MB.</p>
+          </div>
         </section>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-3">
-        <section className="flex flex-col rounded-lg border border-slate-200 bg-white p-4">
+      <div className="grid gap-5 lg:grid-cols-2">
+        <section className="flex min-w-0 flex-col rounded-lg border border-slate-200 bg-white p-4">
           <h2 className="mb-3 font-semibold text-slate-800">Tambah User</h2>
           <input
             type="text"
@@ -561,7 +679,7 @@ export default function SettingsPage() {
           )}
         </section>
 
-        <section className="flex flex-col rounded-lg border border-slate-200 bg-white p-4">
+        <section className="flex min-w-0 flex-col rounded-lg border border-slate-200 bg-white p-4">
           <h2 className="mb-3 font-semibold text-slate-800">Ganti Kata Sandi</h2>
           <input
             type="password"
@@ -587,117 +705,6 @@ export default function SettingsPage() {
           </button>
         </section>
 
-        <section className="flex flex-col rounded-lg border border-slate-200 bg-white p-4">
-          <h2 className="mb-3 font-semibold text-slate-800">Installer Aplikasi</h2>
-          {installed ? (
-            <div className="mb-3 rounded-md bg-slate-50 p-2 text-xs text-slate-700">
-              <div className="truncate">
-                <span className="font-medium">{installed.filename}</span> ·{' '}
-                {formatBytes(installed.sizeBytes)}
-              </div>
-              {adaTanggal(installed.uploadedAt) && (
-                <div className="mt-0.5 text-slate-500">
-                  Diunggah {formatDateIndo(installed.uploadedAt)}
-                </div>
-              )}
-            </div>
-          ) : (
-            <p className="mb-3 text-xs text-slate-500">Belum ada installer terupload.</p>
-          )}
-          <input
-            ref={installerRef}
-            type="file"
-            accept=".exe,.msi"
-            className="hidden"
-            onChange={(e) => void onInstaller(e.target.files?.[0])}
-          />
-          <div className="mt-auto flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={() => installerRef.current?.click()}
-              disabled={busy !== null}
-              className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
-            >
-              {busy === 'installer' ? 'Mengunggah...' : 'Upload (.exe/.msi, maks 200 MB)'}
-            </button>
-            {installed && (
-              <button
-                type="button"
-                onClick={() => void run('download', async () => {
-                  try {
-                    const fname = installed?.filename ?? 'v3netbill-installer.msi'
-                    await downloadAuth('/settings/installer', fname)
-                    setMsg('Installer diunduh')
-                  } catch (e) {
-                    setErr(e instanceof Error ? e.message : String(e))
-                  }
-                })}
-                disabled={busy !== null}
-                className="rounded-md bg-slate-200 px-4 py-2 text-sm text-slate-800 hover:bg-slate-300 disabled:opacity-50"
-              >
-                {busy === 'download' ? 'Mengunduh...' : 'Unduh Installer'}
-              </button>
-            )}
-          </div>
-        </section>
-
-        <section className="flex flex-col rounded-lg border border-slate-200 bg-white p-4">
-          <h2 className="mb-3 font-semibold text-slate-800">OTP Telegram</h2>
-          <p className="mb-3 text-xs text-slate-500">
-            Dipakai untuk membuka layar lock saat mode maintenance. Kode OTP dikirim ke
-            Telegram, berlaku 5 menit, dan hanya bisa dipakai sekali.
-          </p>
-
-          <label className="block">
-            <span className="mb-1 block text-sm text-slate-600">Bot Token</span>
-            <input
-              type="password"
-              value={otpToken}
-              onChange={(e) => setOtpToken(e.target.value)}
-              placeholder={otpTerisi ? 'Sudah tersimpan — isi lagi untuk mengganti' : '123456789:AA...'}
-              autoComplete="off"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="mt-3 block">
-            <span className="mb-1 block text-sm text-slate-600">Chat ID</span>
-            <input
-              value={otpChatId}
-              onChange={(e) => setOtpChatId(e.target.value)}
-              placeholder="Contoh: 123456789"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void saveOtp(false)}
-              disabled={busy !== null || !otpToken.trim() || !otpChatId.trim()}
-              className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
-            >
-              {busy === 'otp' ? 'Menyimpan...' : 'Simpan & Kirim ke Agent'}
-            </button>
-            {otpTerisi && (
-              <button
-                type="button"
-                onClick={() => void saveOtp(true)}
-                disabled={busy !== null}
-                className="rounded-md bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-50"
-              >
-                Matikan OTP
-              </button>
-            )}
-          </div>
-
-          <p className="mt-3 text-xs text-slate-500">
-            {otpTerisi
-              ? 'Status: aktif. Config tersimpan di tiap PC, jadi OTP tetap terkirim walau server mati.'
-              : 'Status: tidak aktif. Agent memakai PIN emergency bawaan (123456).'}
-          </p>
-          {otpMsg && <div className="mt-2 text-sm text-green-700">{otpMsg}</div>}
-        </section>
       </div>
 
       <section className="rounded-lg border border-slate-200 bg-white p-4">
@@ -718,8 +725,8 @@ export default function SettingsPage() {
           )}
         </div>
         {backups.length > 0 ? (
-          <div className="mt-3 rounded-md border border-slate-200">
-            <table className="w-full text-sm">
+          <div className="mt-3 overflow-x-auto rounded-md border border-slate-200">
+            <table className="w-full min-w-max text-sm">
               <thead className="bg-slate-100 text-left text-slate-700">
                 <tr>
                   <th className="px-3 py-2 font-medium">Nama File</th>

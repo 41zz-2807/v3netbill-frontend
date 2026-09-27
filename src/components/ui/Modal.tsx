@@ -31,7 +31,11 @@ export function Modal({ open, onClose, children, locked = false, label }: ModalP
         role="dialog"
         aria-modal="true"
         aria-label={label}
-        className="w-full max-w-fit"
+        // w-full + max-w-fit: modal selebar isinya, tapi tidak pernah melebihi lebar
+        // induk (backdrop yg sudah punya p-4) — jadi aman di layar HP.
+        // max-h + overflow-y: isi yang tinggi (mis. form panjang) bisa di-scroll
+        // di dalam modal, bukan membuat halaman ikut memanjang.
+        className="max-h-[90vh] w-full max-w-fit overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {children}
