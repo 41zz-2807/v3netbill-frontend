@@ -52,6 +52,7 @@
   width: 100%;
   font-weight: bold;
   background: linear-gradient(45deg, rgb(16, 137, 211) 0%, rgb(18, 177, 209) 100%);
+  background-color: rgb(16, 137, 211);
   color: white;
   padding-block: 15px;
   margin: 20px auto;
@@ -512,10 +513,14 @@
    Rollback: hapus atribut data-ui-buttons="uiverse" di index.html
    (atau hapus blok CSS ini). Tidak mengubah file komponen.
    Warna fill hover = var(--btn-clr), default navy #1b233d.
-  Dikecualikan: button.uui-card__act (tombol aksi kartu PC dashboard)
-   karena memakai warna semantik sendiri — hijau/kuning/merah.
+   Dikecualikan:
+     - button.uui-card__act (tombol aksi kartu PC dashboard) — warna semantik
+       sendiri, hijau/kuning/merah.
+     - button.login-button (tombol Sign In) — punya desain sendiri (gradient biru
+       + teks putih). Tanpa pengecualian ini, background-image uiverse menimpa
+       gradient-nya sehingga teks putih jadi tidak terlihat saat tidak di-hover.
    ============================================================ */
-html[data-ui-buttons="uiverse"] button:not(.uui-card__act) {
+html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button) {
   position: relative;
   line-height: 1;
   border-radius: 1.5rem !important;
@@ -535,12 +540,12 @@ html[data-ui-buttons="uiverse"] button:not(.uui-card__act) {
   transition: background-position 0.3s ease, color 0.2s ease;
 }
 
-html[data-ui-buttons="uiverse"] button:not(.uui-card__act):hover {
+html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):hover {
   background-position: 0 0;
   color: #ffffff !important;
 }
 
-html[data-ui-buttons="uiverse"] button:not(.uui-card__act):disabled {
+html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):disabled {
   background-position: 100% 0;
 }
 
