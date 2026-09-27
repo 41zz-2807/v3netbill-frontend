@@ -83,10 +83,17 @@ function Layout() {
     <div className="min-h-screen overflow-x-clip bg-gray-100">
       <header className="bg-[#1b233d]">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <div className="text-lg font-bold text-white">v3Netbill</div>
+          {/* Identitas pindah ke sebelah nama aplikasi. Strip pemisah supaya
+              "v3netbill" dan nama user tidak menyatu jadi satu kata. */}
+          <div className="text-lg font-bold text-white">
+            v3netbill
+            <span className="mx-1.5 font-normal text-slate-400">-</span>
+            <span className="font-semibold text-slate-200">{username}</span>
+          </div>
 
-          {/* Menu desktop: pill glass. Di bawah md disembunyikan, pakai drawer. */}
-          <nav className="navmenu hidden md:flex" aria-label="Menu utama">
+          {/* Menu didorong ke kanan oleh justify-between, jadi tepi kanannya
+              rata dengan konten body: header dan body sama-sama max-w-6xl px-4. */}
+          <nav className="navmenu hidden lg:flex" aria-label="Menu utama">
             {items.map((item) => (
               <NavLink
                 key={item.to}
@@ -113,31 +120,25 @@ function Layout() {
             </button>
           </nav>
 
-          <div className="flex items-center gap-2">
-            {/* Mobile hamburger button */}
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden rounded-md bg-slate-700 px-3 py-2 text-slate-100 hover:bg-slate-600"
-              aria-label={mobileMenuOpen ? 'Tutup menu' : 'Buka menu'}
-              aria-expanded={mobileMenuOpen}
-            >
-              {mobileMenuOpen ? (
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              ) : (
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              )}
-            </button>
-
-            {/* Chip identitas — aksi keluar sudah pindah ke dalam pill */}
-            <span className="rounded-md bg-slate-700 px-3 py-1.5 text-sm text-white">
-              {username} ({role})
-            </span>
-          </div>
+          {/* Mobile hamburger. Di desktop tersembunyi, jadi justify-between
+              tetap menyisakan dua anak: brand di kiri, pill di kanan. */}
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="lg:hidden rounded-md bg-slate-700 px-3 py-2 text-slate-100 hover:bg-slate-600"
+            aria-label={mobileMenuOpen ? 'Tutup menu' : 'Buka menu'}
+            aria-expanded={mobileMenuOpen}
+          >
+            {mobileMenuOpen ? (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            )}
+          </button>
         </div>
       </header>
 
@@ -145,11 +146,11 @@ function Layout() {
       {mobileMenuOpen && (
         <>
           <div
-            className="fixed inset-0 bg-black/50 z-40 md:hidden"
+            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
             onClick={closeMobileMenu}
             aria-hidden="true"
           />
-          <div className="fixed inset-y-0 right-0 w-64 bg-slate-900 z-50 md:hidden shadow-xl">
+          <div className="fixed inset-y-0 right-0 w-64 bg-slate-900 z-50 lg:hidden shadow-xl">
             <div className="flex flex-col p-4 space-y-2">
               {items.map((item) => (
                 <NavLink
