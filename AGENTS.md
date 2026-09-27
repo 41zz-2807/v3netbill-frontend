@@ -67,6 +67,15 @@ v3netbill/
 
 - PostgreSQL container existing: `postgres-15`, user `billing_user`, pass ada di `.env` project root.
 - DB: `v3netbill`; hostname dari dalam container backend = `postgres-15`.
+- **Data Docker sekarang di `/dev/sda3`** (28 Sep 2026). `/var/lib/docker` dan
+  `/var/lib/containerd` di-bind mount ke `/home/warnet/docker-data/`. Semua build,
+  image, volume, dan container otomatis kesana — tidak perlu set apa pun per project.
+  Rollback: `/home/warnet/docker-migration-backup/ROLLBACK.md`.
+- **`postgres-15` punya compose sendiri** di `/home/warnet/docker/war-nt-web/`
+  (`.env` + `docker-compose.yml`). File ini hilang di tengah jalan lalu dibuat ulang
+  dari `docker inspect`. ⚠️ **Jangan pernah `docker compose down -v` di sana** —
+  volume `war-nt-web_postgres_data` adalah satu-satunya salinan DB `v3netbill`,
+  `dashboard`, dan `yearlybook_db`.
 - Network external: `war-nt-web_default` (di compose dinamai `postgres-network`).
 - Named volume: `v3netbill-node-modules` (biar node_modules tidak ketimpa bind mount).
 - **Akses dari luar**: TIDAK ada nginx di host. Semua domain publik lewat **Cloudflare Tunnel**
