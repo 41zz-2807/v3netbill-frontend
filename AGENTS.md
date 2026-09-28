@@ -370,6 +370,33 @@ di `Window.Resources` hanya terlihat oleh jendela itu sendiri, jadi jendela
 baru akan gagal menemukannya saat runtime.
 
 
+⚠️ **`GetValue<string>(0)` dari ack Socket.IO TIDAK bisa dipakai kalau jawabannya
+objek** (`2ef0689`). Argumen ack dari NestJS adalah objek, jadi pemanggilan itu
+melempar `JsonException: The JSON value could not be converted to System.String`.
+Karena ada `catch (JsonException) { return null; }`, fungsi balik **sebelum sempat**
+memakai cabang cadangan `RawText`. Akibatnya agent selalu mendapat `null`, dan
+`Worker.cs` memetakan `null` ke pesan generik — sehingga **berhasil maupun gagal
+sama-sama tampil "Gagal mengganti password"**. Cabang `RawText` juga tidak bisa
+karena isinya isinya berbentuk larik `[{...}]`, sedangkan yang dibutuhkan objek tunggal.
+Yang benar: `GetValue<JsonElement>(0).GetRawText()`.
+
+Gejalanya sangat menyesatkan karena **password-nya benar-benar berubah** di server.
+Satu percobaan tercatat SUKSES di `docker compose logs` sementara user melihat
+teks gagal, dan percobaan berikutnya dengan password lama yang sudah diganti ikut
+gagal. Dua sisi yang harus dicek: (a) apakah request benar-benar sampai dan
+dijawab server — `SessionGateway` me-log tiap `create_password`, jadi log itu
+bukti mandiri; (b) apakah client benar-benar membaca jawabannya.
+
+Cara membuktikannya tanpa menebak: program uji kecil yang memakai
+`CreatePasswordResultPayload` asli dari `Agent.Core` lalu memanggil server
+sungguhan, mencetak ketiga bentuk baca ack. Struktur SocketIOClient 4.0.5 bisa
+dicek tanpa menebak lewat `GetTypes()` + reflection, atau dengan probing
+compiler — jangan menulis `GetValue<T>(0)` sambil menebak tipe generiknya.
+
+⚠️ **Log agent ada di `C:\ProgramData\v3NetbillAgent\logs\agent.log`** — bukan
+`AgentLog.txt` (nama itu nama kelasnya). `Environment.SpecialFolder.CommonApplicationData`
+bukan `LocalApplicationData`, jadi path-nya `ProgramData`, bukan folder user.
+
 **Ganti password dipindah ke mini window** (`a1e5211`): semula tombolnya ada di
 layar login, padahal saat itu belum ada akun yang dipakai — tidak masuk akal. Sekarang tombol
 `GANTI PASSWORD` ada di mini window, jadi **hanya tampil saat sesi berjalan**, dan yang menekan
