@@ -109,8 +109,12 @@ Logika bisnis yang sudah berjalan:
   dihapus**. Field `password` dihapus dari `CreateMemberDto` (voucher memang tidak pernah punya).
   ⚠️ Field `password` yang masih dikirim APK/versi web **lama sengaja diabaikan, bukan ditolak**,
   supaya klien lama tidak ikut rusak. Ganti password sendiri: `PATCH /accounts/:id/password`
-  (butuh password lama) atau dari layar PC lewat event agent `client:create_password`
-  (tanpa password lama, hanya PC ber-agentToken yang boleh).
+  (butuh password lama) atau dari layar PC lewat event agent `client:create_password`.
+  ⚠️ Event agent itu **mewajibkan `passwordLama`** dan mencocokkannya dengan bcrypt di
+  `SessionService.setPasswordByKode()` — dulu versinya tidak memverifikasi sama sekali, dan itu
+  berarti siapa pun yang duduk di komputer itu bisa mengganti password akun orang lain.
+  Halaman web tetap seperti semula: `PATCH /accounts/:id/password` **tidak** minta password lama,
+  karena yang mengganti adalah operator warnet, bukan pelanggan.
 - Nominal voucher/member harus kelipatan 500; sisa waktu = floor((nominal/harga_per_menit)*60) detik.
 - Session: server yang jadi sumber kebenaran waktu (tick interval 1dtk di SessionService),
   grace period disconnect = `Setting.grace_period_detik` (default 180dtk), auto-stop `disconnect_timeout`.
@@ -315,6 +319,15 @@ dan trigger hover mati diam-diam.
 **Stop sesi 1 klik** (`9e0741f`): konfirmasi 2 langkah dihapus, field
 `_stopConfirmArmed` / `_stopConfirmAt` dihapus. Penjaga "pipe belum tersambung"
 **tetap dipertahankan** — itu kondisi teknis, bukan konfirmasi.
+
+**Ganti password dipindah ke mini window** (`a1e5211`): semula tombolnya ada di
+layar login, padahal saat itu belum ada akun yang dipakai — tidak masuk akal. Sekarang tombol
+`GANTI PASSWORD` ada di mini window, jadi **hanya tampil saat sesi berjalan**, dan yang menekan
+memang pemilik akun itu sendiri. Dialognya 3 isian: password lama, baru, ulangi baru; kolom
+lama diberi petunjuk nilai `0000` selama belum pernah diganti. Password lama ikut dikirim dan
+dicocokkan di server. Kode PC dihapus dari mini window (`PcLabelText` + `SetPcLabel()` dibuang),
+dan kode untuk ganti password diambil dari `SessionStateProxy.AkunKode`/`AkunNama`, bukan dari
+kolom login.
 
 ## FASE 8 — Mobile app (Flutter Android) ✅
 
@@ -552,7 +565,19 @@ Temuan dari **data nyata** (71 voucher, 9 sisa 0, 3 di antaranya `ACTIVE`):
    **berhenti menebak posisi dan cari sumber kebenarannya** (reflection API, berkas skema,
    atau dokumentasi). Enam percobaan berurutan di sini semuanya salah karena tidak ada satu
    pun yang berbasis bukti.
-10. **Pindah lokasi repo: periksa dulu, baru `mv`.** Repo mobile dipindah dari
+10. **Mengira "semua jalur sudah sama" adalah asumsi — telusuri satu per satu.** Setelah password
+   diperbaiki seragam, saya mengira semua pembuatan akun sudah ikut. ternyata
+   `createVoucherAndStart()` — jalur buat voucher dari kartu PC di dashboard — masih
+   `Math.floor(1000 + Math.random() * 9000)`, jalur terakhir yang tidak ikut berubah. Cara
+   menangkapnya: `grep -rn "Math.random\|randomInt\|PASSWORD" src/`, bukan cuma membaca file
+   yang *"telah diubah"*.
+11. **Perbaikan tanpa verifikasi bisa membuka lubang baru.** `client:create_password` versi
+   pertama sengaja tidak menanyakan password lama — dengan asumsi "password awal sudah
+   diketahui umum". Setelah tombolnya dipindah ke mini window (hanya tampil saat sesi berjalan),
+   asumsi itu jadi salah: tidak ada lagi alasan menoleransi password yang salah, dan siapa pun
+   yang duduk di komputer bisa mengganti password akun orang lain. Verifikasi ditambahkan.
+   **Uji dulu "kenapa tidak diamankan?", baru putuskan boleh-tidaknya.**
+12. **Pindah lokasi repo: periksa dulu, baru `mv`.** Repo mobile dipindah dari
    `/home/warnet/mobile/` ke dalam `/home/warnet/docker/v3netbill/`. Yang diperiksa
    sebelum pindah: `df` dan `stat` untuk memastikan satu filesystem (kalau beda, `mv`
    jadi salin lalu hapus, butuh 2x ruang disk sementara), `grep -rI` path lama di dalam
@@ -603,17 +628,21 @@ Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
 - **frontend** `8726294` — form buat member tanpa kolom password (kolom dihapus, diganti
   catatan password awal 0000). Sebelumnya `01c419c`/`39fa0f6` — link `Download APK (Android)`
   di card `Installer Aplikasi` (`SettingsPage.tsx`) pakai `downloadAuth`.
-- **backend** `7e41e1d` — password semua akun baru `0000` (dulu acak), field `password`
-  dihapus dari `CreateMemberDto`, event agent `client:create_password` +
-  `SessionService.setPasswordByKode()`. `bd6c900` sebelumnya: **`Pc.status` di DB tidak pernah
-  `OFFLINE`** — status tampilan dihitung ulang dari `lastHeartbeatAt` (`src/pc/pc-status.ts`).
-  `308cd02` sebelumnya: endpoint APK (`/settings/apk`).
-- **agent** `29f8dec` — tombol **Buat/Ganti Password** di layar login (tanpa password lama,
-  lewat event `client:create_password`) + logo & tulisan di header card login + `app.ico`
-  untuk executable dan `ARPPRODUCTICON` MSI. Di-chain: `0344aec` (fitur), `49fc6a9`+
-  `b64beda`+`29f8dec` (perbaikan build MSI). CI sukses, artifact `v3NetbillAgentSetup`
-  64,8 MB (run `36362214580`).
-- **mobile** `b169f92` — form buat member tanpa kolom password. Sebelumnya `0615ef4`
+- **backend** `a695c77` — `client:create_password` **mewajibkan + memverifikasi `passwordLama`**,
+  dan `createVoucherAndStart()` (jalur buat voucher dari kartu PC di dashboard) ikut `PASSWORD_DEFAULT`
+  — sebelumnya masih `Math.floor(1000 + Math.random()*9000)`, jadi itu satu-satunya jalur pembuatan
+  akun yang masih menghasilkan password acak. `7e41e1d` sebelumnya: password akun baru `0000` +
+  hapus field password dari `CreateMemberDto`. `bd6c900`: `Pc.status` di DB tidak pernah `OFFLINE`.
+  `308cd02`: endpoint APK.
+- **agent** `a1e5211` — tombol **Ganti Password** dipindah dari layar login ke **mini window**
+  (hanya saat sesi berjalan), dialog jadi 3 isian + verifikasi password lama di server, dan
+  PC ID dihapus dari mini window. Di-chain: `29f8dec`/`b64beda`/`49fc6a9`/`0344aec` (logo,
+  ikon MSI, perbaikan build MSI, fitur awal). CI sukses, artifact `v3NetbillAgentSetup`
+  64,8 MB (run `36369623986`).
+- **mobile** `c71f250` — aksi **Ganti Password** untuk voucher & member di baris aksi
+  (tepat satu akun terpilih), memakai `PATCH /accounts/:id/password` yang sudah ada.
+- **mobile** `c71f250` — aksi Ganti Password untuk voucher & member. `b169f92` sebelumnya:
+  form buat member tanpa kolom password. Sebelumnya `0615ef4`
   (heartbeat jadi warna icon PC yang sudah ada), `9c8de73` (**perbaikan bug daftar
   voucher/member kosong** karena `initializeDateFormatting` tidak pernah dipanggil),
   `36c382d` (buat voucher/member dari dialog Mulai Sesi), `e910090` + `ff366d8` (build
@@ -666,9 +695,15 @@ untuk attacker yang menyisir.
   front-end. Belum dikerjakan.
 - **Pindah repo ke private / Gitea** — deferred oleh user. Kalau jadi dilakukan, jangan
   lupa set ulang 4 secret keystore APK.
-- **Rapi `/data/apk/`** — sudah 7 APK menumpuk (± 380 MB) karena setiap upload tidak
-  menghapus yang lama. Aktif sekarang `v3netbill-1790554068246.apk` (53,9 MB) dan
-  installer `installer-1790555862423.msi` (64,8 MB). Tidak mendesak, disk masih 66 GB kosong.
+- **Rapi `/data/apk/`** — APK & MSI lama menumpuk karena tiap upload tidak menghapus yang lama.
+  Aktif sekarang `v3netbill-1790563269411.apk` (53.956.267 byte) dan
+  `installer-1790563268983.msi` (64.805.555 byte). Tidak mendesak, disk masih longgar.
+- **Skrip uji koneksi Windows (.bat)** — belum dikerjakan, masih diskusi. Yang sudah teruji dari
+  Linux: `dotnet build` + 8 uji alur password lewat socket.io. Yang **belum** pernah tersentuh:
+  named pipe service↔overlay, benar-benar bertayinya Tampilan XAML di layar, apakah `.exe` jalan,
+  dan benar/tidaknya `ServerUrl`+`agentToken` di registry. Empat hal terakhir itu yang paling
+  sering jadi penyebab "agent tidak jalan", dan hanya bisa dicek di PC Windows asli — kedua
+  project agent menyasar `net8.0-windows` jadi tidak bisa dijalankan di Linux.
 - **Isi secret upload CI agent** — `V3NETBILL_BACKEND_URL`, `V3NETBILL_ADMIN_USER`,
   `V3NETBILL_ADMIN_PASSWORD` di repo `v3netbill-agent`. Tanpa itu, MSI tidak pernah naik
   ke server padahal log hijau.
