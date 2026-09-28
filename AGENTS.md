@@ -348,6 +348,27 @@ Ukuran mini **harus ditulis sebagai konstanta**, bukan dibaca dari properti
 `Width`/`Height` di constructor: properti itu masih bernilai `0` sebelum
 `InitializeComponent()` jalan, jadi akibatnya window 0x0 saat dialog ditutup.
 
+⚠️ **Memperbesar window overlay BUKAN solusi yang bisa diandalkan** (`f7de14e`).
+`UpdateWindowState()` dipanggil ulang setiap ada `StateUpdate` dari service
+dan selalu memaksa ukuran `340x268`, jadi perubahan ukuran yang dilakukan
+saat dialog dibuka bisa langsung ditimpa lagi. Gejalanya: dialog tetap
+terpotong, BATAL ikut terpotong, dan karena `ResizeMode="NoResize"` pengguna
+terkunci — dialog baru terlihat utuh setelah waktu habis, karena saat lock
+layar jendela diperbesar ke layar penuh.
+
+**Dialog yang muncul saat sesi berjalan harus jadi `Window` terpisah**
+(`BuatPasswordDialogWindow.xaml`), bukan Border di dalam `MainWindow`:
+ukurannya menyesuaikan sendiri, tidak tersentuh `UpdateWindowState()`, dan
+tidak bisa terpotong elemen mana pun. Dialog juga wajib ditutup otomatis saat
+sesi berakhir — kalau tidak, pengguna melihat layar yang menggantung tanpa ada
+yang bisa dilakukan. Tombol `IsCancel="True"` otomatis memberi jalur keluar
+ESC tanpa perlu handler manual.
+
+Resource yang dipakai lebih dari satu jendela (`FieldInsetBrush`,
+`FieldCaptionStyle`, `PillPasswordTemplate`) **harus di `App.xaml`**. Yang ada
+di `Window.Resources` hanya terlihat oleh jendela itu sendiri, jadi jendela
+baru akan gagal menemukannya saat runtime.
+
 
 **Ganti password dipindah ke mini window** (`a1e5211`): semula tombolnya ada di
 layar login, padahal saat itu belum ada akun yang dipakai — tidak masuk akal. Sekarang tombol
@@ -669,7 +690,13 @@ Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
   akun yang masih menghasilkan password acak. `7e41e1d` sebelumnya: password akun baru `0000` +
   hapus field password dari `CreateMemberDto`. `bd6c900`: `Pc.status` di DB tidak pernah `OFFLINE`.
   `308cd02`: endpoint APK.
-- **agent** `908c1c8` — perbaikan kedua dialog ganti password: saat sesi berjalan overlay hanya
+- **agent** `f7de14e` — dialog ganti password jadi **Window terpisah**
+  (`BuatPasswordDialogWindow.xaml`) karena memperbesar window overlay tidak
+  berhasil: `UpdateWindowState()` memaksa ukuran `340x268` lagi setiap
+  `StateUpdate` dari service. Dialog ditutup otomatis saat sesi berakhir, dan
+  3 resource (`FieldInsetBrush`, `FieldCaptionStyle`, `PillPasswordTemplate`)
+  dipindah ke `App.xaml`. Sebelumnya `908c1c8` — perbaikan kedua dialog ganti
+  password: saat sesi berjalan overlay hanya
   340x268, sedangkan dialog 380x373, jadi field ulangan + tombol terpotong di tepi bawah dan
   pengguna **terkunci** (tidak bisa ditutup/diminimalkan). Window dibesar sementara selama dialog
   terbuka; dialog dapat tombol tutup + `Key.Escape`. Sebelumnya `39c6504` — dialognya tersembunyi
