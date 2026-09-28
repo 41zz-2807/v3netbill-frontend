@@ -104,9 +104,13 @@ Enum: `Role`(ADMIN,KASIR), `PcStatus`(IDLE,ACTIVE,OFFLINE), `AccountType`(VOUCHE
 `TransactionType`(BELI_BARU,TOPUP).
 
 Logika bisnis yang sudah berjalan:
-- Password voucher (generate otomatis di `accounts.service.ts#generatePassword`) = **4 digit angka** (0-9,
-  boleh leading zero, contoh `0042`; dipakai `crypto.randomInt(0,10000).padStart(4,'0')`). Kode unik voucher
-  (6 digit) TIDAK ikut diubah. Password manual JSON di PATCH `/accounts/:id/password` bebas (bukan angka wajib).
+- **Password semua akun baru = `0000`, tidak acak lagi.** Konstantanya `PASSWORD_DEFAULT` di
+  `backend/src/accounts/password.ts`; `generatePassword()` yang dulu membuat 4 digit acak **sudah
+  dihapus**. Field `password` dihapus dari `CreateMemberDto` (voucher memang tidak pernah punya).
+  ⚠️ Field `password` yang masih dikirim APK/versi web **lama sengaja diabaikan, bukan ditolak**,
+  supaya klien lama tidak ikut rusak. Ganti password sendiri: `PATCH /accounts/:id/password`
+  (butuh password lama) atau dari layar PC lewat event agent `client:create_password`
+  (tanpa password lama, hanya PC ber-agentToken yang boleh).
 - Nominal voucher/member harus kelipatan 500; sisa waktu = floor((nominal/harga_per_menit)*60) detik.
 - Session: server yang jadi sumber kebenaran waktu (tick interval 1dtk di SessionService),
   grace period disconnect = `Setting.grace_period_detik` (default 180dtk), auto-stop `disconnect_timeout`.
@@ -219,6 +223,39 @@ Logika bisnis yang sudah berjalan:
   (lihat `Installer/Product.wxs`); nilai aslinya tidak disimpan di repo.
 - **WAJIB isi `ServerUrl` dengan skema lengkap** (`http://192.168.1.65:3000`), karena
   `Agent.Core/ServerConnection.cs:74` memanggil `new Uri(...)` — string tanpa skema gagal.
+
+### Build MSI & WiX — jebakan yang sudah dilewati
+
+- Versi WiX **wajib `4.0.5`**, mengikuti `WIX_VERSION` di `.github/workflows/build-agent.yml`.
+  Jangan naikkan ke 5.x tanpa sengaja menguji ulang.
+- ⚠️ **`WixVariable` (cara kustomisasi banner di WiX v3) TIDAK didukung WiX v4.** Ditolak
+  `WIX0005` di **enam** posisi penempatan yang dicoba: anak `<Package>`, anak `<Wix>`, di dalam
+  `<UI>` di tingkat `<Package>` maupun di dalam `<Fragment>`, dan dua variasi dengan prefix
+  namespace `ui:`. Karena itu **banner dialog installer tidak dikustomisasi** — gambar bawaan
+  `WixUI_Bmp_Banner`. Ikon produk memakai `<Icon>` + `<Property Id="ARPPRODUCTICON">`, dan itu
+  yang tampil di panel Program dan Features.
+- ⚠️ **`SourceFile` di-resolve dari FOLDER KERJA `wix build`, bukan dari lokasi berkas `.wxs`.**
+  Workflow memanggil `wix build "$ws/Installer/Product.wxs" ...` dari root repo, jadi path ikon
+  ditulis `Agent.Overlay\app.ico`. Kalau ditulis `..\Agent.Overlay\app.ico` hasilnya
+  `WIX0103: Cannot find the Icon file` — sempat menggagalkan satu siklus CI.
+- **Wix hanya benar-benar didukung di Windows.** Menjalankannya di container Linux tetap
+  mengembalikan error palsu `WIX0389` ("Directory/@Name is not a relative path") untuk baris
+  yang tidak disentuh, karena tool mencetak warning "all behavior after this point is undefined".
+  Arti: validasi lokal **hanya berguna untuk menangkap `WIX0005`/`WIX0103`**, sedangkan
+  `WIX0389` harus diabaikan. Build MSI sungguhan tetap harus lewat CI.
+- Validasi lokal lebih cepat daripada menunggu CI (yang butuh ~4 menit per siklus): pasang
+  `wix` lewat `dotnet tool install --global wix --version 4.0.5`, generate ulang
+  `SvcDepFiles.wxs`/`OverlayDepFiles.wxs` sesuai skrip di workflow, lalu `wix build ...`
+  dan **grep hanya `WIX0005`**.
+- ⚠️ **Step "Upload MSI to Backend" di CI bisa dilewati TANPA error.** Kalau secret
+  `V3NETBILL_ADMIN_USER` / `V3NETBILL_ADMIN_PASSWORD` / `V3NETBILL_BACKEND_URL` belum diisi,
+  lognya `Secret ... belum diatur; lewati upload` tapi step tetap keluar **OK**. Jadi tampilan
+  hijau di GitHub tidak berarti MSI sudah sampai ke server — **verifikasi `installer_meta`**
+  lewat `GET /api/settings` sebelum percaya, atau upload manual.
+- Aset ikon & logo: `Agent.Overlay/app.ico` (16–256 px, dipakai executable Windows **dan**
+  `ARPPRODUCTICON` MSI) plus `Agent.Overlay/Assets/logo-v3netbill.png` (logo **berserta tulisan**,
+  dipakai header kartu login). Keduanya hasil potong dari
+  `frontend/public/logo-v3netbill.png`.
 - Transisi versi agent: `1.0.6.0` reconnect supervisor → `1.0.7.0` single reconnect authority
   (anti flapping) → `1.0.8.0` heartbeatimer bug → `1.0.9.0` heartbeat self-diagnosing + tick log.
   Commit terbaru `86a4b87`. Riwayat detail: `v3NetbillAgent/HANDOFF.md`.
@@ -506,7 +543,16 @@ Temuan dari **data nyata** (71 voucher, 9 sisa 0, 3 di antaranya `ACTIVE`):
    gagal total di tangan user. Pola yang sama terulang dua kali pada sesi ini: `rupiah`
    dan `duration` aman, `dateShort` justru yang meledak. **Selalu panggil endpointnya
    sekali dengan `curl` sebelum menulis kode yang bergantung pada bentuk jawabannya.**
-9. **Pindah lokasi repo: periksa dulu, baru `mv`.** Repo mobile dipindah dari
+9. **Jangan menebak skema tool — validasi lokal lebih dulu.** Build MSI gagal **3 siklus CI**
+   berturut-turut karena menebak di mana `WixVariable` harus diletakkan di WiX v4. Yang
+   akhirnya membantu: pasang wix di container Linux, generate ulang fragment dependensi,
+   lalu jalankan `wix build` dan grep hanya `WIX0005` — hasilnya keluar dalam ~1 menit,
+   sedangkan satu siklus CI memakan ~4 menit. Pelajaran yang lebih umum berlaku untuk tool
+   apa pun: kalau sebuah tool menolak input dengan pesan "unexpected child element",
+   **berhenti menebak posisi dan cari sumber kebenarannya** (reflection API, berkas skema,
+   atau dokumentasi). Enam percobaan berurutan di sini semuanya salah karena tidak ada satu
+   pun yang berbasis bukti.
+10. **Pindah lokasi repo: periksa dulu, baru `mv`.** Repo mobile dipindah dari
    `/home/warnet/mobile/` ke dalam `/home/warnet/docker/v3netbill/`. Yang diperiksa
    sebelum pindah: `df` dan `stat` untuk memastikan satu filesystem (kalau beda, `mv`
    jadi salin lalu hapus, butuh 2x ruang disk sementara), `grep -rI` path lama di dalam
@@ -554,21 +600,24 @@ Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
 
 ### Commit terakhir (27 Sep, sesi terakhir — semua ter-push)
 
-- **frontend** `01c419c` — dokumentasi sesi 27 Sep (FASE 8 mobile, distro APK via
-  Settings, pelajaran proses). Sebelumnya `39fa0f6` — link `Download APK (Android)` di
-  card `Installer Aplikasi` (`SettingsPage.tsx`), pakai `downloadAuth` (token sebagai query
-  string). Build + lint 0 error, sudah live di domain.
-- **backend** `308cd02` — endpoint `POST /api/settings/apk` (ADMIN, 200 MB) +
-  `GET /api/settings/apk` (`res.download`), simpan ke `/data/apk/`, Setting `apk_meta`.
-  (`e9e2635` sebelumnya: push konfigurasi OTP Telegram ke agent aktif.)
-- **agent** `e0c1908` — 3 commit sesi ini: stop sesi 1 klik, redesign overlay
-  (login + mini panel), mini panel jadi ala music player (lingkaran = tombol
-  stop). CI sukses, artifact `v3NetbillAgentSetup` 61.1 MB (run `36294859940`).
-- **mobile** `0615ef4` — sesi terakhir: heartbeat jadi warna icon PC yang sudah ada
-  (`9c8de73`), dan **perbaikan bug daftar voucher/member kosong** karena
-  `initializeDateFormatting` tidak pernah dipanggil. Sebelumnya `36c382d` (buat
-  voucher/member dari dialog Mulai Sesi), `e910090` + `ff366d8` (build universal di CI,
-  `API_WS_URL` dikoreksi ke `/session`). APK aktif di server:
+- **frontend** `8726294` — form buat member tanpa kolom password (kolom dihapus, diganti
+  catatan password awal 0000). Sebelumnya `01c419c`/`39fa0f6` — link `Download APK (Android)`
+  di card `Installer Aplikasi` (`SettingsPage.tsx`) pakai `downloadAuth`.
+- **backend** `7e41e1d` — password semua akun baru `0000` (dulu acak), field `password`
+  dihapus dari `CreateMemberDto`, event agent `client:create_password` +
+  `SessionService.setPasswordByKode()`. `bd6c900` sebelumnya: **`Pc.status` di DB tidak pernah
+  `OFFLINE`** — status tampilan dihitung ulang dari `lastHeartbeatAt` (`src/pc/pc-status.ts`).
+  `308cd02` sebelumnya: endpoint APK (`/settings/apk`).
+- **agent** `29f8dec` — tombol **Buat/Ganti Password** di layar login (tanpa password lama,
+  lewat event `client:create_password`) + logo & tulisan di header card login + `app.ico`
+  untuk executable dan `ARPPRODUCTICON` MSI. Di-chain: `0344aec` (fitur), `49fc6a9`+
+  `b64beda`+`29f8dec` (perbaikan build MSI). CI sukses, artifact `v3NetbillAgentSetup`
+  64,8 MB (run `36362214580`).
+- **mobile** `b169f92` — form buat member tanpa kolom password. Sebelumnya `0615ef4`
+  (heartbeat jadi warna icon PC yang sudah ada), `9c8de73` (**perbaikan bug daftar
+  voucher/member kosong** karena `initializeDateFormatting` tidak pernah dipanggil),
+  `36c382d` (buat voucher/member dari dialog Mulai Sesi), `e910090` + `ff366d8` (build
+  universal di CI, `API_WS_URL` dikoreksi ke `/session`). APK aktif di server:
   `v3netbill-1790526912990.apk`, 53.955.947 byte, universal, release-signed `CN=v3Netbill`,
   dari artifact run `36333233467`.
 - Repo mobile **dipindahkan** dari `/home/warnet/mobile/v3netbill-mobile` ke
@@ -603,11 +652,10 @@ untuk attacker yang menyisir.
 - ~~**Frontend jadi .apk Android**~~ — **SELESAI 27 Sep**, tapi bukan lewat Capacitor.
   Yang dipakai adalah aplikasi Flutter native penuh (repo `v3netbill-mobile`), hasilnya
   dikirim lewat Settings web. Lihat bagian "FASE 8".
-- **Upload MSI baru ke `/data/installer/`** — CI sudah jadi (run `36294859940`, artifact
-  `v3NetbillAgentSetup` 61.1 MB, belum expired), tapi **belum di-download** karena download
-  artifact GitHub selalu butuh token. Tombol "Unduh Installer" masih menunjuk MSI lama
-  → **tidak mendesak**. Token GitHub sempat dipakai 27 Sep lalu dihapus dari disk, jadi
-  akses token tidak ada di host ini (`gh` tidak terinstall, tidak ada `~/.netrc`/`gh-token`).
+- ~~**Upload MSI baru ke `/data/installer/`**~~ — **SELESAI**, diunggah manual dari artifact
+  run `36362214580` (64,8 MB, hash domain = GitHub identik). ⚠️ Upload otomatis di CI masih
+  **tidak jalan** karena secret `V3NETBILL_ADMIN_USER`/`PASSWORD`/`BACKEND_URL` belum diisi,
+  dan step itu keluar OK padahal melewati. Detail + cara isi: bagian "Build MSI & WiX".
 - **Hapus fallback JWT** (lihat di atas) — belum dikerjakan. Masih prioritas tinggi.
 - **Tampilan log aktivitas di HP** — kolom Detail terpotong di layar sempit. Usulan:
   ubah tiap baris jadi kartu bertumpuk, atau pindahkan Detail ke bawah Event.
@@ -618,9 +666,12 @@ untuk attacker yang menyisir.
   front-end. Belum dikerjakan.
 - **Pindah repo ke private / Gitea** — deferred oleh user. Kalau jadi dilakukan, jangan
   lupa set ulang 4 secret keystore APK.
-- **Rapi `/data/apk/`** — ada 5 APK menumpuk (270 MB) selain yang aktif
-  (`v3netbill-1790526912990.apk`). Setiap upload tidak menghapus yang lama, jadi file
-  bertambah terus. Tidak mendesak, disk masih 71 GB kosong.
+- **Rapi `/data/apk/`** — sudah 7 APK menumpuk (± 380 MB) karena setiap upload tidak
+  menghapus yang lama. Aktif sekarang `v3netbill-1790554068246.apk` (53,9 MB) dan
+  installer `installer-1790555862423.msi` (64,8 MB). Tidak mendesak, disk masih 66 GB kosong.
+- **Isi secret upload CI agent** — `V3NETBILL_BACKEND_URL`, `V3NETBILL_ADMIN_USER`,
+  `V3NETBILL_ADMIN_PASSWORD` di repo `v3netbill-agent`. Tanpa itu, MSI tidak pernah naik
+  ke server padahal log hijau.
 - **`/home/warnet/mobile/`** — sekarang kosong setelah repo mobile dipindah ke dalam
   `/home/warnet/docker/v3netbill/`. Boleh dihapus kalau mau.
 - **`/tmp/opencode/pw`** — sisa `node_modules` playwright-core (8.6 MB, owner `root`,
