@@ -9,6 +9,7 @@ import {
   createBackup,
   fetchBackupList,
   setPinUninstall,
+  setPinBypass,
   downloadAuth,
   parseMeta,
   createUser,
@@ -83,6 +84,9 @@ export default function SettingsPage() {
   const [pin, setPin] = useState('')
   const [pinMsg, setPinMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+
+  const [pinBypass, setPinBypassValue] = useState('')
+  const [pinBypassMsg, setPinBypassMsg] = useState<string | null>(null)
 
   const [newUser, setNewUser] = useState('')
   const [newUserPass, setNewUserPass] = useState('')
@@ -281,6 +285,47 @@ export default function SettingsPage() {
     })
   }
 
+  /** Kosongkan PIN di server, bukan cuma di form. */
+  async function hapusPinBypass() {
+    if (!window.confirm('PIN bypass dihapus dari server? Semua PC akan kembali memakai PIN emergency 123456.')) {
+      return
+    }
+    setPinBypassValue('')
+    await run('pinBypass', async () => {
+      try {
+        setErr(null)
+        const hasil = await setPinBypass('')
+        setPinBypassMsg(
+          `PIN bypass dihapus. ${hasil.terkirim} PC diberi tahu, dan kembali ke PIN emergency 123456.`,
+        )
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e))
+      }
+    })
+  }
+
+  async function submitPinBypass() {
+    await run('pinBypass', async () => {
+      try {
+        setErr(null)
+        const hasil = await setPinBypass(pinBypass)
+        setPinBypassValue('')
+        if (hasil.kosong) {
+          setPinBypassMsg(
+            `PIN bypass dihapus. ${hasil.terkirim} PC diberi tahu, dan kembali ke PIN emergency 123456.`,
+          )
+        } else {
+          setPinBypassMsg(
+            `PIN bypass tersimpan, dikirim ke ${hasil.terkirim} PC yang tersambung. ` +
+              'PC yang sedang offline menerimanya saat connect lagi.',
+          )
+        }
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e))
+      }
+    })
+  }
+
   /**
    * Simpan konfigurasi OTP Telegram. Kosongkan token untuk mematikan fitur —
    * agent akan kembali memakai PIN emergency bawaan (rollback).
@@ -435,6 +480,45 @@ export default function SettingsPage() {
             {busy === 'pin' ? 'Menyimpan...' : 'Simpan PIN'}
           </button>
           {pinMsg && <div className="mt-2 text-sm text-green-700">{pinMsg}</div>}
+
+          <div className="mt-5 border-t border-slate-100 pt-4">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              PIN Bypass / Maintenance
+            </h3>
+            <p className="mb-3 text-xs text-slate-500">
+              PIN untuk mematikan agent dari layar login client. Dipakai saat server
+              mati atau perlu maintenance. Disimpan sebagai hash lalu didorong ke PC,
+              jadi tetap bisa dipakai tanpa server. Kosongkan untuk kembali ke PIN
+              emergency bawaan 123456.
+            </p>
+            <input
+              type="password"
+              placeholder="PIN bypass (contoh: 9753)"
+              value={pinBypass}
+              onChange={(e) => setPinBypassValue(e.target.value)}
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={submitPinBypass}
+                disabled={busy !== null}
+                className="rounded-md bg-slate-200 px-4 py-2 text-sm text-slate-800 hover:bg-slate-300 disabled:opacity-50"
+              >
+                {busy === 'pinBypass' ? 'Menyimpan...' : 'Simpan PIN Bypass'}
+              </button>
+              <button
+                type="button"
+                onClick={hapusPinBypass}
+                disabled={busy !== null}
+                className="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                title="Kosongkan PIN di server supaya PC kembali ke PIN emergency bawaan"
+              >
+                Hapus PIN Bypass
+              </button>
+            </div>
+            {pinBypassMsg && <div className="mt-2 text-sm text-green-700">{pinBypassMsg}</div>}
+          </div>
 
           <div className="mt-5 border-t border-slate-100 pt-4">
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">

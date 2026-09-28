@@ -213,6 +213,20 @@ export async function setPinUninstall(pin: string): Promise<{ success: boolean }
   return data
 }
 
+/**
+ * Simpan PIN bypass/maintenance. PIN kosong berarti hapus hash, sehingga PC
+ * kembali memakai PIN emergency bawaan.
+ */
+export async function setPinBypass(
+  pin: string,
+): Promise<{ success: boolean; kosong: boolean; terkirim: number }> {
+  const { data } = await api.patch<{ success: boolean; kosong: boolean; terkirim: number }>(
+    '/settings/bypass-pin',
+    { pin },
+  )
+  return data
+}
+
 export async function downloadAuth(
   path: string,
   fallbackName: string,
