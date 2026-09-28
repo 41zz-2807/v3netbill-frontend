@@ -582,6 +582,42 @@ Temuan dari **data nyata** (71 voucher, 9 sisa 0, 3 di antaranya `ACTIVE`):
    itu siklus hidup akun di sisi server. Mengubahnya = perubahan logika bisnis backend.
    Data mengonfirmasi 3 voucher itu memang sudah terpakai (`lastUsedAt` terisi).
 
+## Skrip uninstall agent (`.bat`) — urutan & jebakan registry
+
+⚠️ **`Installer/uninstall-old-agent.bat` yang versi LAMA menghapus registry
+sendiri** lewat `reg delete "HKLM\Software\v3Netbill" /f`. Di dalam key itu
+ada `Agent` berisi `ServerUrl`, `PcId`, `AgentToken`. Efeknya berantai: agent
+masih konek ke server tapi handshake-nya kosong sehingga
+`session.gateway.ts` menolaknya dengan *"tanpa pcId/agentToken di handshake
+query — tidak didaftarkan ke map"*, PC jadi offline di kasir, dan skrip uninstall
+versi berikutnya tidak bisa memverifikasi PIN karena tidak punya data untuk
+melakukan. Jadi **uninstall tidak boleh bergantung pada data yang justru
+dihapus oleh proses uninstall**.
+
+Urutan yang benar (`f941c8b`): **PIN diverifikasi ke server lebih dulu, baru
+service boleh disentuh.** Semua jalur gagal — PIN salah, PIN belum diset, server
+tidak terjangkau, identitas PC tidak ada — berhenti sebelum perintah
+`sc stop`/`taskkill`/`msiexec` dijalankan. Verifikasi lewat
+`POST /api/settings/verify-pin` (public, pakai `pcId`+`agentToken`+`pin`).
+
+⚠️ **Jalur penolakan yang bikin pengguna buntu juga itu celah** (`089d097`).
+Versi pertama berhenti total kalau registry kosong — padahal itu justru kondisi
+yang paling sering terjadi. Sekarang operator diminta mengisi `PcId`,
+`AgentToken`, dan URL server sendiri; kalau URL di registry tidak terjangkau,
+operator diminta URL lain lalu PIN diverifikasi ulang tanpa diminta lagi.
+
+**Di mana dapat `pcId` + `agentToken`** (nilainya **tidak** boleh ditulis di
+dokumen ini — repo publik, dan token itu mengizinkan `create_password` serta
+`stop_session`):
+
+```
+GET /api/pcs            → field id + agentToken (halaman PC di web)
+HKLM\Software\v3Netbill\Agent  → ditulis MSI saat instalasi
+```
+
+Nilai di bawah ini sengaja tidak dicatat. Kalau registry sudah hilang, jalankan
+`.bat` lalu isi ketiga nilai tersebut saat diminta.
+
 ## Pelajaran proses (penting untuk sesi berikutnya)
 
 1. **Karakter asing nyasar di commit message — sudah 5 kali.** CJK, Korea, dan Rusia
@@ -660,7 +696,14 @@ Temuan dari **data nyata** (71 voucher, 9 sisa 0, 3 di antaranya `ACTIVE`):
     Pelajaran: saat menambah elemen UI, **cek pohonnya, bukan cuma nilai propertinya**, dan
     pastikan induknya benar-benar tampil pada kondisi yang diharapkan. Untuk WPF,
     `UpdateVisibility()` adalah peta visibility yang perlu dibaca sebelum menaruh apa pun.
-13. **Pindah lokasi repo: periksa dulu, baru `mv`.** Repo mobile dipindah dari
+13. **Jalur penolakan yang membuat pengguna buntu juga merupakan celah.**
+    `uninstall-old-agent.bat` versi pertama berhenti total saat registry agent
+    hilang — padahal itu kondisi paling sering terjadi, karena `.bat` versi lama
+    menghapus registry itu sendiri. Hasilnya operator terkunci: tidak bisa
+    uninstall, tapi juga tidak ada PIN yang salah. Aturan: **setiap jalan keluar
+    dari penolakan harus punya jalan keluar lagi.** Untuk dialog WPF aturannya sama —
+    jangan andalkan satu tombol; untuk skrip, jangan andalkan satu sumber data.
+14. **Pindah lokasi repo: periksa dulu, baru `mv`.** Repo mobile dipindah dari
    `/home/warnet/mobile/` ke dalam `/home/warnet/docker/v3netbill/`. Yang diperiksa
    sebelum pindah: `df` dan `stat` untuk memastikan satu filesystem (kalau beda, `mv`
    jadi salin lalu hapus, butuh 2x ruang disk sementara), `grep -rI` path lama di dalam
