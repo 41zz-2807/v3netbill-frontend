@@ -215,6 +215,72 @@ Logika bisnis yang sudah berjalan:
 - **Frontend** (`frontend/src/pages/SettingsPage.tsx`): section Tarif (harga_per_menit, grace_period_detik via PATCH `/settings`), Ubah Password Sendiri (`/settings/password`), Upload Installer (multer + meta display), Upload Wallpaper (preview), Backup (POST `/settings/backup` + info last), PIN Uninstall (`/settings/pin-uninstall`). Nav item "Pengaturan" admin-only di `Layout.tsx` + route `/settings` di `App.tsx` (admin guard: redirect non-admin).
 - **Kenset**: `data/` bind mount (installer/wallpaper/backup persist), Dockerfile backend tambah `postgresql-client` (pg_dump).
 
+### Halaman Pengaturan — 5 tab (`97082bd`)
+
+Dulu `SettingsPage.tsx` 897 baris dengan 6 kartu dalam grid datar. Tinggi baris
+mengikuti kartu tertinggi, jadi Tarif punya ~430 px ruang kosong dan Installer
+~590 px, karena "Akses Agent" di sebelahnya jauh lebih tinggi. Nama kartu juga
+tidak sesuai isinya: Akses Agent memuat 3 hal tidak berhubungan, Installer 4 hal.
+
+Kini 5 tab, tiap tab 2–3 kartu yang berkelompok:
+
+```
+src/pages/SettingsPage.tsx        → 151 baris: header, tab, banner, busy overlay
+src/pages/settings/shared.ts      → BUSY_TEXT, SettingsCtx, formatBytes/formatDateIndo
+src/pages/settings/SettingsCard.tsx
+src/pages/settings/TabTarif.tsx        Harga per Menit · Grace Period
+src/pages/settings/TabAgent.tsx        PIN Uninstall · PIN Bypass · OTP Telegram
+src/pages/settings/TabInstalasi.tsx    MSI · APK Android · Wallpaper Lock Screen
+src/pages/settings/TabPengguna.tsx     Tambah User · Ganti Kata Sandi
+src/pages/settings/TabData.tsx         Backup · Riwayat Backup
+```
+
+`SettingsCtx` (`busy`, `setBusy`, `run`, `setErr`, `setMsg`) dinaikkan ke
+induk lalu dioper ke setiap tab, jadi satu proses mengunci tombol di semua tab
+dan banner pesan tidak menumpuk. State khusus tab tetap lokal di tabnya.
+
+**Nilai setting milik INDUK, bukan state lokal tab.** `TabTarif` pernah punya
+`useState('')` sendiri sehingga form tampil kosong padahal server sudah punya
+nilai — dan sekali tersimpan kosong, seluruh server tumbang (lihat pelajaran
+no. 15). Sekarang `harga`/`grace` dimuat di `SettingsPage` lalu dioper masuk.
+Aturan: kalau nilai awal berasal dari server, **jangan** mendeklarasikannya ulang
+di tab.
+
+- **Komponen `Card` di `src/components/ui/` TIDAK dipakai** di halaman ini
+  karena paletnya `neutral-*`, sedangkan aplikasi ini 366× pakai `slate-*`.
+  Memakainya akan menimbulkan warna yang beda. `SettingsCard` lokal memakai
+  class yang sama persis dengan `<section>` sebelumnya.
+- **`TabButton` diekstrak** dari `AccountsPage.tsx` ke
+  `src/components/ui/Tabs.tsx` supaya Voucher & Member dan Pengaturan konsisten.
+- **Mobile**: deretan tab `overflow-x-auto` + `min-w-max` (digeser, bukan
+  melebar); kartu `sm:grid-cols-2` (jadi 1 kolom di HP). **Tabel backup
+  berubah jadi kartu bertumpuk di `sm:hidden`** — tabelnya `min-w-max`, jadi
+  di HP kolom "Download" ada seluruhnya di luar layar tanpa petunjuk bisa
+  digeser, membuat tombolnya praktis tidak ditemukan. Pola yang sama masih
+  belum dipakai di halaman log aktivitas (lihat Pending).
+- Halaman **Informasi Produk** dan **Security Report** dihapus (`97082bd`);
+  keduanya tidak punya item navigasi dan tidak direferencing dari mana pun.
+
+### ⚠️ Setting rusak tidak boleh menjatuhkan server (`0c13a60`)
+
+`checkGracePeriodExpired()` dipanggil dari `setInterval` tiap 10 detik **tanpa
+`try/catch`**. Satu error di dalamnya jadi unhandled rejection yang
+menjatuhkan **seluruh proses Node** — bukan cuma menghentikan satu sesi. Semua
+PC kehilangan billing sekaligus.
+
+Penyebabnya `grace_period_detik` kosong: `parseInt('', 10)` = `NaN`, dikali
+1000 jadi `Invalid Date`, dan Prisma menolak tanggal yang tidak valid. Satu baris
+rusak di database jadi melumpuhkan seluruh layanan.
+
+Dua lapis: `loadGracePeriod()` memakai default 180 detik + `logger.warn` kalau
+nilai tidak valid/negatif, dan `checkGracePeriodExpired()` sekarang menangkap
+error apa pun — sama seperti `checkPcOffline()` yang sudah punya penjaga sejak
+dulu. **Uji:} sengaja dikosongkan `grace_period_detik` → server tetap melayani
+permintaan, 0 crash.
+
+**Umum:** apa pun yang dipanggil dari `setInterval`/`@Cron` **wajib** dibungkus
+`try/catch`, kalau tidak satu data rusak bisa mematikan seluruh backend.
+
 ## FASE 7-9 — Agent Client (repo terpisah `v3NetbillAgent/`) ✅
 
 - Repo sendiri dengan git + GitHub Actions; bukan bagian backend. Build MSI via WiX v4.
@@ -703,17 +769,42 @@ Nilai di bawah ini sengaja tidak dicatat. Kalau registry sudah hilang, jalankan
     uninstall, tapi juga tidak ada PIN yang salah. Aturan: **setiap jalan keluar
     dari penolakan harus punya jalan keluar lagi.** Untuk dialog WPF aturannya sama —
     jangan andalkan satu tombol; untuk skrip, jangan andalkan satu sumber data.
-14. **Pindah lokasi repo: periksa dulu, baru `mv`.** Repo mobile dipindah dari
-   `/home/warnet/mobile/` ke dalam `/home/warnet/docker/v3netbill/`. Yang diperiksa
-   sebelum pindah: `df` dan `stat` untuk memastikan satu filesystem (kalau beda, `mv`
-   jadi salin lalu hapus, butuh 2x ruang disk sementara), `grep -rI` path lama di dalam
-   repo **dan** di luar (cron, systemd, `docker inspect`), `key.properties` (kalau
-   `storeFile`-nya absolut, signing langsung rusak), lalu checksum daftar file sebelum dan
-   sesudah. Hasilnya nol dependensi, kecuali dua skrip `dk` dan `fl` yang memang
-   hardcode path. Verifikasi akhir: `flutter build apk --release` dari path baru menghasilkan
-   APK **53.955.947 byte**, ukuran identik dengan artifact CI, dan tetap release-signed.
-
-
+14. **Uji otomatis yang menyentuh form bisa merusak data produksi.** Sesi ini
+    sempat mematikan **seluruh server**. Rantainya: refactor halaman Pengaturan
+    memindahkan `harga` & `grace` jadi state lokal tab tanpa memuat nilai dari
+    server, jadi form tampil kosong; lalu uji fungsional saya klik "Simpan"
+    pada form kosong itu dan menimpa `harga_per_menit` + `grace_period_detik`
+    dengan string kosong; `parseInt('')` jadi `NaN`; `checkGracePeriodExpired`
+    tidak punya `try/catch`; proses Node crash; seluruh PC kehilangan billing.
+    Tiga aturan dari sini:
+    - **Form yang nilainya berasal dari server tidak boleh diuji dengan
+      mengklik Simpan** kalau belum dipastikan nilainya termuat. Cek isi field
+      lebih dulu, atau pakai pengujian yang tidak mengubah apa pun.
+    - **State awal dari server jangan dideklarasikan ulang di komponen anak.**
+      Taruh di induk lalu oper masuk.
+    - Kerusakan data produksi diperbaiki **langsung di DB** lewat container
+      (`docker exec postgres-15 psql`), bukan lewat API yang sedang mati.
+15. **Jangan pakai `2>/dev/null` pada perintah yang hasilnya harus dicek.**
+    `git add` saya jalankan dengan `2>/dev/null` sambil menyebut dua path yang
+    sudah dihapus — `git add` menolak **seluruh** daftar itu, tapi errornya
+    disembunyikan sehingga commit hanya berisi 2 file terhapus dan 12 file lain
+    tertinggal. Baru ketahuan setelah `git show --stat`. Ini memperluas no. 5:
+    menyembunyikan output sama dengan tidak memeriksa output.
+16. **Pecah file menurut ukuran, bukan asal bagi.** `SettingsPage.tsx` 897 baris
+    dipecah jadi 5 tab. Yang bermasalah bukan panjangnya, tapi kartunya tidak
+    sebanding: tinggi baris mengikuti kartu tertinggi sehingga muncul ratusan px
+    ruang kosong. **Ukur tinggi halaman sebelum dan sesudah** lewat Playwright
+    (`document.body.scrollHeight`) — angka yang membuat keputusan, bukan kesan
+    visual.
+17. **Pindah lokasi repo: periksa dulu, baru `mv`.** Repo mobile dipindah dari
+    `/home/warnet/mobile/` ke dalam `/home/warnet/docker/v3netbill/`. Yang diperiksa
+    sebelum pindah: `df` dan `stat` untuk memastikan satu filesystem (kalau beda, `mv`
+    jadi salin lalu hapus, butuh 2x ruang disk sementara), `grep -rI` path lama di dalam
+    repo **dan** di luar (cron, systemd, `docker inspect`), `key.properties` (kalau
+    `storeFile`-nya absolut, signing langsung rusak), lalu checksum daftar file sebelum dan
+    sesudah. Hasilnya nol dependensi, kecuali dua skrip `dk` dan `fl` yang memang
+    hardcode path. Verifikasi akhir: `flutter build apk --release` dari path baru menghasilkan
+    APK **53.955.947 byte**, ukuran identik dengan artifact CI, dan tetap release-signed.
 
 
 ## Jejak aktivitas (ActivityLog) ✅
@@ -819,14 +910,19 @@ untuk attacker yang menyisir.
 - ~~**Frontend jadi .apk Android**~~ — **SELESAI 27 Sep**, tapi bukan lewat Capacitor.
   Yang dipakai adalah aplikasi Flutter native penuh (repo `v3netbill-mobile`), hasilnya
   dikirim lewat Settings web. Lihat bagian "FASE 8".
+- ~~**Rapi halaman Pengaturan**~~ — **SELESAI** (`97082bd`): 5 tab + kartu kecil per
+  fitur, `SettingsPage.tsx` 897 → 151 baris, sudah dicek di 1440px dan 390px.
+  Halaman Informasi Produk & Security Report dihapus sekalian.
 - ~~**Upload MSI baru ke `/data/installer/`**~~ — **SELESAI**, diunggah manual dari artifact
   run `36362214580` (64,8 MB, hash domain = GitHub identik). ⚠️ Upload otomatis di CI masih
   **tidak jalan** karena secret `V3NETBILL_ADMIN_USER`/`PASSWORD`/`BACKEND_URL` belum diisi,
   dan step itu keluar OK padahal melewati. Detail + cara isi: bagian "Build MSI & WiX".
 - **Hapus fallback JWT** (lihat di atas) — belum dikerjakan. Masih prioritas tinggi.
-- **Tampilan log aktivitas di HP** — kolom Detail terpotong di layar sempit. Usulan:
-  ubah tiap baris jadi kartu bertumpuk, atau pindahkan Detail ke bawah Event.
-  Belum dikerjakan, menunggu keputusan user.
+- **Tampilan log aktivitas di HP** — kolom Detail terpotong di layar sempit sempit.
+  **Pola yang sudah berhasil dipakai** di tab Data Pengaturan: di bawah `sm` tabel
+  diganti jadi kartu bertumpuk (`sm:hidden` + `hidden sm:block`). Tabel yang
+  `min-w-max` membuat kolom terakhir terdorong keluar layar tanpa petunjuk
+  bisa digeser. Terapkan pola yang sama di log aktivitas.
 - **Status voucher sisa 0** — 3 voucher `ACTIVE` dengan sisa 0 ditampilkan dengan
   label "Habis" (perkampilan tampilan saja). Kalau user mau statusnya benar-benar
   jadi `TERPAKAI`, itu **perubahan logika bisnis di backend** + enum, bukan
@@ -834,8 +930,10 @@ untuk attacker yang menyisir.
 - **Pindah repo ke private / Gitea** — deferred oleh user. Kalau jadi dilakukan, jangan
   lupa set ulang 4 secret keystore APK.
 - **Rapi `/data/apk/`** — APK & MSI lama menumpuk karena tiap upload tidak menghapus yang lama.
-  Aktif sekarang `v3netbill-1790563269411.apk` (53.956.267 byte) dan
-  `installer-1790563268983.msi` (64.805.555 byte). Tidak mendesak, disk masih longgar.
+  Aktif sekarang `v3netbill-1790563269411.apk` (53.956.267 byte, **sudah diverifikasi
+  identik** dengan artifact CI run `36369605297`, jadi fitur Ganti Password sudah
+  ada di APK yang tersebar) dan `installer-1790568662472.msi`. Tidak mendesak,
+  disk masih longgar.
 - **Skrip uji koneksi Windows (.bat)** — belum dikerjakan, masih diskusi. Yang sudah teruji dari
   Linux: `dotnet build` + 8 uji alur password lewat socket.io. Yang **belum** pernah tersentuh:
   named pipe service↔overlay, benar-benar bertayinya Tampilan XAML di layar, apakah `.exe` jalan,
