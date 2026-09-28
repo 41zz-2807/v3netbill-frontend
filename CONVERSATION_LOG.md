@@ -1,7 +1,18 @@
-# v3Netbill — Conversation Log & Work Summary
+# v3Netbill — Log Kerja Historis
 
-**Project**: v3Netbill (Warnet Billing System)  
-**Date**: 2026-09-26  
+> ⚠️ **INI SNAPSHOT HISTORIS TANGGAL 26 Sep 2026 — BUKAN STATUS TERKINI.**
+>
+> Untuk aturan kerja, status fase, referensi API, dan daftar fitur yang benar-benar
+> ada sekarang, baca **[`AGENTS.md`](./AGENTS.md)**. Kalau dokumen ini berbeda dengan
+> AGENTS.md, **AGENTS.md yang benar**.
+>
+> Bagian di bawah tetap ditulis karena beberapa keputusan hanya bisa dipahami kalau
+> tahu urutannya. Tapi jangan pakai bagian "Pending" di sini sebagai daftar kerja:
+> isinya sudah usang. Contoh, `SecurityReportPage.tsx` dan `InformasiProdukPage.tsx`
+> yang tercatat sebagai "Important Files" sudah **dihapus** pada 28 Sep.
+
+**Project**: V3Netbill (Warnet Billing System)  
+**Snapshot**: 2026-09-26  
 **Working Directory**: `/home/warnet/docker/v3netbill`
 
 ---
@@ -169,7 +180,7 @@ LAPORAN_EMAIL_TUJUAN=<isi dari .env>
   PC LAN akan tercatat IP yang sama. Koneksi tetap normal, hanya kolom IP tidak informatif.
   Dua opsi perbaikan (agent kirim IP sendiri / matikan userland-proxy) **sengaja belum dikerjakan**
 - **Files**: `backend/src/pc/*`, `backend/src/session/*`, `frontend/src/pages/PcPage.tsx`,
-  `frontend/src/lib/api.ts`, `frontend/src/pages/InformasiProdukPage.tsx`
+  `frontend/src/lib/api.ts`
 - **Dokumentasi**: `docs/DETEKSI-IP.md`
 
 ### 16. Agent Reconnect — Seri Fix 1.0.6.0 → 1.0.9.0
@@ -243,6 +254,10 @@ LAPORAN_EMAIL_TUJUAN=<isi dari .env>
 
 ## Pending / Next Steps (Not Done)
 
+> ⚠️ **Daftar usang (snapshot 26 Sep).** Item 2–4 dan 6 sudah dikerjakan atau tidak
+> berlaku lagi. Yang masih relevan hanya item 1 (hardening keamanan) dan item 5
+> (IP PC untuk jaringan LAN). Daftar terkini ada di bagian Pending AGENTS.md.
+
 1. **Security Hardening** (from audit):
    - Fix CORS (restrict origin)
    - Remove JWT secret fallback
@@ -293,8 +308,6 @@ LAPORAN_EMAIL_TUJUAN=<isi dari .env>
 | Frontend API/Types | `frontend/src/lib/api.ts`, `types.ts` |
 | Frontend Auth | `frontend/src/context/AuthContext.tsx` |
 | Docker/Env | `docker-compose.yml`, `backend/Dockerfile`, `.env`, `.env.example` |
-| Security Report | `frontend/src/pages/SecurityReportPage.tsx` |
-| Product Info | `frontend/src/pages/InformasiProdukPage.tsx` |
 | Agent Service | `v3NetbillAgent/Agent.Service/Worker.cs` |
 | Agent Overlay | `v3NetbillAgent/Agent.Overlay/MainWindow.xaml(.cs)`, `PipeClient.cs` |
 | Agent Installer | `v3NetbillAgent/Installer/Product.wxs` |

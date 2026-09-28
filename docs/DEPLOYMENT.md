@@ -29,6 +29,11 @@ satu jaringan).
 | `cloudflared` | Proses di **host** | — | Cloudflare Tunnel, config `/etc/cloudflared/config.yml` |
 | `v3NetbillAgent` | MSI di PC Windows | — | Agent Client, koneksi ke backend |
 
+> ⚠️ **Data Docker sudah pindah ke `/dev/sda3` (28 Sep 2026).** `/var/lib/docker` dan
+> `/var/lib/containerd` di-bind mount ke `/home/warnet/docker-data/`, jadi image, volume,
+> dan container otomatis kesana. Rollback: `/home/warnet/docker-migration-backup/ROLLBACK.md`.
+> Dokumen ini ditulis sebelum perpindahan itu.
+
 ---
 
 ## Alamat IP Host
@@ -53,6 +58,12 @@ Penting untuk memahami kenapa deteksi IP PC tidak sesederhana yang terlihat:
 |---|---|---|
 | `war-nt-web_default` | `postgres-network` (external) | Menghubungkan backend ke PostgreSQL existing |
 | `v3netbill_default` | — | Jaringan internal Compose (backend ↔ frontend) |
+
+⚠️ **PostgreSQL punya compose sendiri** di `/home/warnet/docker/war-nt-web/`
+(`.env` + `docker-compose.yml`, nama container `postgres-15`, network `war-nt-web_default`,
+volume `war-nt-web_postgres_data`). File itu sempat hilang lalu dibuat ulang dari
+`docker inspect`. **Jangan pernah `docker compose down -v` di sana** — volume itu satu-satunya
+salinan DB `v3netbill`.
 
 Hostname PostgreSQL dari dalam container backend = `postgres-15`.
 
@@ -196,9 +207,12 @@ Ringkas; detail lengkap di `v3netbill-agent` (repo agent).
 
 | Dokumen | Isi |
 |---|---|
-| [`DETEKSI-IP.md`](./DETEKSI-IP.md) | Mekanisme deteksi IP PC & batasan topologi |
-| `../AGENTS.md` | Aturan kerja agent AI, status fase |
-| `v3netbill-server` (repo backend) | Arsitektur backend, endpoint, cron |
+| **`../AGENTS.md`** | **Sumber kebenaran utama**: aturan kerja, status, referensi API terverifikasi, pelajaran |
+| [`DETEKSI-IP.md`](./DETEKSI-IP.md) | Analisis mendalam deteksi IP PC (versi panjang dari ringkasan di AGENTS.md) |
 | README.md (repo ini) | Halaman & routing frontend |
-| `../CONVERSATION_LOG.md` | Log kerja kronologis |
-| `v3netbill-agent` (repo agent) | Arsitektur agent, deploy |
+| README.md repo backend | Ringkasan endpoint per modul |
+| README.md repo agent | Arsitektur agent, build, deploy |
+| `../CONVERSATION_LOG.md` | Log kerja **historis** per 26 Sep — bukan status terkini |
+
+> Kalau ada yang berbeda antara AGENTS.md dan dokumen lain, **AGENTS.md yang benar**.
+> Referensi API lengkap ada di AGENTS.md; README backend sengaja dibuat ringkas.

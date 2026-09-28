@@ -38,9 +38,7 @@ via REST (`/api`) dan WebSocket (namespace `/session`).
 | `/accounts` | `AccountsPage.tsx` | Voucher & Member (beli, topup, koreksi, void, password, revoke) |
 | `/transactions` | `TransactionsPage.tsx` | Riwayat transaksi |
 | `/reports` | `ReportsPage.tsx` | Laporan keuangan, pemakaian PC, voucher & member |
-| `/settings` | `SettingsPage.tsx` | Pengaturan (ADMIN only) |
-| `/info-produk` | `InformasiProdukPage.tsx` | Dokumentasi produk (usage & API) |
-| `/security-report` | `SecurityReportPage.tsx` | Laporan audit keamanan |
+| `/settings` | `SettingsPage.tsx` | Pengaturan, 5 tab (ADMIN only) |
 | — | `LoginPage.tsx` | Login (di luar layout, tanpa nav) |
 
 > Rute `/settings` hanya untuk **ADMIN** — non-admin di-redirect ke login/dashboard.

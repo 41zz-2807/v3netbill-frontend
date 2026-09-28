@@ -2,6 +2,23 @@
 
 Panduan untuk AI agent (opencode) mengerjakan project ini. Baca penuh sebelum mulai.
 
+## Dokumen mana yang dibaca
+
+| Dokumen | Isi | Status |
+|---|---|---|
+| **`AGENTS.md`** (file ini) | **Sumber kebenaran utama**: aturan, status fase, referensi API terverifikasi, pelajaran proses | **selalu** |
+| `docs/DEPLOYMENT.md` | Topologi, port, Cloudflare Tunnel, backup/restore, data persisten |-current |
+| `docs/DETEKSI-IP.md` | Analisis mendalam deteksi IP PC (versi panjang dari ringkasan di bawah) | current |
+| `CONVERSATION_LOG.md` | Log kerja **historis** per 26 Sep | ⚠️ snapshot, jangan dipakai sebagai status |
+| `README.md` (repo ini) | Halaman & routing frontend | current |
+| `README.md` (repo backend) | Ringkasan endpoint per modul | current |
+| `README.md` + `HANDOFF.md` (repo agent) | Arsitektur agent, build MSI, deploy | current |
+| `README.md` (repo mobile) | Fitur aplikasi Android, build APK | current |
+
+Kalau dua dokumen berbeda, **AGENTS.md yang benar**. Dokumentasi yang sudah usang
+lebih berbahaya daripada tidak ada, jadi jangan menambah dokumen baru tanpa
+memeriksa ulang isi dokumen yang sudah ada.
+
 ## Konteks singkat
 
 v3Netbill adalah sistem billing warnet yang dibangun ulang TOTAl dari `v2netbill` (hasil develop
@@ -201,6 +218,161 @@ Logika bisnis yang sudah berjalan:
 - Perintah migrasi: `docker compose exec v3netbill-backend npx prisma migrate dev --name <nama>`
 - Migrasi applied (4): `20260922142242_init`, `20260925072311_add_transaction_koreksi`,
   `20260925072645_add_transaction_void`, `20260925163314_add_activity_log`.
+## Referensi API — diverifikasi dari kode
+
+Dihasilkan dengan membaca decorator di `backend/src/**/*.controller.ts` (28 Sep 2026).
+**Kalau kamu mengubah endpoint, perbarui tabel ini di commit yang sama.** Tabel README
+di repo backend pernah kedaluwarsa dan menuliskan password voucher acak yang sudah
+dihapus — itu lebih berbahaya daripada tidak ada dokumentasi.
+
+Semua path diawali `/api` (global prefix di `main.ts`). WebSocket namespace `/session`.
+
+### Modul backend
+
+| Modul | Path | Fungsi |
+|---|---|---|
+| `auth` | `src/auth/` | Login JWT, user operator (tambah/list/hapus) |
+| `pc` | `src/pc/` | CRUD PC, generate `agentToken`, unlock manual |
+| `accounts` | `src/accounts/` | Voucher & member: beli, topup, koreksi, void, password, revoke |
+| `transactions` | `src/transactions/` | Riwayat transaksi |
+| `session` | `src/session/` | **Inti sistem** — gateway WebSocket + logika sesi real-time |
+| `reports` | `src/reports/` | Rekap harian & rentang (dihitung ulang on-read) |
+| `laporan` | `src/laporan/` | Laporan tutup hari: PDF + email + Telegram (cron) |
+| `settings` | `src/settings/` | Tarif, password, upload, backup, PIN uninstall & bypass |
+| `activity-log` | `src/activity-log/` | Jejak aktivitas (paginate + today) |
+| `common` | `src/common/` | Guards, decorators, exception filter |
+| `prisma` | `src/prisma/` | `PrismaService` (module global) |
+
+### REST
+
+Kolom role: `ADMIN` = wajib admin. `—` = cukup JWT apa pun. `PUBLIC` = `@Public()`,
+tanpa JWT sama sekali.
+
+| Method | Path | Role |
+|---|---|---|
+| POST | `/api/auth/login` | **PUBLIC** |
+| POST | `/api/auth/users` | ADMIN |
+| GET | `/api/auth/users` | ADMIN |
+| DELETE | `/api/auth/users/:id` | ADMIN |
+| GET | `/api/pcs` | — |
+| POST | `/api/pcs` | — |
+| DELETE | `/api/pcs/:id` | ADMIN |
+| POST | `/api/pcs/:id/unlock` | ADMIN |
+| GET | `/api/accounts` | — |
+| POST | `/api/accounts/voucher` | — |
+| POST | `/api/accounts/member` | — |
+| POST | `/api/accounts/:id/topup` | — |
+| POST | `/api/accounts/:id/koreksi` | — |
+| POST | `/api/accounts/:id/batal-transaksi` | — |
+| PATCH | `/api/accounts/:id/password` | — |
+| POST | `/api/accounts/:id/revoke` | — |
+| GET | `/api/transactions` | — |
+| GET | `/api/reports/today` | — |
+| GET | `/api/reports/daily?dari&sampai` | — |
+| GET | `/api/reports/range?dari&sampai` | — |
+| POST | `/api/laporan/kirim-tutup-hari` | — |
+| GET | `/api/settings` | — |
+| PATCH | `/api/settings` | ADMIN |
+| PATCH | `/api/settings/password` | — |
+| POST | `/api/settings/installer` | ADMIN |
+| GET | `/api/settings/installer` | — |
+| POST | `/api/settings/apk` | ADMIN |
+| GET | `/api/settings/apk` | — |
+| POST | `/api/settings/wallpaper` | ADMIN |
+| GET | `/api/settings/wallpaper` | **PUBLIC** |
+| POST | `/api/settings/backup` | ADMIN |
+| GET | `/api/settings/backup/last` | ADMIN |
+| GET | `/api/settings/backup/list` | ADMIN |
+| GET | `/api/settings/backup/download` | ADMIN |
+| PATCH | `/api/settings/pin-uninstall` | ADMIN |
+| PATCH | `/api/settings/bypass-pin` | ADMIN |
+| POST | `/api/settings/verify-pin` | **PUBLIC** |
+
+Tiga endpoint `PUBLIC` punya alasan spesifik, jangan diubah tanpa paham dulu:
+
+- `auth/login` — memang pintu masuk.
+- `settings/verify-pin` — dipakai `.bat` uninstall & `UninstallGuardWindow` yang
+  **tidak punya JWT**. Identitas PC (`pcId` + `agentToken`) yang dipakai, bukan akun.
+- `settings/wallpaper` — layar lock agent mengambil wallpaper tanpa punya JWT.
+
+### WebSocket namespace `/session`
+
+Dikirim klien → server:
+
+| Event | Pengirim | Isi |
+|---|---|---|
+| `agent:register` | agent | `{ pcId, agentToken }` |
+| `agent:heartbeat` | agent | `{ pcId }` |
+| `client:login_request` | overlay | `{ pcId, kredensial: { kode, password } }` |
+| `client:create_password` | overlay | `{ pcId, kode, passwordLama, password }` |
+| `client:stop_session` | overlay | `{ pcId }` |
+| `dashboard:subscribe` | web/mobile | masuk room `dashboard` |
+| `dashboard:start_pc` | web/mobile | `{ pcId, kode }` |
+| `dashboard:start_voucher` | web/mobile | `{ pcId, nominal }` |
+| `dashboard:lock_pc` | web/mobile | `{ pcId }` |
+| `dashboard:shutdown_pc` | web/mobile | `{ pcId }` |
+
+Dikirim server → klien:
+
+| Event | Ke | Isi |
+|---|---|---|
+| `client:login_result` | overlay | `{ success, sessionId?, message? }` |
+| `session:start` | agent | `{ sessionId, durasiDetikTersedia, account }` |
+| `session:tick` | agent | `{ sisaDetik }` — tiap 1 detik |
+| `session:stop` | agent | `{ alasan }` |
+| `admin:lock` | agent | `{ pcId }` |
+| `admin:shutdown` | agent | `{ pcId }` |
+| `agent:otp_config` | agent | `{ botToken, chatId }` — dorongan saat register & saat admin simpan |
+| `agent:bypass_config` | agent | `{ hash }` — hash bcrypt PIN bypass |
+| `dashboard:pc_update` | room `dashboard` | `{ pcs: [...] }` — array detail PC + sesi aktif + sisa detik |
+| `dashboard:log` | room `dashboard` | jejak aktivitas |
+
+### Cron
+
+| Nama | Jadwal | Fungsi |
+|---|---|---|
+| `auto-backup` | 01:00 | `pg_dump` + hapus backup > 30 hari |
+| `cleanup-activity-logs` | 02:00 | hapus activity log > 30 hari |
+| `tutup-hari-laporan` | 23:30 WIB | rekap hari sebelumnya → PDF + email + Telegram |
+
+Batas hari bisnis = **23:30 WIB** (hari T = [23:30 T-1, 23:30 T)). Rekap nol dihitung
+setelah batas ini.
+
+⚠️ **Semua yang dipanggil dari cron atau `setInterval` wajib dibungkus `try/catch`.**
+`checkGracePeriodExpired()` pernah tidak punya penjaga; satu setting
+`grace_period_detik` kosong membuat `parseInt` jadi `NaN`, `NaN * 1000` jadi
+`Invalid Date`, Prima menolak, dan proses Node mati — seluruh PC kehilangan billing
+sekaligus. Sudah diperbaiki di `0c13a60`.
+
+### Backup & restore
+
+| Aksi | Cara |
+|---|---|
+| Backup manual | `POST /api/settings/backup` (Pengaturan → Data) |
+| Restore | `docker cp <file.sql> postgres-15:/tmp/restore.sql` lalu `docker exec postgres-15 psql -U billing_user -d v3netbill -f /tmp/restore.sql` |
+
+`pg_dump` dijalankan **tanpa** `?schema=public` (query string di-strip dari API URL) —
+lihat `settings.service.ts`.
+
+### Deteksi IP PC — ringkas + pilihan yang belum dikerjakan
+
+`Pc.ipClient` **hanya data tampilan**. Bukan identitas, bukan kunci unik, tidak dipakai
+routing, auth, atau lock. Identitas PC selalu `pcId` + validasi `agentToken`.
+
+Untuk PC **di luar jaringan** (lewat Cloudflare Tunnel) nilainya akurat — Cloudflare
+menaruh IP asli di `CF-Connecting-IP`. Untuk PC **satu jaringan LAN** nilainya **belum
+akurat**: karena `docker-proxy` (userland proxy) aktif di host, backend selalu mencatat
+IP bridge Docker dan tidak bisa membedakan antar PC. Tidak mengganggu fungsi apa pun,
+hanya kolom IP di dashboard yang tidak informatif.
+
+Dua opsi yang sudah dianalisis tapi **belum dikerjakan**:
+
+- **Opsi A** — agent mengirim IP-nya sendiri di payload `agent:register`. Butuh build +
+  deploy MSI baru ke semua PC.
+- **Opsi B** — matikan userland proxy lewat `/etc/docker/daemon.json`
+  (`"userland-proxy": false`) supaya Docker pakai iptables DNAT murni. Tidak perlu
+  redeploy MSI, tapi restart Docker mematikan semua container termasuk Postgres.
+
 ## FASE 6 — Settings (backup/installer/wallpaper/PIN) ✅ lengkap
 
 - **Backend (SettingsModule)** — controller `@Controller('settings')`, semua path global prefix `/api`:
