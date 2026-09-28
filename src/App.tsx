@@ -7,8 +7,6 @@ import AccountsPage from './pages/AccountsPage.tsx'
 import TransactionsPage from './pages/TransactionsPage.tsx'
 import ReportsPage from './pages/ReportsPage.tsx'
 import SettingsPage from './pages/SettingsPage.tsx'
-import InformasiProdukPage from './pages/InformasiProdukPage.tsx'
-import SecurityReportPage from './pages/SecurityReportPage.tsx'
 import Layout from './components/Layout.tsx'
 
 function App() {
@@ -27,8 +25,6 @@ function App() {
         <Route path="/transactions" element={<TransactionsPage />} />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/info-produk" element={<InformasiProdukPage />} />
-        <Route path="/security-report" element={<SecurityReportPage />} />
       </Route>
     </Routes>
   )

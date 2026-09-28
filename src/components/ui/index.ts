@@ -5,3 +5,4 @@ export { Table, TableSkeleton, type TableProps, type Column, type TableSkeletonP
 export { GradientCard, type GradientCardProps } from './GradientCard'
 export { Modal, type ModalProps } from './Modal'
 export { inputClass, buttonClass } from './gradientCardStyles'
+export { TabButton, type TabButtonProps } from './Tabs'

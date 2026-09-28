@@ -13,6 +13,7 @@ import type { Account } from '../lib/types.ts'
 import Loader from '../components/Loader.tsx'
 import { GradientCard } from '../components/ui/GradientCard.tsx'
 import { Modal } from '../components/ui/Modal.tsx'
+import { TabButton } from '../components/ui/Tabs.tsx'
 import { Pagination } from '../components/ui/Pagination.tsx'
 import {
   PER_HALAMAN,
@@ -596,24 +597,3 @@ export default function AccountsPage() {
   )
 }
 
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-md px-4 py-2 text-sm font-medium ${
-        active ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 shadow-sm'
-      }`}
-    >
-      {children}
-    </button>
-  )
-}
