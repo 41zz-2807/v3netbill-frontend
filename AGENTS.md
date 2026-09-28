@@ -330,6 +330,25 @@ tombol yang mati. Dialog yang perlu muncul saat sesi berjalan harus jadi anak la
 tertimpa elemen lain. Jangan lupa `HorizontalAlignment`/`VerticalAlignment="Center"`, karena tanpa
 itu Border di dalam Grid akan merebut seluruh tinggi jendela. Diperbaiki di `39c6504`.
 
+⚠️ **Saat sesi berjalan, overlay hanya 340x268** (`UpdateWindowState`, cabang
+`SisaDetik > 0`) — bukan layar penuh. Dialog yang dimunculkan saat sesi berjalan
+harus muat di ukuran itu. Dialog ganti password punya lebar 380 dan tinggi ~373,
+jadi bagian bawahnya keluar dari tepi window: karena `VerticalAlignment="Center"`,
+field "ULANGI PASSWORD BARU" dan tombolnya terpotong **tepat di batas bawah**.
+Tampakannya seperti dialog tidak lengkap, dan ini lebih buruk dari bug pertama —
+`ResizeMode="NoResize"` membuat jendela tidak bisa diperbesar sendiri, tombol
+BATAL ikut terpotong, sehingga **pengguna terkunci di dialog yang tidak bisa
+ditutup**. Solusinya dua sisi: `Width`/`Height` window dibesar sementara selama
+dialog terbuka lalu dikembalikan saat ditutup (`908c1c8`), **dan** dialog wajib
+punya minimal dua jalur keluar (tombol tutup + `Key.Escape`) sebagai pengaman.
+Jangan andalkan satu tombol saja — kalau layout-nya salah lagi, pengaman itu
+yang menyelamatkan.
+
+Ukuran mini **harus ditulis sebagai konstanta**, bukan dibaca dari properti
+`Width`/`Height` di constructor: properti itu masih bernilai `0` sebelum
+`InitializeComponent()` jalan, jadi akibatnya window 0x0 saat dialog ditutup.
+
+
 **Ganti password dipindah ke mini window** (`a1e5211`): semula tombolnya ada di
 layar login, padahal saat itu belum ada akun yang dipakai — tidak masuk akal. Sekarang tombol
 `GANTI PASSWORD` ada di mini window, jadi **hanya tampil saat sesi berjalan**, dan yang menekan
@@ -650,10 +669,13 @@ Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
   akun yang masih menghasilkan password acak. `7e41e1d` sebelumnya: password akun baru `0000` +
   hapus field password dari `CreateMemberDto`. `bd6c900`: `Pc.status` di DB tidak pernah `OFFLINE`.
   `308cd02`: endpoint APK.
-- **agent** `39c6504` — perbaikan: dialog ganti password tersembunyi di dalam `ContentPanel`
-  yang di-collapse saat sesi berjalan, jadi tombolnya terlihat "tidak bereaksi". Dipindah jadi
-  anak langsung `RootGrid` dan diletakkan paling akhir. Sebelumnya `a1e5211` — tombol **Ganti
-  Password** dipindah dari layar login ke **mini window**
+- **agent** `908c1c8` — perbaikan kedua dialog ganti password: saat sesi berjalan overlay hanya
+  340x268, sedangkan dialog 380x373, jadi field ulangan + tombol terpotong di tepi bawah dan
+  pengguna **terkunci** (tidak bisa ditutup/diminimalkan). Window dibesar sementara selama dialog
+  terbuka; dialog dapat tombol tutup + `Key.Escape`. Sebelumnya `39c6504` — dialognya tersembunyi
+  di dalam `ContentPanel` yang di-collapse saat sesi berjalan, jadi tombolnya terlihat "tidak
+  bereaksi"; dipindah jadi anak langsung `RootGrid` dan diletakkan paling akhir.
+  Sebelumnya `a1e5211` — tombol **Ganti Password** dipindah dari layar login ke **mini window**
   (hanya saat sesi berjalan), dialog jadi 3 isian + verifikasi password lama di server, dan
   PC ID dihapus dari mini window. Di-chain: `29f8dec`/`b64beda`/`49fc6a9`/`0344aec` (logo,
   ikon MSI, perbaikan build MSI, fitur awal). CI sukses, artifact `v3NetbillAgentSetup`
