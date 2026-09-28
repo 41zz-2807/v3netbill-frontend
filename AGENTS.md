@@ -320,6 +320,16 @@ dan trigger hover mati diam-diam.
 `_stopConfirmArmed` / `_stopConfirmAt` dihapus. Penjaga "pipe belum tersambung"
 **tetap dipertahankan** — itu kondisi teknis, bukan konfirmasi.
 
+⚠️ **Dialog apa pun TIDAK BOLEH diletakkan di dalam `ContentPanel`.** `ContentPanel`
+di-`Collapsed` setiap kali sesi berjalan (`MainWindow.xaml.cs#UpdateVisibility`, cabang
+`sessionActive`), jadi apa pun yang ada di dalamnya ikut lenyap bersama. Dialog `BuatPasswordDialog`
+semula diletakkan di sana: tombolnya sudah benar-benar mengubah `Visibility` jadi `Visible`, tapi
+karena induknya tertutup, hasilnya **tidak terlihat sama sekali** — gejalanya persis seperti
+tombol yang mati. Dialog yang perlu muncul saat sesi berjalan harus jadi anak langsung
+`x:Name="RootGrid"`, sama seperti `MiniPanel`, dan diletakkan **paling akhir** supaya tidak
+tertimpa elemen lain. Jangan lupa `HorizontalAlignment`/`VerticalAlignment="Center"`, karena tanpa
+itu Border di dalam Grid akan merebut seluruh tinggi jendela. Diperbaiki di `39c6504`.
+
 **Ganti password dipindah ke mini window** (`a1e5211`): semula tombolnya ada di
 layar login, padahal saat itu belum ada akun yang dipakai — tidak masuk akal. Sekarang tombol
 `GANTI PASSWORD` ada di mini window, jadi **hanya tampil saat sesi berjalan**, dan yang menekan
@@ -577,7 +587,13 @@ Temuan dari **data nyata** (71 voucher, 9 sisa 0, 3 di antaranya `ACTIVE`):
    asumsi itu jadi salah: tidak ada lagi alasan menoleransi password yang salah, dan siapa pun
    yang duduk di komputer bisa mengganti password akun orang lain. Verifikasi ditambahkan.
    **Uji dulu "kenapa tidak diamankan?", baru putuskan boleh-tidaknya.**
-12. **Pindah lokasi repo: periksa dulu, baru `mv`.** Repo mobile dipindah dari
+12. **Kode yang "sudah dipanggil" belum tentu terlihat.** Tombol GANTI PASSWORD diklik
+    benar-benar jalan, handler jalan, `Visibility` pun berubah — tapi dialognya diletakkan
+    di dalam panel yang sedang di-collapse, jadi pengguna tidak melihat apa pun.
+    Pelajaran: saat menambah elemen UI, **cek pohonnya, bukan cuma nilai propertinya**, dan
+    pastikan induknya benar-benar tampil pada kondisi yang diharapkan. Untuk WPF,
+    `UpdateVisibility()` adalah peta visibility yang perlu dibaca sebelum menaruh apa pun.
+13. **Pindah lokasi repo: periksa dulu, baru `mv`.** Repo mobile dipindah dari
    `/home/warnet/mobile/` ke dalam `/home/warnet/docker/v3netbill/`. Yang diperiksa
    sebelum pindah: `df` dan `stat` untuk memastikan satu filesystem (kalau beda, `mv`
    jadi salin lalu hapus, butuh 2x ruang disk sementara), `grep -rI` path lama di dalam
@@ -634,7 +650,10 @@ Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
   akun yang masih menghasilkan password acak. `7e41e1d` sebelumnya: password akun baru `0000` +
   hapus field password dari `CreateMemberDto`. `bd6c900`: `Pc.status` di DB tidak pernah `OFFLINE`.
   `308cd02`: endpoint APK.
-- **agent** `a1e5211` — tombol **Ganti Password** dipindah dari layar login ke **mini window**
+- **agent** `39c6504` — perbaikan: dialog ganti password tersembunyi di dalam `ContentPanel`
+  yang di-collapse saat sesi berjalan, jadi tombolnya terlihat "tidak bereaksi". Dipindah jadi
+  anak langsung `RootGrid` dan diletakkan paling akhir. Sebelumnya `a1e5211` — tombol **Ganti
+  Password** dipindah dari layar login ke **mini window**
   (hanya saat sesi berjalan), dialog jadi 3 isian + verifikasi password lama di server, dan
   PC ID dihapus dari mini window. Di-chain: `29f8dec`/`b64beda`/`49fc6a9`/`0344aec` (logo,
   ikon MSI, perbaikan build MSI, fitur awal). CI sukses, artifact `v3NetbillAgentSetup`
