@@ -703,6 +703,18 @@ commit. Pakai: `GH_TOKEN="$(cat github-token.txt)" gh ...`.
   dikirim adalah `nama`, bukan `kodeUnik`. Ini sudah diuji ke backend sungguhan.
 - **Animasi dashboard yang bergerak sendiri dihapus.** Untuk aplikasi billing, angka yang
   beranimasi tanpa sumber data = menampilkan info yang salah.
+- **Bar aksi di halaman Voucher/Member sekarang ikon saja** (`f1457cc`). Versi lama
+  berisi teks "N dipilih" + 4 chip berlabel, dan total lebarnya melebihi layar HP —
+  Flutter melaporkan `RenderFlex overflowed by 261 pixels` pada lebar 390 px. Sekarang
+  5 `IconButton` dengan tooltip (`spaceEvenly`), dan teks jumlah terpilih dihapus.
+
+⚠️ **Widget test dengan lebar default TIDAK bisa menangkap overflow.** `flutter test`
+memakai permukaan 800×600, cukup lebar untuk `Row` mana pun. Bug seperti ini baru
+tampak setelah `tester.view.physicalSize = Size(390*3, 844*3)` + `devicePixelRatio = 3.0`.
+Selalu uji halaman yang diduga meluber pada **lebar HP**, bukan lebar default.
+Widget test juga bisa dipakai untuk menyimpan tangkapan layar
+(`RepaintBoundary` + `toImage`) — tapi `toImage()` harus **di-await** di dalam test,
+kalau tidak test selesai dulu dan berkasnya tidak pernah tertulis.
 
 ### ⚠️ `intl` WAJIB diinisialisasi sebelum `runApp` (bug yang pernah ada)
 
@@ -759,15 +771,69 @@ menyimpan ke `/data/apk/` + Setting `apk_meta`; `GET /api/settings/apk` **`res.d
 `v3netbill.apk`. **Dua endpoint ini wajib JWT** (bukan `@Public()`), jadi `curl` tanpa token
 balas `401` — itu normal, bukan bug.
 
-Frontend `39fa0f6` — link `Download APK (Android)` di card `Installer Aplikasi`
-(`SettingsPage.tsx`), lewat `downloadAuth` yang menempelkan token sebagai query string.
+Frontend `39fa0f6` — tombol `Download APK` di card `Aplikasi Android`
+(`SettingsPage.tsx` → `TabInstalasi.tsx`), lewat `downloadAuth`
+(`src/lib/api.ts:230`).
+
+⚠️ **`downloadAuth` memakai header `Authorization`, BUKAN token sebagai query string.**
+Versi catatan sebelumnya salah dan membuat saya coba `?token=…` yang dijawab `401`.
+Kodenya: `fetch('/api' + path, { headers: { Authorization: 'Bearer ' + token } })`,
+lalu hasilnya diubah jadi blob dan diunduh lewat `a.download`. Konsekuensinya **tidak
+bisa** diunduh lewat `curl` dengan token di query string — harus header, sama seperti
+endpoint lain.
 
 ⚠️ **Upload lewat domain dari host kadang putus di ~18 MB** (`HTTP 000`, Cloudflare).
 Always upload lewat `http://localhost:3000/api/settings/apk` (53 MB lolos). Setelah upload,
 verifikasi dengan download ulang + bandingkan `sha256sum` — bukan cuma cek HTTP 200.
 
-APK aktif di server: `v3netbill-1790515676761.apk`, 53.303.412 byte, universal,
-release-signed `CN=v3Netbill`, dari artifact GitHub run `36321151526`.
+⚠️ **Upload tidak pernah menghapus berkas lama.** Tiap upload menambah satu berkas di
+`/data/apk/`, jadi versi lama menumpuk dan ada kasir yang bisa mengunduh yang salah.
+Sampai 29 Sep sudah 9 APK (460 MB) dihapus manual, dan `/data/installer/` 11 berkas
+(560 MB). Pembersihan manual: baca nama aktif dari Setting `apk_meta` / `installer_meta`,
+lalu `rm` semua selain nama itu — **jangan hardcode**, karena file yang tidak
+dijaga ikut terhapus dan tombol unduh langsung rusak.
+
+APK aktif di server: `v3netbill-1790641833108.apk`, 53.956.267 byte, universal,
+release-signed `CN=v3Netbill` (sertifikat SHA-256 `d38e3993…7d880e`, identik dengan
+keystore `android/app/v3netbill-release.jks`), dari artifact GitHub run `36502489756`
+yang build commit `f1457cc`.
+
+⚠️ **Ukuran APK tidak selalu berubah antar build.** Build `c71f250` dan `f1457cc` dua
+duanya 53.956.267 byte, tapi `sha256sum`-nya berbeda. Jadi **ukuran bukan bukti** bahwa
+berkas baru — yang menentukan selalu `sha256sum`.
+
+### Cara verifikasi APK yang di-build CI
+
+`gh` tidak ada di host, tapi **tidak perlu** — `curl` ke API GitHub cukup, dengan token
+dari `v3netbill-mobile/github-token.txt` (40 karakter, izin `600`, sudah gitignore):
+
+```bash
+TOKEN="$(cat v3netbill-mobile/github-token.txt)"
+# daftar run terakhir
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://api.github.com/repos/41zz-2807/v3netbill-mobile/actions/workflows/build-apk.yml/runs?per_page=5"
+# artifact
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://api.github.com/repos/41zz-2807/v3netbill-mobile/actions/runs/<id>/artifacts"
+# unduh (WAJIB -C - --retry: artifact sering terpotong di unduhan pertama)
+curl -L -C - --retry 5 --retry-all-errors -H "Authorization: Bearer $TOKEN" \
+  -o artifact.zip "https://api.github.com/repos/.../actions/artifacts/<id>/zip"
+```
+
+Artifact berisi 4 APK: `app-release.apk` (universal, yang dipakai) + 3 per-ABI.
+**Ukuran artifact ≠ ukuran APK** di dalamnya.
+
+Tanda tangan & namespace bisa dicek tanpa tooling Android di host:
+
+```bash
+# tanda tangan + sertifikat (image Flutter punya Android SDK)
+docker run --rm -v /tmp/apk:/w --entrypoint bash mobiledevops/flutter-sdk-image:3.44.4 -c \
+  '/opt/android-sdk-linux/build-tools/35.0.1/apksigner verify --print-certs /w/app-release.apk'
+# bandingkan dengan keystore lokal
+keytool -list -v -keystore android/app/v3netbill-release.jks -storepass "…"
+# namespace WebSocket harus /session, bukan /socket.io
+python3 -c "import zipfile;d=zipfile.ZipFile('app-release.apk').read('lib/arm64-v8a/libapp.so');print(b'/session' in d)"
+```
 
 ## Menu header web — glass pill (27 Sep) ✅ `af4f250`
 
@@ -1015,8 +1081,8 @@ Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
 ### Commit terakhir (27 Sep, sesi terakhir — semua ter-push)
 
 - **frontend** `8726294` — form buat member tanpa kolom password (kolom dihapus, diganti
-  catatan password awal 0000). Sebelumnya `01c419c`/`39fa0f6` — link `Download APK (Android)`
-  di card `Installer Aplikasi` (`SettingsPage.tsx`) pakai `downloadAuth`.
+  catatan password awal 0000). Sebelumnya `01c419c`/`39fa0f6` — tombol `Download APK` di
+  card `Aplikasi Android` (`SettingsPage.tsx`) pakai `downloadAuth`.
 - **backend** `a695c77` — `client:create_password` **mewajibkan + memverifikasi `passwordLama`**,
   dan `createVoucherAndStart()` (jalur buat voucher dari kartu PC di dashboard) ikut `PASSWORD_DEFAULT`
   — sebelumnya masih `Math.floor(1000 + Math.random()*9000)`, jadi itu satu-satunya jalur pembuatan
@@ -1077,7 +1143,7 @@ IP LAN host, port `3000` terbuka langsung di LAN, nama container `postgres-15`, 
 Cloudflare Tunnel. Tidak berbahaya pada jaringan privat, tapi sangat berguna
 untuk attacker yang menyisir.
 
-### Pending (per 27 Sep, sesi terakhir)
+### Pending (per 28 Sep, sesi terakhir)
 
 - ~~**Frontend jadi .apk Android**~~ — **SELESAI 27 Sep**, tapi bukan lewat Capacitor.
   Yang dipakai adalah aplikasi Flutter native penuh (repo `v3netbill-mobile`), hasilnya
@@ -1101,11 +1167,16 @@ untuk attacker yang menyisir.
   front-end. Belum dikerjakan.
 - **Pindah repo ke private / Gitea** — deferred oleh user. Kalau jadi dilakukan, jangan
   lupa set ulang 4 secret keystore APK.
-- **Rapi `/data/apk/`** — APK & MSI lama menumpuk karena tiap upload tidak menghapus yang lama.
-  Aktif sekarang `v3netbill-1790563269411.apk` (53.956.267 byte, **sudah diverifikasi
-  identik** dengan artifact CI run `36369605297`, jadi fitur Ganti Password sudah
-  ada di APK yang tersebar) dan `installer-1790568662472.msi`. Tidak mendesak,
-  disk masih longgar.
+- **Simpan bundel 28 Sep di luar mesin ini** — `/home/warnet/bundle_project/` (89,4 MB)
+  berisi dump DB yang memuat **token bot Telegram yang aktif** plus hash PIN. Sudah
+  dikirim 2 PDF ke Telegram, tapi zip lengkapnya masih di disk server. Kalau mesin ini
+  hilang, **cabik token lewat @BotFather** lalu isi ulang di Pengaturan, dan ganti kedua PIN.
+- ~~**Rapi `/data/apk/`**~~ — **SELESAI 29 Sep**: 8 APK lama (460 MB) + 10 installer lama
+  (560 MB) dihapus manual, total hemat ~906 MB. Tersisa `v3netbill-1790641833108.apk` dan
+  `installer-1790582791469.msi`, keduanya sudah diunduh ulang lewat domain dan hash-nya cocok.
+  ⚠️ **Penyebabnya belum diperbaiki di backend**: tiap upload hanya menambah berkas.
+  Jawaban permanennya = hapus berkas lama di `settings.service.ts` saat upload baru,
+  tapi itu perubahan kode backend dan perlu diuji dulu.
 - **Skrip uji koneksi Windows (.bat)** — belum dikerjakan, masih diskusi. Yang sudah teruji dari
   Linux: `dotnet build` + 8 uji alur password lewat socket.io. Yang **belum** pernah tersentuh:
   named pipe service↔overlay, benar-benar bertayinya Tampilan XAML di layar, apakah `.exe` jalan,
@@ -1209,5 +1280,78 @@ per origin, jadi suntik lewat `addInitScript` **sebelum** `goto`.
 
 Stub HTML di `file://` tidak bisa menulis localStorage untuk origin https — itu sebabnya
 stub pertama gagal.
+
+### Membuat PDF dari HTML (tanpa pdfkit, tanpa Chromium lewat Playwright)
+
+Untuk dokumen (dokumentasi, manual), **HTML + inline SVG** lalu dicetak dengan Chromium
+headless. Diagramnya jadi vektor, jadi tetap tajam ukuran berapa pun, dan Chromium sudah
+ada di image Playwright — tidak perlu `npm i` apa pun:
+
+```bash
+docker run --rm -v /path/ke/docs:/w -w /w --entrypoint bash \
+  mcr.microsoft.com/playwright:v1.55.0-noble -c '
+  /ms-playwright/chromium-1187/chrome-linux/chrome --headless --no-sandbox \
+    --disable-gpu --no-pdf-header-footer \
+    --print-to-pdf=/w/nama.pdf file:///w/nama.html'
+```
+
+⚠️ Pesan "N bytes written to file" Chromium menulis ke **stderr**. Kalau pipe-nya
+`2>/dev/null`, **`2>/dev/null` menyembunyikan keberhasilannya** — PDF-nya
+
+tetap tercipta, hanya log "N bytes written" yang hilang. Verifikasi dengan
+`pdfinfo nama.pdf` (boleh di host), jangan percaya log.
+
+⚠️ Berkas yang ditulis Chromium jadi **root-owned** (container berjalan sebagai root),
+jadi tidak bisa di-overwrite dari host tanpa `sudo`, dan `sudo` di host ini butuh
+password. Untuk menimpa: `docker cp` dari container, atau tulis lewat `docker run -v`.
+
+⚠️ Gambar relatif (`img/…`) **harus ikut di-mount** bersama HTML-nya.
+
+### Cek isi PDF tanpa membuka Acrobat
+
+```bash
+pdfinfo nama.pdf              # jumlah halaman, ukuran, A4?
+pdftoppm -r 70 -png nama.pdf /tmp/qa/p    # jadi PNG per halaman
+```
+
+`/usr/share/dict/american-english` + skrip Python kecil sangat berguna untuk **menangkap
+kata Inggris asing** di dokumen Indonesia. Tetap tidak menangkap katasampah yang
+**terlihat seperti** bahasa Inggris (`confiscated`, `acutely`), dan **tidak** menangkap
+huruf-homoglyph. Untuk itu tetap perlu baca teksnya sendiri.
+
+⚠️ Kesalahan yang berulang di sesi 28 Sep: karakter CJK (Han) muncul **sendiri** di teks
+yang sedang ditulis, bahkan di file yang sama dalam satu menit. Selalu jalankan
+pemindaian setelah menulis, dan **paste output-nya, jangan langsung percaya** (lihat
+pelajaran no. 1 & 5).
+
+⚠️ Fitur CSS counter menomori ulang tiap `<ol>`, jadi atribut `start="5"` **diabaikan**
+dan langkah terakhir tampil sebagai "1". Perbaiki dengan kelas turunan, bukan `start`:
+
+```css
+.langkah.lanjut { counter-reset: langkah 4; }   /* jadi mulai dari 5 */
+```
+
+## Bundel serah terima (28 Sep 2026)
+
+Artefak lengkap ada di `/home/warnet/bundle_project/v3netbill-warnet-bundle-20260928-145520.zip`
+(89,4 MB, 22 berkas) + foldernya (`SHA256SUMS` 21 berkas, `README.md` sebagai pintu
+masuk). Isinya: source 4 repo, dump DB 28 Sep, MSI Agent fresh (CI `36394454560`), APK
+rilis (`c71f250`), plus **dokumentasi teknis** (21 hal) dan **manual pengguna** (21 hal)
+dalam PDF + HTML. Sesi ini **tidak mengubah kode aplikasi** (4 repo tetap di commit
+`88dac8c`/`547642b`/`d084786`/`c71f250`).
+
+⚠️ **Jangan pernah mencetak nilai dari `GET /api/settings` ke dokumen mana pun.** Endpoint
+itu mengembalikan `agent_otp_bot_token` (token bot Telegram **aktif**), `agent_otp_chat_id`,
+`pin_bypass_hash`, dan `pin_uninstall_hash` dalam bentuk jelas. Semuanya ikut ter-copy ke
+dump DB karena berada di tabel `Setting` — itu **wajar** untuk backup, tapi berarti bundel
+memuat kredensial nyata. Untuk kirim PDF ke Telegram, **ambil token dari DB di dalam
+perintah**, jangan diketik di baris perintah.
+
+⚠️ **`docker-compose.yml` memakai jaringan eksternal `war-nt-web_default`**, yang dibuat
+otomatis oleh compose PostgreSQL dan **namanya mengikuti nama folder** project itu. Kalau
+folder PostgreSQL tidak persis `war-nt-web`, `docker compose up` gagal dengan
+`network war-nt-web_default not found`. Root `docker-compose.yml` **tidak ada di dalam
+salah satu repo** — ada di root project, jadi harus disalin eksplisit saat membuat bundel
+source.
 
 

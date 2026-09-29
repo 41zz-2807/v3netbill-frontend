@@ -448,6 +448,135 @@ server) — tetap perlu CI.
 
 ---
 
+## Sesi 28 Sep (sesi terakhir) — Bundel Serah-Terima Lengkap
+
+Sesi ini **tidak mengubah kode aplikasi sama sekali**. Yang dikerjakan: membuat satu bundel
+penyerahan berisi source, backup database, berkas pasang, dan dua dokumen panduan. Aplikasi
+produksi tidak boleh terganggu — diverifikasi up front, dan memang tidak tersentuh.
+
+### 1. Bundel di `/home/warnet/bundle_project/`
+
+```
+v3netbill-warnet-bundle-20260928-145520.zip     89,4 MB   (22 berkas)
+v3netbill-warnet/                                          (isi yang diekstrak)
+├── README.md                    ← mulai di sini
+├── SHA256SUMS                   ← 21 berkas, semua diverifikasi OK
+├── v3netbill-source-…zip        ← 4 repo + docker-compose.yml root
+├── backup/…sql                  ← 9 tabel, 907 baris
+├── release/…msi + …apk
+└── docs/                        ← 2 PDF + 2 HTML + 12 screenshot
+```
+
+| Artefak | Ukuran | Asal |
+|---|---|---|
+| Dump database | 82 KB | `pg_dump --clean --if-exists`, jumlah record diverifikasi sama dengan DB live |
+| Source zip | 2,0 MB | 4 repo pada commit bersih + `.env.example` + `docker-compose.yml` |
+| MSI Agent | 61,8 MB | CI run `36394454560` (workflow_dispatch), SHA-256 `056591a3…` |
+| APK Android | 51,5 MB | CI run `36369605297` commit `c71f250`, SHA-256 `bb1563c4…` |
+| Dokumentasi teknis | 21 hal | arsitektur, DB, WebSocket, API, pasang dari nol |
+| Manual pengguna | 21 hal | kasir, admin, pelanggan, Agent PC, aplikasi HP |
+
+### 2. Dua dokumen PDF
+
+Dibuat dari HTML + SVG inline, dicetak dengan Chromium headless
+(`mcr.microsoft.com/playwright:v1.55.0-noble`, `--print-to-pdf`). Diagramnya vektor,
+jadi tetap tajam dicetak ukuran berapa pun. Versi HTML ikut disertakan supaya bisa diedit.
+
+- **Dokumentasi Teknis** — arsitektur, topologi jaringan, skema DB, event WebSocket,
+  tabel API, lalu panduan pasang dari nol: PostgreSQL → `.env` → compose → Cloudflare Tunnel.
+- **Manual Pengguna** — 12 tangkapan layar **dari sistem yang sedang berjalan** plus
+  3 diagram SVG untuk tampilan Agent PC yang tidak bisa difoto dari Linux.
+
+### 3. Temuan yang mengubah isi manual (verifikasi ke kode)
+
+Draf pertama manual memuat **empat klaim yang salah**. Semuanya dibetulkan setelah
+dibandingkan dengan kode, bukan setelah membaca ulang dokumen yang ada:
+
+| Draf awal | Kenyataan | Sumber |
+|---|---|---|
+| "Task Manager diblokir saat sesi berjalan" | justru **dibuka** saat sesi; diblokir saat layar terkunci | `Agent.Service/Worker.cs:226` vs `:91` |
+| Tombol web: "Revoke", "Ganti Password" | label sebenarnya **Nonaktifkan**, **Password**, **Tarik** | `AccountsPage.tsx:475-500` |
+| "Matikan PC tidak mengembalikan sisa waktu" | **sama-sama mengembalikan** — `lock_pc` dan `shutdown_pc` sama-sama memanggil `unlockPc` | `session.gateway.ts:523,541` → `session.service.ts:670` `stopSession('manual')` |
+| "hidupkan agent lewat menu PC" | tidak ada; harus lewat **Windows Services** (`v3Netbill Agent Service`) | tidak ada handler start-service di gateway |
+
+Verifikasi lain: tombol dashboard bernama `Start sesi` / `Kunci layar` / `Matikan PC` (icon,
+bukan teks); label status `Aktif` / `Idle` / `Offline`; warna kartu biru/cyan/abu (bukan
+hijau/merah); label koneksi web `Terkoneksi (realtime)`; PC ID = UUID 36 karakter
+(dihitung dari DB); nama service `v3Netbill Agent Service`; tombol emergency
+`STOP AGENT (DARURAT)`.
+
+⚠️ **Pelajaran yang berulang:** dokumen yang tampak meyakinkan bukan alasan untuk percaya diri.
+Empat dari sepuluh bagian manual pertama harus dibetulkan karena terdengar
+  meyakinkan, padahal salah.
+
+### 4. Dua bug pada dokumen yang dibuat sendiri
+
+- **Nomor langkah salah.** CSS `.langkah { counter-reset: langkah }` menomori ulang tiap
+  `<ol>`, jadi atribut `start="5"` diabaikan dan langkah terakhir tampil sebagai "1".
+  Diperbaiki dengan kelas `.lanjut { counter-reset: langkah 4 }`.
+- **Path instalasi tidak konsisten.** Bagian 5.5 menulis `…/v3netbill/warnet`, padahal
+  sumber diekstrak ke `…/v3netbill/v3netbill-warnet`.
+
+Ditambah: compose memakai jaringan eksternal `war-nt-web_default` yang **dibuat otomatis
+oleh compose PostgreSQL dan namanya mengikuti nama folder**. Kalau folder tidak persis
+`war-nt-web`, `docker compose up` gagal dengan `network not found`. Sekarang ada
+peringatan eksplisit di 5.5.
+
+### 5. ⚠️ Nilai sensitif yang ikut terbawa ke backup
+
+`GET /api/settings` ternyata mengembalikan nilai sensitif dalam bentuk jelas:
+
+| Kunci | Isi | Sifat |
+|---|---|---|
+| `agent_otp_bot_token` | token bot Telegram | **kredensial aktif, bisa dipakai orang lain** |
+| `agent_otp_chat_id` | id chat tujuan | data, bukan rahasia |
+| `pin_bypass_hash` | hash bcrypt PIN bypass | hash, bukan PIN-nya |
+| `pin_uninstall_hash` | hash bcrypt PIN uninstall | hash, bukan PIN-nya |
+
+⚠️ **Nilai aslinya sengaja tidak ditulis di dokumen ini.** Repo ini public, jadi
+nama kuncinya saja sudah cukup sebagai peringatan. Untuk bekerja dengan nilai ini,
+**ambil dari database di dalam perintah** (`psql -t -A -c "SELECT value …"`), jangan
+salin-tempel ke file mana pun.
+
+Nilai-nilai ini **masih ada di dalam dump database** (baris tabel `Setting`). Sengaja
+**tidak dihapus**: memangkas akan membuat restore tidak identik dengan aslinya. Bundel
+diberi peringatan eksplisit di README, lengkap dengan tindakan yang harus dilakukan kalau
+bundel bocor (cabik token lewat @BotFather, ganti PIN, simpan installer di tempat aman).
+
+**Penting untuk sesi berikutnya:** jangan pernah mencetak nilai ini di dokumen, commit
+message, atau log mana pun. Scan `agent_otp_*` dan `*_hash` setiap kali membuat artefak
+yang berasal dari DB.
+
+### 6. Pemeriksaan kebenaran (semua lulus)
+
+| Yang diperiksa | Hasil |
+|---|---|
+| `ZipFile.testzip()` source & bundel | `None` (tidak rusak) |
+| `sha256sum -c SHA256SUMS` setelah ekstrak ulang | 21/21 OK |
+| Berkas terlarang di zip (`.env`, `github-token.txt`, `key.properties`, `*.jks`, `node_modules`, `.git`, `dist`) | tidak ada |
+| Nilai `.env` asli bocor ke zip? | tidak ada (7 kunci diperiksa) |
+| Dokumen: karakter CJK / Korea / Rusia | bersih (semua 3 dokumen) |
+| Dokumen: kata Inggris asing | bersih, kecuali istilah teknis yang memang benar |
+| `docker compose ps` | backend `Up 2 hours`, **0 restart** |
+| Domain | HTTP 200; `/api/pcs` & `/api/settings` tanpa token → 401 |
+| Setting produksi | `harga_per_menit=50`, `grace_period_detik=180` (tidak berubah) |
+| 4 repo | bersih, di commit yang sama seperti sebelum sesi |
+
+### 7. Pengiriman ke Telegram
+
+Kedua PDF dikirim ke chat Telegram warnet yang sudah terdaftar lewat bot yang sama, token diambil
+langsung dari database agar tidak diketik di baris perintah. Ukuran di Telegram cocok
+byte-per-byte dengan berkas di server.
+
+### 8. Dua skrip sekali pakai yang hilang
+
+`/tmp/opencode/html2pdf.mjs` sempat terhapus dan harus ditulis ulang. Pelajaran: skrip
+render PDF **belum** tersimpan permanen di project. Kalau akan dipakai lagi, taruh di
+`frontend/scripts/` atau tulis ulang langkah-langkahnya di `AGENTS.md` — jangan.andalkan
+ `/tmp`.
+
+---
+
 ## Dokumentasi Referensi
 
 | File | Isi |
