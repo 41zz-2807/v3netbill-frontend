@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { fetchPcs, createPc, deletePc, unlockPc } from '../lib/api.ts'
 import type { Pc } from '../lib/types.ts'
 import { useAuth } from '../context/AuthContext.tsx'
-import Loader from '../components/Loader.tsx'
+import ProgressBar from '../components/ui/ProgressBar.tsx'
 import { Modal } from '../components/ui/Modal.tsx'
 import { GradientCard } from '../components/ui/GradientCard.tsx'
 import { inputClass, buttonClass } from '../components/ui/gradientCardStyles.ts'
@@ -229,7 +229,7 @@ export default function PcPage() {
 
       <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
         {loading ? (
-          <div className="flex justify-center p-4"><Loader text="Memuat PC" /></div>
+          <div className="p-4"><ProgressBar label="Memuat PC" value={null} /></div>
         ) : pcs.length === 0 ? (
           <div className="p-4 text-sm text-slate-400">Belum ada PC.</div>
         ) : (

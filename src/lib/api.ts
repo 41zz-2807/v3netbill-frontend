@@ -227,9 +227,29 @@ export async function setPinBypass(
   return data
 }
 
+export interface DownloadProgress {
+  loaded: number
+  total: number
+  /** 0..100, atau null kalau server tidak mengirim content-length. */
+  percent: number | null
+}
+
+/**
+ * Unduh berkas ber-JWT sambil melaporkan kemajuan.
+ *
+ * `res.blob()` yang biasa dipakai tidak memberi kabar sama sekali selama
+ * 50 MB masuk, jadi pengguna hanya menunggu tanpa tahu sudah berapa persen.
+ * Di sini isinya dibaca lewat `ReadableStream` sehingga `onProgress`
+ * dipanggil tiap potongan data.
+ *
+ * Header `content-length` tidak selalu ada (server bisa mengirim chunked),
+ * jadi `percent` bisa null. Jangan menggantinya dengan tebakan — angka palsu
+ * lebih buruk daripada tidak ada angka.
+ */
 export async function downloadAuth(
   path: string,
   fallbackName: string,
+  onProgress?: (p: DownloadProgress) => void,
 ): Promise<void> {
   const token = localStorage.getItem(TOKEN_KEY)
   const res = await fetch(`/api${path}`, {
@@ -238,7 +258,43 @@ export async function downloadAuth(
   if (!res.ok) {
     throw new Error(`Gagal mengunduh (${res.status})`)
   }
-  const blob = await res.blob()
+
+  const total = Number(res.headers.get('content-length') ?? 0)
+  let loaded = 0
+  const bagian: Uint8Array[] = []
+
+  if (res.body) {
+    const reader = res.body.getReader()
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value) {
+        bagian.push(value)
+        loaded += value.byteLength
+        onProgress?.({
+          loaded,
+          total,
+          percent: total > 0 ? (loaded / total) * 100 : null,
+        })
+      }
+    }
+  } else {
+    // Browser lama tanpa ReadableStream: turunkan ke blob, tanpa persen.
+    const blob = await res.blob()
+    bagian.push(new Uint8Array(await blob.arrayBuffer()))
+    loaded = blob.size
+    onProgress?.({ loaded, total: loaded, percent: 100 })
+  }
+
+  if (total > 0 && loaded !== total) {
+    throw new Error(
+      `Berkas tidak lengkap (${loaded} dari ${total} byte). Coba ulangi.`,
+    )
+  }
+
+  const blob = new Blob(bagian as BlobPart[], {
+    type: res.headers.get('content-type') ?? 'application/octet-stream',
+  })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -247,6 +303,7 @@ export async function downloadAuth(
   a.click()
   a.remove()
   URL.revokeObjectURL(url)
+  onProgress?.({ loaded, total: loaded, percent: 100 })
 }
 
 export function parseMeta<T>(raw?: string): T | null {

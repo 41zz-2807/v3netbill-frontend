@@ -10,7 +10,7 @@ import {
   formatDuration,
 } from '../lib/api.ts'
 import type { Account } from '../lib/types.ts'
-import Loader from '../components/Loader.tsx'
+import ProgressBar from '../components/ui/ProgressBar.tsx'
 import { GradientCard } from '../components/ui/GradientCard.tsx'
 import { Modal } from '../components/ui/Modal.tsx'
 import { TabButton } from '../components/ui/Tabs.tsx'
@@ -509,7 +509,7 @@ export default function AccountsPage() {
 
       <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
         {loading ? (
-          <div className="flex justify-center p-4"><Loader text="Memuat akun" /></div>
+          <div className="p-4"><ProgressBar label="Memuat akun" value={null} /></div>
         ) : filtered.length === 0 ? (
           <div className="p-4 text-sm text-slate-400">
             {search ? `Tidak ada ${tab.toLowerCase()} yang cocok dengan "${search}".` : `Belum ada akun ${tab.toLowerCase()}.`}

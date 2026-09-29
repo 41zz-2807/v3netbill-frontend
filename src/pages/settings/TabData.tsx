@@ -1,7 +1,8 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { createBackup, downloadAuth } from '../../lib/api.ts'
 import type { BackupFile, BackupResult } from '../../lib/types.ts'
 import { Pagination } from '../../components/ui/Pagination.tsx'
+import ProgressBar from '../../components/ui/ProgressBar.tsx'
 import { PER_HALAMAN, urutkanTerbaru, usePagination } from '../../hooks/usePagination.ts'
 import { SettingsCard } from './SettingsCard'
 import { formatBytes, formatDateIndo, type SettingsCtx } from './shared'
@@ -20,6 +21,9 @@ export default function TabData({
   reloadBackups: () => Promise<void>
 }) {
   const { busy, run, setErr, setMsg } = ctx
+  // File yang sedang diunduh, supaya bar kemajuan menempel pada baris yang
+  // sedang dikerjakan dan bukan di semua baris sekaligus.
+  const [unduh, setUnduh] = useState<Record<string, { percent: number | null; detail?: string }>>({})
 
   const backupTerurut = useMemo(
     () => urutkanTerbaru(backups, (b) => b.createdAt),
@@ -50,12 +54,31 @@ export default function TabData({
   async function downloadBackupFile(filename: string) {
     await run('backup-download', async () => {
       try {
+        setUnduh((s) => ({ ...s, [filename]: { percent: 0 } }))
         await downloadAuth(
           `/settings/backup/download?filename=${encodeURIComponent(filename)}`,
           filename,
+          (p) =>
+            setUnduh((s) => ({
+              ...s,
+              [filename]: {
+                percent: p.percent,
+                detail: p.total
+                  ? `${formatBytes(p.loaded)} dari ${formatBytes(p.total)}`
+                  : `${formatBytes(p.loaded)}`,
+              },
+            })),
         )
+        setUnduh((s) => {
+          const { [filename]: _buang, ...sisa } = s
+          return sisa
+        })
         setMsg(`Backup diunduh: ${filename}`)
       } catch (e) {
+        setUnduh((s) => {
+          const { [filename]: _buang, ...sisa } = s
+          return sisa
+        })
         setErr(e instanceof Error ? e.message : String(e))
       }
     })
@@ -104,14 +127,25 @@ export default function TabData({
                     <span className="whitespace-nowrap">{formatDateIndo(bk.createdAt)}</span>
                     <span className="whitespace-nowrap">{formatBytes(bk.sizeBytes)}</span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void downloadBackupFile(bk.filename)}
-                    disabled={busy !== null}
-                    className="mt-2 w-full rounded-full bg-sky-600 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
-                  >
-                    {busy === 'backup-download' ? 'Mengunduh...' : 'Download'}
-                  </button>
+                  {unduh[bk.filename] ? (
+                    <div className="mt-2 rounded-full bg-sky-600 px-3 py-2">
+                      <ProgressBar
+                        tone="light"
+                        size="sm"
+                        value={unduh[bk.filename].percent}
+                        detail={unduh[bk.filename].detail}
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void downloadBackupFile(bk.filename)}
+                      disabled={busy !== null}
+                      className="mt-2 w-full rounded-full bg-sky-600 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
+                    >
+                      Download
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -139,14 +173,25 @@ export default function TabData({
                       {formatBytes(bk.sizeBytes)}
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => void downloadBackupFile(bk.filename)}
-                        disabled={busy !== null}
-                        className="rounded-full bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
-                      >
-                        {busy === 'backup-download' ? 'Mengunduh...' : 'Download'}
-                      </button>
+                      {unduh[bk.filename] ? (
+                        <div className="ml-auto w-40 rounded-full bg-sky-600 px-3 py-1.5">
+                          <ProgressBar
+                            tone="light"
+                            size="sm"
+                            value={unduh[bk.filename].percent}
+                            detail={unduh[bk.filename].detail}
+                          />
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => void downloadBackupFile(bk.filename)}
+                          disabled={busy !== null}
+                          className="rounded-full bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
+                        >
+                          Download
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchTransactions, batalTransaksi, formatRupiah } from '../lib/api.ts'
 import type { Transaction } from '../lib/types.ts'
-import Loader from '../components/Loader.tsx'
+import ProgressBar from '../components/ui/ProgressBar.tsx'
 import { Pagination } from '../components/ui/Pagination.tsx'
 import {
   PER_HALAMAN,
@@ -122,7 +122,7 @@ export default function TransactionsPage() {
 
       <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
         {loading ? (
-          <div className="flex justify-center p-4"><Loader text="Memuat transaksi" /></div>
+          <div className="p-4"><ProgressBar label="Memuat transaksi" value={null} /></div>
         ) : transactions.length === 0 ? (
           <div className="p-4 text-sm text-slate-400">Belum ada transaksi.</div>
         ) : (

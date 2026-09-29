@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext.tsx'
 import { fetchSettings, fetchBackupList, fetchUsers, parseMeta } from '../lib/api.ts'
 import type { BackupFile, BackupResult, InstallerMeta, OperatorUser } from '../lib/types.ts'
-import LoadingOverlay from '../components/LoadingOverlay.tsx'
 import { TabButton } from '../components/ui/Tabs.tsx'
+import ProgressBar from '../components/ui/ProgressBar.tsx'
 import TabTarif from './settings/TabTarif.tsx'
 import TabAgent from './settings/TabAgent.tsx'
 import TabInstalasi from './settings/TabInstalasi.tsx'
@@ -101,7 +101,15 @@ export default function SettingsPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-slate-900">Pengaturan</h1>
 
-      {busy && <LoadingOverlay text={BUSY_TEXT[busy] ?? 'Memproses'} />}
+      {/* Dahulu proses apa pun menutup layar penuh dengan Loader. Sekarang
+          cukup garis tipis di dalam halaman: isinya masih kelihatan dan
+          pengguna tidak merasa aplikasinya menggantung. Unduhan punya persen
+          sendiri di dalam tombolnya, jadi aksi itu sengaja tidak memakai bar ini. */}
+      {busy && !busy.startsWith('download') && (
+        <div className="rounded-md border border-slate-200 bg-white px-3 py-2">
+          <ProgressBar label={BUSY_TEXT[busy] ?? 'Memproses'} value={null} />
+        </div>
+      )}
 
       {err && (
         <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

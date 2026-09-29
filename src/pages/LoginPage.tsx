@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { login } from '../lib/api.ts'
 import { useAuth } from '../context/AuthContext.tsx'
-import Loader from '../components/Loader.tsx'
+import ProgressBar from '../components/ui/ProgressBar.tsx'
 
 export default function LoginPage() {
   const { login: doLogin } = useAuth()
@@ -60,7 +60,11 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
           />
           <button type="submit" className="login-button" disabled={loading}>
-            {loading ? <Loader text="Masuk" /> : 'Sign In'}
+            {loading ? (
+              <ProgressBar tone="light" value={null} />
+            ) : (
+              'Sign In'
+            )}
           </button>
         </form>
         <span className="agreement">v3Netbill — Sistem billing warnet</span>

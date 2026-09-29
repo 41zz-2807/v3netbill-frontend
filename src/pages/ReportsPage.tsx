@@ -22,7 +22,7 @@ import {
   usePagination,
   urutkanTerbaru,
 } from '../hooks/usePagination.ts'
-import Loader from '../components/Loader.tsx'
+import ProgressBar from '../components/ui/ProgressBar.tsx'
 
 const WARNA_VOUCHER = '#8b5cf6'
 const WARNA_MEMBER = '#10b981'
@@ -160,7 +160,7 @@ export default function ReportsPage() {
           Periode tutup hari: 23:30 WIB. Di jam 23:30 transaksi keuangan otomatis tutup hari dan kembali ke 0 untuk hari berikutnya.
         </p>
         {loading ? (
-          <div className="flex justify-center p-4"><Loader text="Memuat laporan" /></div>
+          <div className="p-4"><ProgressBar label="Memuat laporan" value={null} /></div>
         ) : todayReport ? (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <MiniStat label="Total Login" value={String(todayReport.totalLogin)} />

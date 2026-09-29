@@ -1,6 +1,7 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { downloadAuth, uploadInstaller, uploadWallpaper } from '../../lib/api.ts'
 import type { InstallerMeta } from '../../lib/types.ts'
+import ProgressBar from '../../components/ui/ProgressBar.tsx'
 import { SettingsCard } from './SettingsCard'
 import { adaTanggal, formatBytes, formatDateIndo, type SettingsCtx } from './shared'
 
@@ -20,6 +21,43 @@ export default function TabInstalasi({
   const { busy, run, setErr, setMsg } = ctx
   const installerRef = useRef<HTMLInputElement>(null)
   const wallRef = useRef<HTMLInputElement>(null)
+  // Kemajuan unduhan, disimpan per berkas supaya dua kartu tidak saling menimpa.
+  const [unduh, setUnduh] = useState<Record<string, { percent: number | null; detail?: string }>>({})
+
+  async function unduhBerkas(
+    kunci: string,
+    path: string,
+    fname: string,
+    label: string,
+  ) {
+    await run(kunci, async () => {
+      try {
+        setUnduh((s) => ({ ...s, [kunci]: { percent: 0 } }))
+        await downloadAuth(path, fname, (p) =>
+          setUnduh((s) => ({
+            ...s,
+            [kunci]: {
+              percent: p.percent,
+              detail: p.total
+                ? `${formatBytes(p.loaded)} dari ${formatBytes(p.total)}`
+                : `${formatBytes(p.loaded)}`,
+            },
+          })),
+        )
+        setMsg(label)
+        setUnduh((s) => {
+          const { [kunci]: _buang, ...sisa } = s
+          return sisa
+        })
+      } catch (e) {
+        setUnduh((s) => {
+          const { [kunci]: _buang, ...sisa } = s
+          return sisa
+        })
+        setErr(e instanceof Error ? e.message : String(e))
+      }
+    })
+  }
 
   async function onInstaller(file?: File) {
     if (!file) return
@@ -87,26 +125,33 @@ export default function TabInstalasi({
           >
             {busy === 'installer' ? 'Mengunggah...' : 'Upload (.exe/.msi, maks 200 MB)'}
           </button>
-          {installed && (
-            <button
-              type="button"
-              onClick={() =>
-                void run('download', async () => {
-                  try {
-                    const fname = installed.filename ?? 'v3netbill-installer.msi'
-                    await downloadAuth('/settings/installer', fname)
-                    setMsg('Installer diunduh')
-                  } catch (e) {
-                    setErr(e instanceof Error ? e.message : String(e))
-                  }
-                })
-              }
-              disabled={busy !== null}
-              className="rounded-md bg-slate-200 px-4 py-2 text-sm text-slate-800 hover:bg-slate-300 disabled:opacity-50"
-            >
-              {busy === 'download' ? 'Mengunduh...' : 'Unduh Installer'}
-            </button>
-          )}
+          {installed &&
+            (unduh.download ? (
+              <div className="rounded-md bg-slate-900 px-3 py-2.5">
+                <ProgressBar
+                  tone="light"
+                  value={unduh.download.percent}
+                  label="Mengunduh installer"
+                  detail={unduh.download.detail}
+                />
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() =>
+                  void unduhBerkas(
+                    'download',
+                    '/settings/installer',
+                    installed.filename ?? 'v3netbill-installer.msi',
+                    'Installer diunduh',
+                  )
+                }
+                disabled={busy !== null}
+                className="rounded-md bg-slate-200 px-4 py-2 text-sm text-slate-800 hover:bg-slate-300 disabled:opacity-50"
+              >
+                Unduh Installer
+              </button>
+            ))}
         </div>
       </SettingsCard>
 
@@ -131,23 +176,32 @@ export default function TabInstalasi({
 
         <div className="mt-auto">
           {apk ? (
-            <button
-              type="button"
-              onClick={() =>
-                void run('downloadApk', async () => {
-                  try {
-                    await downloadAuth('/settings/apk', 'v3netbill.apk')
-                    setMsg('APK Android diunduh')
-                  } catch (e) {
-                    setErr(e instanceof Error ? e.message : String(e))
-                  }
-                })
-              }
-              disabled={busy !== null}
-              className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
-            >
-              {busy === 'downloadApk' ? 'Mengunduh...' : 'Download APK'}
-            </button>
+            unduh.downloadApk ? (
+              <div className="rounded-md bg-slate-900 px-3 py-2.5">
+                <ProgressBar
+                  tone="light"
+                  value={unduh.downloadApk.percent}
+                  label="Mengunduh APK"
+                  detail={unduh.downloadApk.detail}
+                />
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() =>
+                  void unduhBerkas(
+                    'downloadApk',
+                    '/settings/apk',
+                    'v3netbill.apk',
+                    'APK Android diunduh',
+                  )
+                }
+                disabled={busy !== null}
+                className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
+              >
+                Download APK
+              </button>
+            )
           ) : (
             <p className="text-xs text-slate-400">APK belum tersedia.</p>
           )}
