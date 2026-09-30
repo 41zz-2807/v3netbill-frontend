@@ -1111,7 +1111,94 @@ font, jadi teks 14 px diuji jadi **2× lebih lebar** dari aslinya di HP
 tidak masalah, tapi jangan pernah memakai angka lebar teks dari test untuk
 menyesuaikan ukuran layout di HP.
 
-### Build APK & GitHub Actions
+### Menonaktifkan akun harus menghentikan sesi yang sedang berjalan (30 Sep)
+
+Dilaporkan dari pemakaian nyata: kasir membuat member, memulai sesinya di
+sebuah PC, lalu menonaktifkan member itu dari halaman Member — **PC-nya tetap
+jalan** sampai waktunya habis.
+
+Penyebabnya bukan styling, tapi dua hal yang tidak terhubung:
+
+1. `revoke()` hanya menulis `status: REVOKED`. Ia **tidak pernah menyentuh
+   sesi** yang sedang berjalan.
+2. Penolakan `account.status !== ACTIVE` di `loginRequest` hanya melindungi
+   sesi **BARU**. Sesi yang sudah jalan tidak pernah dicek ulang statusnya —
+   tidak di `revoke()` maupun di tick 1-detiknya.
+
+Perbaikannya dua lapis, keduanya wajib:
+
+- `SessionService.stopSessionsOfAccount(accountId)` dipanggil dari
+  `accounts.service.ts#revoke()`. Ini yang membuat PC terkunci **seketika**,
+  bukan menunggu giliran tick.
+- Tick di `session.service.ts#startSessionTick()` memeriksa
+  `session.account.status !== AccountStatus.ACTIVE`. Ini **pengaman** untuk
+  perubahan status dari jalur lain, termasuk ubahan langsung di database.
+
+Alasan barunya `akun_nonaktif`. ⚠️ **TIDAK butuh migrasi** — `Session` tidak
+punya kolom `alasan` sama sekali; nilainya hanya ikut di payload
+`ActivityLog.detail`. Yang perlu diperbarui hanya tipe di backend dan peta
+`STOP_REASON` di `DashboardPage.tsx`.
+
+Sisa waktu **dikembalikan** seperti penghentian manual. Akunnya
+dinonaktifkan, bukan dibuang, jadi sisa yang sudah dibayar tidak boleh hilang.
+Terbukti: saldo 12000 detik, dipakai 3 detik, revoke → `sisaWaktuDetik`
+11997 dan baris sesi jadi `SELESAI`.
+
+⚠️ **Bug kedua yang ketahuan waktu menguji yang pertama:** `createMember`
+**mengizinkan** nama member yang sama kalau yang lama sudah `REVOKED` — tapi
+`findAccountByKode` mencari tanpa memfilter status, jadi ia menemukan yang
+lama dan menolak dengan "Akun tidak aktif". Member yang barusan dibuat jadi
+**tidak akan pernah bisa login**. Perbaikannya `cariAkunAktif()`: cari yang
+`ACTIVE` dulu, baru jatuh ke akun nonaktif kalau tidak ada. Fallback itu
+sengaja dijaga supaya pesannya tetap "Akun tidak aktif", bukan "Akun tidak
+ditemukan" — yang pertama jauh lebih berguna bagi operator.
+
+### ⚠️ Tes TIDAK BOLEH memakai PC sungguhan
+
+`registerAgent` **memutus** socket lama yang punya `agentToken` sama. Jadi
+socket uji dan agent asli akan saling menendang, grace period habis, dan sesi
+uji berakhir `disconnect_timeout` — bukan karena logika yang diuji. Selama
+sesi pengujian notifikasi FCM, PC001 sungguhan sempat ditendang **13 kali
+dalam 2 menit**. Buat PC uji sendiri dengan `agentToken` acak, lalu hapus
+setelah selesai.
+
+## Cara upload APK dari aplikasi (30 Sep, versi 1.0.22) ✅
+
+Voucher/Member sekarang punya tombol **Mulai di PC** di bar aksi, jadi kasir
+tidak perlu naik ke Home hanya untuk mencari PC.
+
+### ⚠️ Kredensial yang dikirim berbeda antara voucher dan member
+
+Kode yang dikirim adalah `account.displayName`, yang untuk voucher berarti
+`kodeUnik` dan untuk member berarti **`nama`**. Ini bukan pilihan gaya:
+member **tidak punya `kodeUnik` sama sekali** (17 dari 17 member di server
+memiliki kolom itu kosong), jadi kalau mengirim kode, `findAccountByKode`
+tidak akan pernah menemukannya. Backend mencari `kodeUnik` dulu, lalu jatuh ke
+pencocokan `nama`.
+
+### Tiga penjaga yang ditegakkan SEBELUM memanggil server
+
+| Kondisi | Kenapa menolak lebih awal |
+|---|---|
+| Dipilih ≠ 1 akun | Satu sesi memakai tepat satu akun |
+| Akun dinonaktifkan | Backend juga menolak, tapi "Akun tidak aktif" dari server tidak menjelaskan bahwa masalahnya sudah terlihat sejak tadi di daftar |
+| Saldo waktu habis | Sama |
+
+Di sheet pemilihan PC **hanya PC `IDLE`** yang ditawarkan. PC yang sedang
+berjalan ditolak backend dengan "PC sudah memiliki sesi berjalan", dan PC
+offline tidak punya layar untuk dikunci. Menawarkan keduanya berarti kasir
+memilih lalu gagal — lebih buruk daripada tidak menawarkannya.
+
+⚠️ **Bar aksi jadi 6 ikon.** Wajib diuji di lebar HP; `flutter test` memakai
+permukaan 800×600 yang terlalu lebar untuk menangkap `RenderFlex overflowed`.
+`test/mulai_dari_akun_test.dart` (10 tes) mengujinya di 360 px.
+
+⚠️ **Jangan menggabungkan dua kasus penolakan dalam satu widget test.** SnackBar
+dari penolakan pertama masih menempel dan membuat pengetikan kedua tidak
+menemukan tombolnya. Itu kegagalan tes, bukan perilaku aplikasi — tapi waktu
+terbuang kalau tidak diketahui.
+
+## Build APK & GitHub Actions
 
 Workflow `.github/workflows/build-apk.yml`: Java 17, Flutter 3.44.4, analyze + test, lalu
 build. Commit `ff366d8` menambah build **universal** (`flutter build apk --release` tanpa
@@ -1708,6 +1795,11 @@ Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
 
 ### Commit terakhir (30 Sep, sesi terakhir)
 
+- **mobile** — **tombol "Mulai di PC" di bar aksi Voucher/Member** + sheet
+  pemilihan PC + perataan baris info Profile + perbaikan pesan login salah
+  password + hapus teks petunjuk di halaman login. 13 test baru, 80 test
+  lulus, `analyze` bersih. APK 1.0.22 aktif di server. Detail panjang: bagian
+  "Cara upload APK dari aplikasi".
 - **backend** — **dua bug yang menjatuhkan seluruh server**, ditemukan tidak
   sengaja waktu menguji notifikasi FCM. `startSessionTick()` punya callback
   `async` tanpa `try/catch`, jadi `P2025` dari `session.update()` menjadi

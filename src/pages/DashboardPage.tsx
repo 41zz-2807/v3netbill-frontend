@@ -537,6 +537,7 @@ const LOG_EVENT_LABEL: Record<string, string> = {
   'transaction:created': 'Transaksi',
   'voucher:created_dashboard': 'Voucher Dibuat',
   'voucher:created': 'Voucher Dibuat',
+  'account:revoked': 'Akun Dinonaktifkan',
   pc_lock: 'PC Dikunci',
   pc_locked: 'PC Dikunci',
   pc_unlock: 'PC Dibuka',
@@ -551,6 +552,7 @@ const LOG_EVENT_VARIANT: Record<string, 'default' | 'success' | 'warning' | 'dan
   'transaction:created': 'info',
   'voucher:created_dashboard': 'success',
   'voucher:created': 'success',
+  'account:revoked': 'danger',
   pc_lock: 'warning',
   pc_locked: 'warning',
   pc_unlock: 'info',
@@ -563,6 +565,7 @@ const STOP_REASON: Record<string, string> = {
   habis: 'Waktu habis',
   manual: 'Dihentikan manual',
   disconnect_timeout: 'Koneksi terputus',
+  akun_nonaktif: 'Akun dinonaktifkan',
 }
 
 function logEventLabel(event: string): string {
