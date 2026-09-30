@@ -965,10 +965,57 @@ lib/core/apk/view/update_card.dart kartu, dipakai Home dan Profile
   harus uninstall dulu dan kasir harus login ulang.
 - Upload ke server → `apk_meta` terisi `versionCode 15`, `sha256` cocok dengan
   `sha256sum` yang dihitung terpisah.
-- ⚠️ **Fitur ini belum pernah dicoba di HP sungguhan.** Yang sudah terbukti:
-  build, compile, upload, endpoint, dan logika perbandingan. Yang **belum**:
-  Android benar-benar menampilkan dan memasang APK-nya. Itu satu-satunya bagian
-  yang tidak bisa diuji di Linux.
+- ✅ **TERBUKTI DI HP SUNGGUHAN, 30 Sep.** Dua kali berturut-turut: 15→16 lalu
+  16→17, keduanya lewat tombol "Perbarui" di dalam aplikasi tanpa peramban.
+  Setelah dipasang, Profile menampilkan versi baru dan penanda menghilang
+  dengan sendirinya. Jadi unduhan 54 MB, verifikasi sha256, layar izin
+  "Pasang aplikasi tidak dikenal", dan installer Android **semuanya bekerja**.
+  Ini menutup bagian yang tadinya mustahil dibuktikan dari Linux.
+- APK aktif di server sekarang `versionCode 17` (`1.0.17`).
+
+### Perbaikan input dari pemakaian nyata (30 Sep, versi 1.0.17)
+
+Empat masalah yang dilaporkan setelah dipakai di HP, bukan dari baca kode:
+
+1. **Tombol "Voucher"/"Member" di dialog Mulai Sesi** punya huruf terakhir yang
+   turun ke baris kedua ("Vouche", "Membe") pada 390 px. Penyebabnya **dua lapis**,
+   dan lapis kedua sama sekali tidak terlihat tanpa mengukur:
+   - `Expanded` di dalam `Row` memaksa kedua tombol selebar sama, dan lebar itu
+     tidak cukup untuk ikon + teks.
+   - `Column` di dalam `AlertDialog` memakai `crossAxisAlignment: center`, jadi
+     anaknya dapat batasan longgar. Akibatnya `Wrap` **hanya dapat 139px dari
+     262px yang tersedia** — ia menyusut jadi selebar anaknya yang terlebar.
+   Solusinya: `Wrap` + `maxLines: 1, softWrap: false`, dibungkus
+   `SizedBox(width: double.infinity)`, padding 8, ikon 15, spasi 8. Dihitung:
+   130 + 8 + 117 = 255px dari 262px. **Angkanya ditulis di komentar kode** supaya
+   tidak perlu diukur ulang.
+2. **Kolom nominal terisi `10000` sejak awal.** Kasir bisa menekan Simpan tanpa
+   membaca lalu membuat handout Rp 10.000 padahal maksudnya mungkin Rp 1.000.
+   Sekarang kosong dengan petunjuk format.
+3. **Pembatas nama member dan nominal.** Nama dibatasi 40 karakter **di level
+   input, bukan dipotong saat dikirim** — nama member adalah kredensial sesi
+   (`session.service.ts` mencocokkan `nama`), jadi memotongnya membuat pelanggan
+   gagal login dengan nama yang berbeda dari yang tertulis di kartunya.
+4. **Pemisah ribuan** di semua form nominal: buat voucher, buat member, topup,
+   dan tarik. Semuanya lewat satu formatter.
+
+⚠️ **Batas nama 40 dan nominal 8 digit itu penjaga tampilan, BUKAN aturan
+server.** Sudah diperiksa ke DTO: `nominal` hanya `@IsInt() @Min(500)` tanpa
+batas atas, dan `nama` hanya `@IsString() @IsNotEmpty()` dengan kolom bertipe
+`text`. Jadi API tetap menerima nilai yang lebih besar kalau ada yang mengirim
+langsung. Kalau nanti mau jadi aturan server, itu perubahan backend terpisah.
+
+⚠️ **`maxLength` pada `TextField` tidak bisa dipakai untuk membatasi digit.**
+`maxLength` menghitung karakter, sedangkan "10.000.000" berisi 10 karakter tapi
+8 digit — `maxLength: 8` akan membuat kasir berhenti di "10.000" padahal
+angkanya belum selesai. Batas digit harus ditegakkan di dalam
+`TextInputFormatter` (`FormatRibuan` di `lib/shared/utils/rupiah_input.dart`).
+
+⚠️ **Pemisah ribuan membuat `int.tryParse` gagal.** Kolomnya berisi "10.000",
+jadi harus lewat `parseNominal()` yang membuang pemisah dulu. Lupa hal ini menghasilkan "Nominal tidak valid" padahal kasir mengetik angka yang benar.
+
+Semua ada tesnya: `test/rupiah_input_test.dart` (11) dan
+`test/mulai_sesi_dialog_test.dart` (3, semuanya di lebar HP 390 px).
 
 ### Build APK & GitHub Actions
 
@@ -1382,20 +1429,24 @@ Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
 
 ### Commit terakhir (30 Sep, sesi terakhir)
 
-- **mobile** — **pembaruan diri aplikasi**: CI memberi nomor versi dari
-  `github.run_number` + step yang memverifikasi `versionCode` di APK benar-benar
-  masuk; backend membacanya dari dalam APK (deploy `app-info-parser`); endpoint
-  `GET /api/settings/apk/info`; Kotlin installer sendiri (FileProvider + izin,
-  ~170 baris); `UpdateProvider` + kartu di Home & Profile + titik merah di tab
-  Profile; 14 test baru. Detail panjang: bagian "Pembaruan diri aplikasi Android".
-- **backend** — `ApkMeta` menambah `versionCode`/`versionName`/`sha256` yang dibaca
-  dari berkas saat upload, `GET /api/settings/apk/info`. Dependensi baru
-  `app-info-parser` + deklarasi tipe manual.
+- **mobile** `6f23b3c` — **perbaikan input dari pemakaian nyata** (versi 1.0.17):
+  tombol Voucher/Member tidak lagi turun baris di 390 px, kolom nominal tidak
+  lagi terisi 10000, nama dibatasi 40 karakter di level input, nominal
+  diformat ribuan di semua form. 14 test baru. Commit sebelumnya: `3035793`
+  (pisah ruang nomor versi CI dan lokal), `8f9e514` (**pembaruan diri aplikasi**:
+  CI memberi nomor versi dari `github.run_number` + step verifikasi `versionCode`;
+  backend baca dari dalam APK; `GET /api/settings/apk/info`; Kotlin installer
+  sendiri ~170 baris; `UpdateProvider` + kartu Home & Profile + titik merah di
+  tab Profile). Detail panjang: bagian "Pembaruan diri aplikasi Android".
+- **frontend** `c312175` —
+- **backend** `5fde92d` — `ApkMeta` menambah `versionCode`/`versionName`/`sha256`
+  yang dibaca dari berkas saat upload, `GET /api/settings/apk/info`. Dependensi
+  baru `app-info-parser` + deklarasi tipe manual.
 - **frontend** — sesi web terkunci otomatis: `sessionStorage` (logout saat browser ditutup)
   + `useIdleLogout` 5 menit + pesan general "Sesi berakhir. Silakan login kembali."
   (`src/hooks/useIdleLogout.ts`, `AuthContext`, `Layout`, `LoginPage`, `lib/api.ts`).
   Verifikasi 8 tes Playwright di domain produksi. Card "Aplikasi Android" kini
-  menampilkan "Versi 1.0.15 (build 15)". Sebelumnya `7453c8f` (dokumentasi),
+  menampilkan "Versi 1.0.17 (build 17)". Sebelumnya `7453c8f` (dokumentasi),
   `1f7cd40` (loader dashboard), `8726294` — form buat member tanpa kolom password.
 - **backend** `a695c77` — `client:create_password` **mewajibkan + memverifikasi `passwordLama`**,
   dan `createVoucherAndStart()` (jalur buat voucher dari kartu PC di dashboard) ikut `PASSWORD_DEFAULT`
@@ -1492,11 +1543,9 @@ untuk attacker yang menyisir.
   jangan hardcode. Berkas di `/data/apk/` **root-owned** (dibuat container sebagai root),
   jadi `rm` dari host biasa gagal `Permission denied`; harus lewat
   `docker exec v3netbill-backend rm -f /data/apk/<nama>`.
-- **Uji pembaruan diri di HP sungguhan** — fitur sudah terpasang di server
-  (`versionCode 16`) dan semua bagian yang bisa diuji dari Linux sudah lulus. Yang
-  belum bisa dibuktikan di sini: apakah "Pasang aplikasi tidak dikenal" muncul dan
-  bisa dinyalakan, apakah unduhan 54 MB selesai di WiFi warnet, dan apakah Android
-  menerimanya. Sedang diuji di HP kasir.
+- ~~**Uji pembaruan diri di HP sungguhan**~~ — **SELESAI 30 Sep**: dua kali
+  berturut-turut (15→16 lalu 16→17) lewat tombol di dalam aplikasi, keduanya
+  berhasil. Tidak ada yang tersisa di sini.
 - ~~**Duplikasi nomor versi lokal vs CI**~~ — **SELESAI 30 Sep**: CI sekarang
   memakai `1000 + run_number` (run 14 → 1014), build lokal tetap di bawah 1000.
   Detail di bagian "Pembaruan diri aplikasi Android".
