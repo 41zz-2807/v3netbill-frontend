@@ -151,6 +151,13 @@ export interface InstallerMeta {
   filename: string
   sizeBytes: number
   uploadedAt: string
+  /**
+   * Hanya diisi untuk `apk_meta`, bukan untuk installer Windows.
+   * Dibaca backend dari dalam berkas APK, bukan diketik.
+   */
+  versionCode?: number | null
+  versionName?: string | null
+  sha256?: string | null
 }
 
 export interface BackupResult {

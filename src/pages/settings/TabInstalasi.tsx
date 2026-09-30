@@ -162,7 +162,21 @@ export default function TabInstalasi({
         {apk ? (
           <div className="mb-3 rounded-md bg-slate-50 p-2 text-xs text-slate-700">
             <div className="truncate">
-              <span className="font-medium">{apk.filename}</span> · {formatBytes(apk.sizeBytes)}
+              <span className="font-medium">{apk.filename}</span> ·{' '}
+              {formatBytes(apk.sizeBytes)}
+            </div>
+            {/* Versi ini dibaca backend dari dalam APK. Penting untuk kasir:
+                aplikasi Android membandingkan nomor ini dengan miliknya sendiri
+                untuk menampilkan "pembaruan tersedia". Kalau tidak tampil di
+                sini, orang tidak bisa memastikan HP-nya sudah versi benar. */}
+            <div className="mt-0.5 text-slate-500">
+              {apk.versionName ? (
+                <>
+                  Versi {apk.versionName} (build {apk.versionCode})
+                </>
+              ) : (
+                'Nomor versi tidak terbaca dari APK ini'
+              )}
             </div>
             {adaTanggal(apk.uploadedAt) && (
               <div className="mt-0.5 text-slate-500">

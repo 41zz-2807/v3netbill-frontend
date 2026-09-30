@@ -277,6 +277,7 @@ tanpa JWT sama sekali.
 | POST | `/api/settings/installer` | ADMIN |
 | GET | `/api/settings/installer` | — |
 | POST | `/api/settings/apk` | ADMIN |
+| GET | `/api/settings/apk/info` | — |
 | GET | `/api/settings/apk` | — |
 | POST | `/api/settings/wallpaper` | ADMIN |
 | GET | `/api/settings/wallpaper` | **PUBLIC** |
@@ -294,6 +295,14 @@ Tiga endpoint `PUBLIC` punya alasan spesifik, jangan diubah tanpa paham dulu:
 - `settings/verify-pin` — dipakai `.bat` uninstall & `UninstallGuardWindow` yang
   **tidak punya JWT**. Identitas PC (`pcId` + `agentToken`) yang dipakai, bukan akun.
 - `settings/wallpaper` — layar lock agent mengambil wallpaper tanpa punya JWT.
+
+⚠️ **`GET /api/settings/apk/info` wajib JWT, dan JANGAN digantikan
+`GET /api/settings`.** Yang terakhir mengembalikan seluruh isi tabel `Setting` —
+termasuk `agent_otp_bot_token` (token bot Telegram yang aktif),
+`agent_otp_chat_id`, `pin_bypass_hash`, dan `pin_uninstall_hash` dalam bentuk
+jelas. Aplikasi Android cukup butuh enam field: `ada`, `versionCode`,
+`versionName`, `ukuranBytes`, `sha256`, `tanggalUpload`. Endpoint `info`
+mengembalikan 192 byte; `settings` mengembalikan semuanya.
 
 ### WebSocket namespace `/session`
 
@@ -791,6 +800,168 @@ sebagai fixture `test/fixture_accounts.json`) supaya masalah yang sama tidak mun
 tanpa terdeteksi.
 
 
+## Pembaruan diri aplikasi Android (30 Sep) ✅
+
+Aplikasi mengecek versi sendiri di backend dan bisa mengunduh + memasang APK tanpa
+peramban. Kasir tidak perlu membuka browser lagi.
+
+### Bagian yang WAJIB ada dulu: nomor versi
+
+⚠️ **Sebelum 30 Sep, APK mana pun yang dibangun punya `versionCode = 1` dan
+`versionName = 1.0.0`** — termasuk 12 build di CI. `pubspec.yaml` ditulis
+`version: 1.0.0+1` dan tidak pernah dinaikkan, dan workflow CI tidak mengoper
+`--build-name`/`--build-number` sama sekali. Akibatnya **tidak ada satu pun
+angka yang bisa dibandingkan**, jadi fitur cek pembaruan secara harfiah tidak
+mungkin ada. APK terpasang saat itu sudah dibaca `aapt2`: `versionCode='1'`.
+
+Sekarang workflow CI mengoper:
+
+```
+--build-name="$BUILD_NAME"    # 1.0.<run_number>
+--build-number="$BUILD_NUMBER" # <github.run_number>
+```
+
+Ditambah step **"Pastikan nomor versi benar-benar masuk ke APK"** yang memanggil
+`aapt2 dump badging` dan **gagalkan build** kalau `versionCode` di APK tidak sama
+dengan yang dimaksud. Ini bukan formalitas: tanpa itu, "build succeeded" tidak
+berarti nomor versinya benar, dan seluruh HP kasir akan menampilkan penanda
+"pembaruan tersedia" yang tak pernah bisa dibersihkan. Step-nya sengaja
+ditempatkan **setelah** "Kumpulkan APK", karena berkas yang diperiksa baru ada
+setelah langkah itu.
+
+⚠️ **Nomor versi lokal dan nomor CI bisa bentrok.** Build lokal 30 Sep memakai
+`--build-number=13,14,15`; CI berikutnya juga akan menghasilkan 13, 14, 15 dari
+`run_number`. Dua APK berbeda bisa sama-sama mengklaim `versionCode 13`.
+Yang benar-benar mengidentifikasi sebuah APK adalah **sha256-nya**, bukan nomornya.
+Kalau ini jadi masalah, ubah namespace-nya (mis. awalan build lokal dengan `9`),
+bukan sekadar membandingkan nomor.
+
+### Backend: baca versi + sha256 dari dalam APK
+
+- Dependensi baru: **`app-info-parser`** (MIT, tanpa native module, dependensinya
+  semuanya pure JS). Tipe ditulis manual di `backend/src/types/app-info-parser.d.ts`
+  karena paketnya **tidak punya `.d.ts` di npm** — `npm i @types/app-info-parser`
+  akan 404.
+- `ApkMeta` (di `settings.service.ts`) menambah `versionCode`, `versionName`,
+  `sha256`. Semuanya diisi di `saveApk()` dengan membaca **berkas yang diupload**,
+  bukan dari nama berkas dan bukan dari input orang.
+- `sha256` dihitung dari berkas memakai `createHash('sha256')` bawaan Node.
+- Import-nya `import AppInfoParser from 'app-info-parser'` (default import).
+  **Jangan pakai `import AppInfoParser = require(...)`** — project ini ESM
+  (`"type": "module"` + module `nodenext`) dan import-equals ditolak TypeScript.
+- Kalau parser gagal, **unggahan TIDAK digagalkan**: `versionCode` jadi `null`
+  plus `logger.warn`. APK-nya tetap berguna untuk unduh manual, dan aplikasi
+  menampilkan "versi tidak terbaca". Gagalkan unggahan berarti kasir kehilangan
+  satu-satunya jalan getting out.
+
+⚠️ **`parse()` mengembalikan `Promise`, bukan objek.** Dipanggil tanpa `await`,
+`r.versionCode` selalu `undefined` dan hasilnya `{}` — terlihat seperti "APK-nya
+rusak" padahal bukan. Dan `versionCode` bisa berupa **string**, jadi selalu
+`Number()`-kan hasilnya. Ini sempat hampir membuat parser dianggap salah.
+
+⚠️ **`META-INF/com/android/build/gradle/app-metadata.properties` TIDAK memuat
+versi** — hanya `appMetadataVersion` dan `androidGradlePluginVersion`. Sudah dicek
+langsung di dalam APK. Satu-satunya sumber nomor versi adalah
+`AndroidManifest.xml` biner (format AXML), dan itu yang diurai paket tersebut.
+Hasilnya sudah dicocokkan dengan `aapt2` untuk dua APK dan identik.
+
+### Backend: endpoint `GET /api/settings/apk/info`
+
+```
+{ ada, versionCode, versionName, ukuranBytes, sha256, tanggalUpload }
+```
+
+Terverifikasi 30 Sep: 401 tanpa token, 200 dengan token admin **dan** kasir,
+body **192 byte**. Wajib JWT karena siapa pun yang bisa mengunggah APK otomatis
+berhak memasang apa pun di setiap HP warnet.
+
+### Android: pasang APK (Kotlin sendiri, bukan paket)
+
+⚠️ **`install_plugin` TIDAK bisa dipakai di project ini.** Manifestnya masih
+`package="com.example.installplugin"`, yang adalah **error keras sejak AGP 8**,
+dan `android/build.gradle`-nya masih `compileSdk 28` tanpa `namespace`. Project ini
+AGP **9.0.1**. Kalau paket ini ditambahkan, build gagal dengan
+`processReleaseManifest`. Jangan mencobanya.
+
+Solusinya ~150 baris sendiri di
+`android/app/src/main/kotlin/com/v3netbill/v3netbill_mobile/MainActivity.kt` +
+MethodChannel `v3netbill/install`. Konsekuensinya: zero dependensi yang bisa rusak
+dan seluruh kode bisa dikompilasi di CI.
+
+- `AndroidManifest.xml`: permission `REQUEST_INSTALL_PACKAGES` + `<provider>` FileProvider
+  dengan authority `${applicationId}.fileprovider` + `res/xml/file_paths.xml`
+  (hanya `cache-path`/`external-cache-path`/`files-path`, **tanpa `root-path`**).
+  Ditambah satu `<queries>` untuk `ACTION_VIEW` + mime APK, karena Android 11+
+  menyembunyikan installer kalau tidak dinyatakan.
+- ⚠️ **`FlutterActivity` extends `Activity`, bukan `ComponentActivity`.** Jadi
+  `registerForActivityResult` **tidak ada** dan build gagal dengan
+  `Unresolved reference`. Pakai `startActivityForResult` + `onActivityResult`.
+- ⚠️ **`resultCode` dari layar Pengaturan izin tidak boleh dipakai.** Android
+  mengembalikan `RESULT_CANCELED` baik saat izin dinyalakan maupun ditolak, jadi
+  satu-satunya sumber kebenaran adalah `canRequestPackageInstalls()`. Mengambil
+  `resultCode` akan membuat alur terasa macet padahal izinnya sudah menyala.
+- `onDestroy()` mengirim status `dibatalkan` kalau masih ada `MethodChannel.Result`
+  yang menggantung — kalau tidak, sisi Dart menunggu selamanya.
+- Empat status: `diterima`, `dibatalkan`, `izin_ditolak`, `gagal`. `dibatalkan`
+  itu **pilihan pengguna, bukan kegagalan**, dan berkas sengaja dibiarkan supaya
+  menekan "Pasang" lagi tidak mengunduh 54 MB dari nol.
+
+### Sisi Dart
+
+```
+lib/core/apk/info_apk.dart        model + parser jawaban server
+lib/core/apk/apk_repository.dart   cek info, unduh + verifikasi hash
+lib/core/apk/apk_installer.dart  ungkus MethodChannel
+lib/core/apk/update_provider.dart  semua state dan alur
+lib/core/apk/view/update_card.dart kartu, dipakai Home dan Profile
+```
+
+- `UpdateProvider` di-*inject* lewat `main.dart`; pengecekan versi dipicu dari
+  `DashboardPage` `addPostFrameCallback`, **bukan** dari `initState` (yang tidak
+  boleh memanggil Future tanpa await) dan bukan dari provider itu sendiri
+  (supaya tidak jalan sebelum pengguna login).
+- Perbandingan: `versionCode` server `>` milik sendiri. Kalau server lebih tua,
+  tidak ada yang ditawarkan — itu mencegah Android ditolak karena downgrade.
+- ⚠️ **Kalau nomor versi tidak terbaca, `adaPembaruan` WAJIB false** dan
+  `alasanTidakBisaDicek` menjelaskan kenapa. Menebak "ada pembaruan" saat tidak
+  ada buktinya menghasilkan penanda permanen yang tidak bisa dibersihkan. Ada test
+  khusus untuk ini.
+- Unduhan: `_api.raw.download` (bukan `Dio()` baru) supaya interceptor token ikut;
+  `receiveTimeout` dinaikkan ke 15 menit karena bawaannya 20 detik dan berkasnya
+  54 MB. Timeout bawaan juga harus **dinaikkan di `Options`**, bukan hanya di
+  `BaseOptions`.
+- **Hash dicek dua kali**: ukuran dari `content-length`/field `ukuranBytes`, lalu
+  `sha256` dari berkas. Unduhan yang terpotong tidak akan pernah diserahkan ke
+  installer. Berkas ditulis `.part` lalu di-`rename` hanya setelah lolos — kalau
+  prosesnya mati di tengah, berkas sisa tidak akan terbaca sebagai "siap dipasang".
+- Indikator: titik merah kecil di pojok ikon tab **Profile** (`_Badge` di
+  `app_shell.dart`, dibuat sendiri karena `Badge` bawaan tidak bisa `const` di
+  dalam `const` list) + kartu di Home (versi ringkas) dan Profile (tombol penuh).
+- Halaman Profile menampilkan versi dari `package_info_plus`, bukan teks
+  hardcode. Sebelumnya tertulis `'1.0.0'` yang sudah basi sejak build pertama.
+
+### Verifikasi 30 Sep
+
+- 36 test lulus (`./fl test`), `analyze` bersih. 11 test `update_provider_test.dart`
+  (versi lebih baru/sama/lama/tidak terbaca/gagal, semua jalur installer) dan 3
+  test `update_card_test.dart` yang **wajib di lebar HP 390 px** — `flutter test`
+  memakai permukaan 800×600 yang terlalu lebar untuk menangkap `RenderFlex
+  overflowed`.
+- Build `aapt2 dump badging`: `versionCode='15' versionName='1.0.15'`, permission
+  dan FileProvider ada, `xml/file_paths` terdaftar di resource table (nama
+  berkasnya di-obfuscate jadi `res/8K.xml` oleh resource shrinking — itu normal).
+- Tanda tangan `CN=v3Netbill`, sertifikat SHA-256 `d38e3993…7d880e` — **identik**
+  dengan APK yang sudah terpasang di HP kasir. Ini yang membuat update in-place
+  dari `versionCode 1` ke `15` diterima Android, bukan ditolak
+  `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Kalau sertifikatnya berbeda, semua HP
+  harus uninstall dulu dan kasir harus login ulang.
+- Upload ke server → `apk_meta` terisi `versionCode 15`, `sha256` cocok dengan
+  `sha256sum` yang dihitung terpisah.
+- ⚠️ **Fitur ini belum pernah dicoba di HP sungguhan.** Yang sudah terbukti:
+  build, compile, upload, endpoint, dan logika perbandingan. Yang **belum**:
+  Android benar-benar menampilkan dan memasang APK-nya. Itu satu-satunya bagian
+  yang tidak bisa diuji di Linux.
+
 ### Build APK & GitHub Actions
 
 Workflow `.github/workflows/build-apk.yml`: Java 17, Flutter 3.44.4, analyze + test, lalu
@@ -1203,10 +1374,20 @@ Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
 
 ### Commit terakhir (30 Sep, sesi terakhir)
 
+- **mobile** — **pembaruan diri aplikasi**: CI memberi nomor versi dari
+  `github.run_number` + step yang memverifikasi `versionCode` di APK benar-benar
+  masuk; backend membacanya dari dalam APK (deploy `app-info-parser`); endpoint
+  `GET /api/settings/apk/info`; Kotlin installer sendiri (FileProvider + izin,
+  ~170 baris); `UpdateProvider` + kartu di Home & Profile + titik merah di tab
+  Profile; 14 test baru. Detail panjang: bagian "Pembaruan diri aplikasi Android".
+- **backend** — `ApkMeta` menambah `versionCode`/`versionName`/`sha256` yang dibaca
+  dari berkas saat upload, `GET /api/settings/apk/info`. Dependensi baru
+  `app-info-parser` + deklarasi tipe manual.
 - **frontend** — sesi web terkunci otomatis: `sessionStorage` (logout saat browser ditutup)
   + `useIdleLogout` 5 menit + pesan general "Sesi berakhir. Silakan login kembali."
   (`src/hooks/useIdleLogout.ts`, `AuthContext`, `Layout`, `LoginPage`, `lib/api.ts`).
-  Verifikasi 8 tes Playwright di domain produksi. Sebelumnya `7453c8f` (dokumentasi),
+  Verifikasi 8 tes Playwright di domain produksi. Card "Aplikasi Android" kini
+  menampilkan "Versi 1.0.15 (build 15)". Sebelumnya `7453c8f` (dokumentasi),
   `1f7cd40` (loader dashboard), `8726294` — form buat member tanpa kolom password.
 - **backend** `a695c77` — `client:create_password` **mewajibkan + memverifikasi `passwordLama`**,
   dan `createVoucherAndStart()` (jalur buat voucher dari kartu PC di dashboard) ikut `PASSWORD_DEFAULT`
@@ -1297,11 +1478,25 @@ untuk attacker yang menyisir.
   dikirim 2 PDF ke Telegram, tapi zip lengkapnya masih di disk server. Kalau mesin ini
   hilang, **cabik token lewat @BotFather** lalu isi ulang di Pengaturan, dan ganti kedua PIN.
 - ~~**Rapi `/data/apk/`**~~ — **SELESAI 29 Sep**: 8 APK lama (460 MB) + 10 installer lama
-  (560 MB) dihapus manual, total hemat ~906 MB. Tersisa `v3netbill-1790641833108.apk` dan
-  `installer-1790582791469.msi`, keduanya sudah diunduh ulang lewat domain dan hash-nya cocok.
-  ⚠️ **Penyebabnya belum diperbaiki di backend**: tiap upload hanya menambah berkas.
-  Jawaban permanennya = hapus berkas lama di `settings.service.ts` saat upload baru,
-  tapi itu perubahan kode backend dan perlu diuji dulu.
+  (560 MB) dihapus manual, total hemat ~906 MB. ⚠️ Penyebabnya **belum diperbaiki di backend**:
+  tiap upload hanya menambah berkas, jadi masih akan menumpuk.
+  Pembersihan manual: **baca nama aktif dari Setting `apk_meta`**, lalu `rm` berkas lain —
+  jangan hardcode. Berkas di `/data/apk/` **root-owned** (dibuat container sebagai root),
+  jadi `rm` dari host biasa gagal `Permission denied`; harus lewat
+  `docker exec v3netbill-backend rm -f /data/apk/<nama>`.
+- **Uji pembaruan diri di HP sungguhan** — fitur sudah terpasang di server
+  (`versionCode 15`) dan semua bagian yang bisa diuji dari Linux sudah lulus, tapi
+  **belum pernah ada yang benar-benar memasang APK-nya di Android**. Yang perlu dicek
+  di HP: apakah "Pasang aplikasi tidak dikenal" muncul dan bisa dinyalakan, apakah
+  unduhan 54 MB selesai di WiFi warnet, dan apakah sha256 selalu cocok. Ini satu-satunya
+  bagian yang tidak bisa dibuktikan di sini.
+- **Duplikasi nomor versi lokal vs CI** — build lokal 30 Sep memakai 13/14/15, dan
+  CI berikutnya juga akan menghasilkan 13/14/15 dari `run_number`. Dua APK berbeda
+  bisa mengklaim `versionCode` yang sama. Belum jadi masalah karena `apk_meta`
+  hanya menunjuk satu APK aktif, tapi akan membingungkan saat menelusuri riwayat.
+  Saran: awalan build lokal dengan angka besar.
+- **Upload otomatis dari CI untuk APK** — masih manual. Tidak ada step upload di
+  `build-apk.yml` (yang ada di workflow agent, tapi secret-nya belum diisi).
 - **Skrip uji koneksi Windows (.bat)** — belum dikerjakan, masih diskusi. Yang sudah teruji dari
   Linux: `dotnet build` + 8 uji alur password lewat socket.io. Yang **belum** pernah tersentuh:
   named pipe service↔overlay, benar-benar bertayinya Tampilan XAML di layar, apakah `.exe` jalan,
