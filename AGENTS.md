@@ -921,7 +921,7 @@ lib/core/apk/info_apk.dart        model + parser jawaban server
 lib/core/apk/apk_repository.dart   cek info, unduh + verifikasi hash
 lib/core/apk/apk_installer.dart  ungkus MethodChannel
 lib/core/apk/update_provider.dart  semua state dan alur
-lib/core/apk/view/update_card.dart kartu, dipakai Home dan Profile
+lib/core/apk/view/update_card.dart kartu, dipakai Home saja (30 Sep)
 ```
 
 - `UpdateProvider` di-*inject* lewat `main.dart`; pengecekan versi dipicu dari
@@ -944,7 +944,20 @@ lib/core/apk/view/update_card.dart kartu, dipakai Home dan Profile
   prosesnya mati di tengah, berkas sisa tidak akan terbaca sebagai "siap dipasang".
 - Indikator: titik merah kecil di pojok ikon tab **Profile** (`_Badge` di
   `app_shell.dart`, dibuat sendiri karena `Badge` bawaan tidak bisa `const` di
-  dalam `const` list) + kartu di Home (versi ringkas) dan Profile (tombol penuh).
+  dalam `const` list) + kartu di Home (`UpdateCard(ringkas: true)`).
+- ⚠️ **Kartu pembaruan di Profile DIHAPUS 30 Sep, hanya di Home sekarang.**
+  Alasannya Notification, bukan tampilan: kartu itu memunculkan "Pembaruan
+  tersedia" + tombol **Perbarui sekarang** di dua halaman yang berdekatan
+  (Home dan Profile), jadi kasir yang membuka Profile endoscopy punya dua salinan
+  dari hal yang sama. Yang tersisa di Profile cuma baris **Status** di kartu info
+  (`Ada versi 1.0.18` / `Siap dipasang` / `Terbaru`) plus titik merah di tab —
+  kasir tetap tahu ada versi baru, dan tetap bisa mengetuk Home untuk memasang.
+  Import `update_card.dart` di `profile_page.dart` ikut dibuang; `update_provider.dart`
+  masih dipakai (untuk `context.select` versi + `TahapPembaruan`).
+  Tes: `test/profile_page_test.dart` "halaman Profile tidak menampilkan kartu
+  pembaruan" — memakai `versionCode` server yang **lebih besar** dari terpasang,
+  karena dengan versi sama kartu memang tidak muncul juga sehingga tesnya tidak
+  membuktikan apa pun.
 - Halaman Profile menampilkan versi dari `package_info_plus`, bukan teks
   hardcode. Sebelumnya tertulis `'1.0.0'` yang sudah basi sejak build pertama.
 
@@ -1016,6 +1029,47 @@ jadi harus lewat `parseNominal()` yang membuang pemisah dulu. Lupa hal ini mengh
 
 Semua ada tesnya: `test/rupiah_input_test.dart` (11) dan
 `test/mulai_sesi_dialog_test.dart` (3, semuanya di lebar HP 390 px).
+
+### Perataan baris info di halaman Profile (30 Sep, setelah 1.0.17)
+
+Baris **Server / Versi aplikasi / Status** di kartu info Profile dilaporkan
+tidak sejajar: nilai yang lebih pendek ("Terbaru") berhenti 18.5 px sebelum tepi
+kanan, sementara yang lain sampai di tepi.
+
+Penyebabnya **bukan styling, tapi cara Flutter membagi ruang**:
+`Spacer()` + `Flexible()` di `Row`. Keduanya punya `flex: 1`, jadi ruang sisa
+**dibagi 50/50** — bukan `Spacer` yang memakan seluruh sisa seperti yang
+tersirat dari namanya. Nilai yang lebih pendek dari bagiannya lalu berhenti di
+tengah dan tidak pernah sampai tepi kanan. Terukur di lebar 390 px:
+
+| nilai | sebelum | sesudah |
+|---|---|---|
+| `v3netbill.bilmary.my.id` | right 357.0 | right 357.0 |
+| `1.0.17` | right 357.0 | right 357.0 |
+| `Terbaru` | **right 338.5** | right 357.0 |
+
+Solusinya `Spacer()` dibuang, nilai jadi `Expanded` dengan `textAlign: right`.
+`Expanded` (tight) memakai seluruh sisa ruang, lalu `textAlign` menaruh teksnya
+di tepi kanan kotak itu. Efek sampingnya bagus: URL server yang sebelumnya
+terpotong ellipsis karena cuma dapat setengah ruang, sekarang dapat seluruh sisa.
+
+⚠️ **Jangan memakai `Spacer()` + `Flexible()` untuk "label kiri, nilai kanan".**
+Polanya sangat menggoda dan kelihatan benar, tapi nilai yang pendek tidak
+pernah sampai tepi kanan. Pola yang benar: label non-flex, nilai `Expanded`
++ `textAlign: right`.
+
+Tes: `test/profile_page_test.dart` — 3 tes perataan (390/360/320 px) +
+1 tes ketiadaan kartu pembaruan. Semua memakai `tester.view.physicalSize` 390 px
+karena `flutter test` memakai permukaan 800×600 yang terlalu lebar untuk
+menangkap masalah perataan. Tes perataan **sudah dibuktikan menangkap bug**:
+dikembalikan ke kode `Spacer` + `Flexible` → gagal (`Expected: 357.0,
+Actual: 338.5`).
+
+⚠️ **Font di `flutter test` bukan Roboto.** Tiap glyph digambar selebar ukuran
+font, jadi teks 14 px diuji jadi **2× lebih lebar** dari aslinya di HP
+("Versi aplikasi" 199.5 px, di HP sekitar 62 px). Untuk asserts posisi tepi
+tidak masalah, tapi jangan pernah memakai angka lebar teks dari test untuk
+menyesuaikan ukuran layout di HP.
 
 ### Build APK & GitHub Actions
 
@@ -1392,6 +1446,14 @@ Nilai di bawah ini sengaja tidak dicatat. Kalau registry sudah hilang, jalankan
     ada lapisan mount di antaranya. Cek yang benar-benar disajikan server — di sini
     lewat `ls -la frontend/dist/assets` (nama file berehash berubah saat build) lalu
     jalankan ulang tes yang sama terhadap domain.
+19. **Jangan jalankan `dk format lib test` di repo yang belum ter-format.**
+    Perintah itu memformat seluruh folder, termasuk file yang tidak sedang
+    dikerjakan.
+    Repo mobile ternyata punya 3 file tes yang belum mengikuti `dart format`,
+    jadi perintah itu diam-diam ikut mengubah 6 file dan `git status` jadi
+    berisik — persis masalah no. 2 ("menyapu pekerjaan lain"). Format **hanya
+    file yang kamu ubah**, lalu `git status` untuk memastikan tidak ada lain
+    yang ikut berubah.
 
 
 ## Jejak aktivitas (ActivityLog) ✅
@@ -1429,6 +1491,12 @@ Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
 
 ### Commit terakhir (30 Sep, sesi terakhir)
 
+- **mobile** — **perataan baris info di Profile** (kartu Server / Versi aplikasi /
+  Status) + **kartu pembaruan dihapus dari Profile**. 4 test baru di
+  `test/profile_page_test.dart` (3 perataan di 390/360/320 px + 1 ketiadaan kartu
+  pembaruan), dua-duanya sudah dibuktikan menangkap bugnya. 54 test lulus,
+  `analyze` bersih. Detail: bagian "Perataan baris info di halaman Profile".
+  Commit sebelumnya:
 - **mobile** `6f23b3c` — **perbaikan input dari pemakaian nyata** (versi 1.0.17):
   tombol Voucher/Member tidak lagi turun baris di 390 px, kolom nominal tidak
   lagi terisi 10000, nama dibatasi 40 karakter di level input, nominal
@@ -1436,8 +1504,8 @@ Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
   (pisah ruang nomor versi CI dan lokal), `8f9e514` (**pembaruan diri aplikasi**:
   CI memberi nomor versi dari `github.run_number` + step verifikasi `versionCode`;
   backend baca dari dalam APK; `GET /api/settings/apk/info`; Kotlin installer
-  sendiri ~170 baris; `UpdateProvider` + kartu Home & Profile + titik merah di
-  tab Profile). Detail panjang: bagian "Pembaruan diri aplikasi Android".
+  sendiri ~170 baris; `UpdateProvider` + kartu Home (versi ringkas) + titik merah
+  di tab Profile). Detail panjang: bagian "Pembaruan diri aplikasi Android".
 - **frontend** `c312175` —
 - **backend** `5fde92d` — `ApkMeta` menambah `versionCode`/`versionName`/`sha256`
   yang dibaca dari berkas saat upload, `GET /api/settings/apk/info`. Dependensi
