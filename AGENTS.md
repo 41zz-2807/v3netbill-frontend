@@ -216,8 +216,9 @@ Logika bisnis yang sudah berjalan:
 ## Catatan migrasi
 
 - Perintah migrasi: `docker compose exec v3netbill-backend npx prisma migrate dev --name <nama>`
-- Migrasi applied (4): `20260922142242_init`, `20260925072311_add_transaction_koreksi`,
-  `20260925072645_add_transaction_void`, `20260925163314_add_activity_log`.
+- Migrasi applied (5): `20260922142242_init`, `20260925072311_add_transaction_koreksi`,
+  `20260925072645_add_transaction_void`, `20260925163314_add_activity_log`,
+  `20260930100153_add_perangkat_notifikasi`.
 ## Referensi API — diverifikasi dari kode
 
 Dihasilkan dengan membaca decorator di `backend/src/**/*.controller.ts` (28 Sep 2026).
@@ -240,6 +241,7 @@ Semua path diawali `/api` (global prefix di `main.ts`). WebSocket namespace `/se
 | `laporan` | `src/laporan/` | Laporan tutup hari: PDF + email + Telegram (cron) |
 | `settings` | `src/settings/` | Tarif, password, upload, backup, PIN uninstall & bypass |
 | `activity-log` | `src/activity-log/` | Jejak aktivitas (paginate + today) |
+| `notifikasi` | `src/notifikasi/` | Token perangkat + push FCM saat pelanggan login |
 | `common` | `src/common/` | Guards, decorators, exception filter |
 | `prisma` | `src/prisma/` | `PrismaService` (module global) |
 
@@ -271,6 +273,8 @@ tanpa JWT sama sekali.
 | GET | `/api/reports/daily?dari&sampai` | — |
 | GET | `/api/reports/range?dari&sampai` | — |
 | POST | `/api/laporan/kirim-tutup-hari` | — |
+| POST | `/api/notifikasi/token` | — |
+| DELETE | `/api/notifikasi/token` | — |
 | GET | `/api/settings` | — |
 | PATCH | `/api/settings` | ADMIN |
 | PATCH | `/api/settings/password` | — |
@@ -347,11 +351,46 @@ Dikirim server → klien:
 Batas hari bisnis = **23:30 WIB** (hari T = [23:30 T-1, 23:30 T)). Rekap nol dihitung
 setelah batas ini.
 
-⚠️ **Semua yang dipanggil dari cron atau `setInterval` wajib dibungkus `try/catch`.**
-`checkGracePeriodExpired()` pernah tidak punya penjaga; satu setting
+⚠️ **Semua yang dipanggil dari cron atau `setInterval` wajib dibungkus
+`try/catch`.** Aturan ini sudah tercatat sejak `0c13a60`, tapi **tidak pernah
+diterapkan di semua tempat** — dan itu terbukti lewat dua crash, bukan lewat
+kode.
+
+**Crash 1 (`0c13a60`)** — `checkGracePeriodExpired()` tanpa penjaga. Satu setting
 `grace_period_detik` kosong membuat `parseInt` jadi `NaN`, `NaN * 1000` jadi
-`Invalid Date`, Prima menolak, dan proses Node mati — seluruh PC kehilangan billing
-sekaligus. Sudah diperbaiki di `0c13a60`.
+`Invalid Date`, Prisma menolak, dan proses Node mati — seluruh PC kehilangan
+billing sekaligus.
+
+**Crash 2 (30 Sep)** — `startSessionTick()` punya callback `async` tanpa
+`try/catch`. Baris `Session` dihapus (oleh skrip uji, dan bisa juga oleh
+`bersihkan-data`) sementara tick 1-detiknya masih jalan → tick berikutnya
+memanggil `session.update()` untuk baris yang sudah tidak ada → Prisma melempar
+`P2025` → unhandled rejection → **proses Node mati**. Ekor lognya 200 baris
+minified Prisma yang tercetak, dan penyebabnya jauh di atas sana.
+
+Yang membuatnya berbahaya adalah **betapa tidak mungkinnya** bug ini terjadi dari
+kode yang dibaca: race-nya cuma muncul kalau ada yang menghapus baris di antara
+`findUnique` dan `update`.
+
+Tiga callback yang ada sekarang semuanya sudah dijaga:
+
+| Callback | File | Penjaga |
+|---|---|---|
+| `startSessionTick` | `session.service.ts:499` | `try/catch` penuh + `P2025` dikenali sebagai kondisi wajar, tick berhenti sendiri |
+| `startDisconnectCheck` | `session.service.ts:708` | pengaman lapis kedua, walau dua checker di bawahnya sudah punya penjaga sendiri |
+| `checkGracePeriodExpired` | `session.service.ts:760` | sudah ada sejak `0c13a60` |
+| `checkPcOffline` | `session.service.ts:741` | sudah ada sejak awal |
+
+⚠️ **`broadcastPcUpdate()` juga wajib aman dari penolakan.** Method itu dipanggil
+**tanpa `await`** dari beberapa tempat (termasuk dari tick sesi), jadi penolakan
+di dalamnya juga jadi unhandled rejection. Sekarang body-nya dibungkus
+`try/catch` sendiri, jadi aman dari semua pemanggil.
+
+⚠️ **Skrip uji yang menyentuh `Session` TIDAK BOLEH menghapus baris
+`sessions`/`Session` untuk mengakhiri sesi.** Gunakan `stopSession` — itu jalur
+normalnya. Menghapus baris itu melanggar seluruh aturan tick di atas dan menjatuhkan
+server. Perbaikan harus diuji lewat jalur yang STRUKTURAL benar, bukan yang
+paling singkat.
 
 ### Backup & restore
 
@@ -984,7 +1023,8 @@ lib/core/apk/view/update_card.dart kartu, dipakai Home saja (30 Sep)
   dengan sendirinya. Jadi unduhan 54 MB, verifikasi sha256, layar izin
   "Pasang aplikasi tidak dikenal", dan installer Android **semuanya bekerja**.
   Ini menutup bagian yang tadinya mustahil dibuktikan dari Linux.
-- APK aktif di server sekarang `versionCode 17` (`1.0.17`).
+- APK aktif di server sekarang `versionCode 19` (`1.0.19`) — lihat bagian
+  "Notifikasi push FCM". `1.0.18` hanya perataan UI, sudah dilewati.
 
 ### Perbaikan input dari pemakaian nyata (30 Sep, versi 1.0.17)
 
@@ -1456,6 +1496,183 @@ Nilai di bawah ini sengaja tidak dicatat. Kalau registry sudah hilang, jalankan
     yang ikut berubah.
 
 
+## Notifikasi push FCM — pelanggan login di komputer warnet (30 Sep) ✅
+
+Admin diberi tahu di HP kalau ada pelanggan yang memulai sesi, supaya tahu
+kasir sedang dipakai, meskipun admin sedang tidak di meja. Notifikasi FCM, **bukan**
+WebSocket, karena hanya FCM yang bisa membangunkan aplikasi yang sudah mati.
+
+### Yang sudah ada sebelumnya, dan dipakai ulang
+
+Event loginya sudah ada. `SessionService.loginRequest()` sudah memanggil
+`broadcastActivityLog('session:started', { sessionId, pcId, akun, durasiDetik })`,
+dan itu juga sudah disimpan ke `ActivityLog`. Yang ditambahkan hanya
+penyiarannya ke perangkat admin. `SessionService` **tidak disentuh sama sekali**;
+semuanya di dalam `SessionGateway.handleLoginRequest()`.
+
+### Renyawannya
+
+- `prisma/schema.prisma` → model `Perangkat`, migration
+  `20260930100153_add_perangkat_notifikasi`.
+- `src/notifikasi/notifikasi.controller.ts` → `POST` + `DELETE /api/notifikasi/token`.
+- `src/notifikasi/notifikasi.service.ts` → `daftarToken`, `hapusToken`, `kirimSesiMulai`.
+- `src/notifikasi/fcm.service.ts` → pengirim FCM HTTP v1 tanpa `firebase-admin`.
+- `src/session/session.gateway.ts` → `kabarPemakaiNotifikasi()` dipanggil di
+  cabang sukses `handleLoginRequest`.
+
+### ⚠️ Role SELALU dari JWT, tidak pernah dari body
+
+`DaftarTokenDto` sengaja tidak punya field `role`. Kalau ada, kasir cukup
+mengirim `role: "ADMIN"` untuk mendaftarkan dirinya sebagai penerima notifikasi
+admin. Server juga tidak pernah mengirim apa pun soal identitas akun ke notifikasi
+(lihat di bawah).
+
+### ⚠️ Identitas akun tidak boleh masuk notifikasi
+
+Isi notifikasi hanya `Member · PC001` atau `Voucher · PC001`. **Nama member dan
+kode voucher tidak pernah dikirim.** Nama member adalah kredensial login-nya
+(`session.service.ts` mencocokkan `nama`), dan notifikasi Android terlihat di
+layar kunci HP yang bisa dilihat siapa saja.
+
+### ⚠️ Channel notifikasi harus importance TINGGI, dan namanya harus sama di tiga tempat
+
+Kalau `channel_id` tidak dikirim, FCM memakai channel bawaannya yang
+importance-nya rendah: notifikasi tetap muncul tapi **tanpa suara dan tanpa
+getaran** — persis bagian yang paling dibutuhkan di warnet. Nama channel
+`sesi_dimulai` ada di **tiga** tempat yang harus tetap sama:
+
+| Tempat | Yang ditulis |
+|---|---|
+| `backend/src/notifikasi/notifikasi.service.ts` | `const CHANNEL_ID` |
+| `mobile/android/.../MainActivity.kt` | `const val ID_CHANNEL_NOTIF` |
+| `mobile/lib/core/notifikasi/notifikasi_lokal.dart` | `static const idChannel` |
+
+⚠️ **`requestPermissions` jawabannya ke `onRequestPermissionsResult`, bukan
+`onActivityResult`.** Kalau diletakkan di `onActivityResult`, hasilnya tidak
+pernah sampai dan Dart menunggu selamanya. Dan `onActivityResult` yang sudah ada
+memulai dengan `if (hasilMenunggu == null) return` — itu untuk installer APK,
+jadi jangan dipakai untuk yang lain.
+
+### ⚠️ `private_key` dari JSON Firebase berisi `\n` sebagai dua karakter
+
+Bukan baris baru. Kalau tidak diganti (`raw.replace(/\\n/g, '\n')`), `createSign`
+membaca kunci yang rusak dan errornya tidak mendekati penyebabnya.
+
+### Aturan daftar/cabut token (sudah diuji)
+
+| Keadaan | Yang harus terjadi |
+|---|---|
+| Login sebagai ADMIN, sakelar nyala | daftar token |
+| Login sebagai ADMIN, sakelar mati | cabut token |
+| **Login sebagai KASIR** | **cabut token, jangan daftar** |
+| Logout | cabut token |
+| Izin notifikasi ditolak | jangan daftar, dan dilaporkan ke kasir |
+| Token berubah (setelah uninstall) | daftar ulang, hanya kalau sesi admin |
+
+Baris KASIR dan logout adalah yang paling penting. Tanpa keduanya, HP yang
+pernah dipakai admin lalu dipakai kasir akan **tetap menerima notifikasi admin**
+hanya karena token-nya masih tersimpan di server.
+
+⚠️ **Urutan di `AuthProvider.logout()` penting**: `sebelumLogout()` harus
+jalan **sebelum** `_repo.logout()`, karena penghapusan token memakai JWT dan
+`logout()` membersihkan token itu dari penyimpanan. Kalau urutannya dibalik,
+permintaannya terkirim tanpa autentikasi dan tokennya tertinggal.
+
+Token yang ditolak FCM (`UNREGISTERED`, `INVALID_ARGUMENT`,
+`SENDER_ID_MISMATCH`) **dihapus sendiri** dari database — itulah yang membersihkan
+HP yang sudah di-uninstall. Kalau tidak, satu permintaan ke token mati per notifikasi.
+
+### Sisi mobile
+
+```
+lib/core/notifikasi/push_client.dart         wrapper Firebase (bisa dikTes)
+lib/core/notifikasi/notifikasi_provider.dart aturan daftar/cabut + sakelar
+lib/core/notifikasi/notifikasi_repository.dart daftar/hapus token
+lib/core/notifikasi/notifikasi_lokal.dart    channel + izin lewat MethodChannel
+```
+
+- **FCM tidak menampilkan notifikasi otomatis saat aplikasi sedang terbuka.**
+  Pesannya datang ke `NotifikasiProvider.banner`, lalu `AppShell` menampilkannya
+  sebagai SnackBar. Notifikasi sistem yang muncul di atas aplikasi yang sedang
+  dibaca justru mengganggu.
+- `SecureStore._kNotifikasiSesi` **sengaja tidak ikut `clear()`**. Kalau ikut,
+  setiap logout mengembalikan sakelarnya ke default dan kasir yang sengaja
+  mematikannya akan melihat sakelarnya nyala lagi.
+- Sakelar di Profile **hanya tampil untuk akun admin**. Baris yang tidak pernah
+  berubah akan membuat orang mengira ada yang salah.
+- `push_client.dart` ada supaya provider bisa diuji tanpa Firebase sama sekali.
+
+⚠️ **`muat()` mengembalikan Future, bukan void, dan `setAktif()` harus
+`await muat()` lebih dulu.** Pembacaan penyimpanan itu async; kalau `setAktif`
+jalan lebih dulu, nilai dari storage akan menimpa pilihan pengguna. Ini ditemukan
+karena tes "sakelar mati: token tidak didaftarkan" gagal.
+
+### `.env` dan CI
+
+`FCM_PROJECT_ID`, `FCM_CLIENT_EMAIL`, `FCM_PRIVATE_KEY` di `.env` root, dan tiga
+baris yang sama sudah ditambahkan ke `docker-compose.yml`.
+
+Kalau ketiganya kosong, backend **tetap jalan normal**: pengiriman jadi no-op
+yang dilog sekali, bukan server gagal start.
+
+`android/app/google-services.json` **tidak masuk repo** (`.gitignore`), dan CI
+mengambilnya dari secret `GOOGLE_SERVICES_JSON_BASE64`. ⚠️ Kalau secret itu
+kosong, workflow **gagal dengan pesan jelas** — berbeda dari `KEYS_BASE64` yang
+sengaja jatuh ke debug key. Alasannya plugin `com.google.gms.google-services`
+membangun build kalau file tidak ada, dan tidak ada fallback yang sah: aplikasi
+tanpa project id Firebase tidak bisa mengirim push sama sekali.
+
+### Batasan yang harusSelalu diingat
+
+1. **Butuh Google Play Services aktif.** HP degoogled atau ROM China tidak akan
+   pernah menerima notifikasi.
+2. **Token FCM terikat ke keystore rilis.** Kehilangan `v3netbill-release.jks`
+   bukan hanya membuat APK tidak bisa diterbitkan — push ikut mati untuk semua
+   perangkat yang sudah terdaftar.
+3. **Kalau Google mati, push ikut mati.** Tidak ada satu pun mekanisme yang
+   menutup tiga hal di atas.
+
+### ⚠️ Dua bug yang keduanya salah dari kode, bukan dari constexpr Google
+
+Keduanya baru ketahuan waktu mengirim sungguhan, bukan dari membaca dokumentasi.
+Kalau feature ini ditulis ulang, dua hal ini yang pertama harus dicek.
+
+**1. `message.android.notification` TIDAK punya field `channel_name`.** Nama
+channel hanya dipakai saat channel dibuat di perangkat, bukan per-pesan.
+Mengirim field tak dikenal membuat FCM membalas `400 Unknown name
+"channel_name"` untuk **setiap** notifikasi. Verifikasi: kirim langsung ke
+`fcm.googleapis.com` dan baca jawabannya. Jangan menebak nama field dari
+kebiasaan.
+
+**2. Kode error FCM ada di `error.details[].errorCode`, bukan di
+`error.status`.** Untuk token yang sudah tidak berlaku, `status` menuliskan
+`NOT_FOUND` sedangkan `errorCode` menuliskan `UNREGISTERED`. Versi lama membaca
+`status`, dan `INVALID_ARGUMENT` langsung dianggap "token mati".
+
+Yang kedua lebih berbahaya: `INVALID_ARGUMENT` juga dipakai FCM ketika
+**request kita sendiri** yang salah. Jadi satu field yang tidak dikenal
+menghapus **semua token yang sah** — termasuk token HP yang sedang aktif.
+Sekarang `tokenMati` hanya true untuk `UNREGISTERED` dan `SENDER_ID_MISMATCH`, dan
+log ikut menampilkan `errorCode` supaya kejadian serupa tidak bisa diam-diam.
+
+⚠️ **Pelajaran yang lebih umum: klasifikasi "token mati" adalah tindakan
+destructive.** Kalau salah klasifikasi, satu kesalahan kode mematikan notifikasi
+untuk semua orang dan gejalanya muncul jauh dari tempat penyebabnya (kasir
+merasa "notifikasi mati" sementara serverhanya log "1 token dihapus").
+Aturan: kalau kodenya ambigu, jangan hapus.
+
+### 🔬 Cara menguji FCM tanpa perangkat
+
+Tidak perlu HP untuk membuktikan payload dan kredensialnya benar:
+
+1. Ambil `FCM_*` dari `.env` ke file sementara **di dalam container** saja
+2. Tanda tangani JWT RS256, tukar di `oauth2.googleapis.com`
+3. Kirim ke `projects/{id}/messages:send` dengan token asal-asalan
+4. Jawaban yang diharapkan: `404` + `UNREGISTERED`, bukan `400`
+
+Kalau jawabannya `400`, payload-nya salah — dan itu persis yang terjadi. Hapus
+file itu setelah selesai: isinya private key.
+
 ## Jejak aktivitas (ActivityLog) ✅
 
 - `GET /api/activity-log?limit&cursor` (paginate) dan `GET /api/activity-log/today`.
@@ -1491,6 +1708,22 @@ Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
 
 ### Commit terakhir (30 Sep, sesi terakhir)
 
+- **backend** — **dua bug yang menjatuhkan seluruh server**, ditemukan tidak
+  sengaja waktu menguji notifikasi FCM. `startSessionTick()` punya callback
+  `async` tanpa `try/catch`, jadi `P2025` dari `session.update()` menjadi
+  unhandled rejection dan proses Node mati; `broadcastPcUpdate()` juga dipanggil
+  tanpa `await` dari beberapa tempat sehingga penolakan di sana ikut bisa
+  menjatuhkan proses. Ketiga `setInterval` sekarang dijaga, dan `P2025`
+  dikenali sebagai kondisi wajar. ⚠️ Ini **bukan** bug dari fitur notifikasi —
+  bom waktunya sudah tertanam sejak awal, hanya pemicunya yang baru.
+- **mobile** + **backend** — **notifikasi push FCM saat pelanggan login di
+  komputer warnet**. `com.google.gms.google-services` 4.5.0 + `firebase_core` +
+  `firebase_messaging`; model `Perangkat` + migration ke-5; `FcmService` HTTP v1
+  tanpa `firebase-admin`; `POST`/`DELETE /api/notifikasi/token`; channel
+  notifikasi importance tinggi; sakelar di Profile; `GOOGLE_SERVICES_JSON_BASE64`
+  jadi secret CI. 8 test baru, 65 test lulus, `analyze` bersih. APK 1.0.20 aktif
+  di server. ✅ **TERBUKTI DI HP SUNGGUHAN**: notifikasi tiba dengan suara saat
+  aplikasi ditutup. Detail panjang: bagian "Notifikasi push FCM".
 - **mobile** — **perataan baris info di Profile** (kartu Server / Versi aplikasi /
   Status) + **kartu pembaruan dihapus dari Profile**. 4 test baru di
   `test/profile_page_test.dart` (3 perataan di 390/360/320 px + 1 ketiadaan kartu
@@ -1619,6 +1852,7 @@ untuk attacker yang menyisir.
   Detail di bagian "Pembaruan diri aplikasi Android".
 - **Upload otomatis dari CI untuk APK** — masih manual. Tidak ada step upload di
   `build-apk.yml` (yang ada di workflow agent, tapi secret-nya belum diisi).
+- **Hapus fallback JWT** (lihat di atas) — belum dikerjakan. Masih prioritas tinggi.
 - **Skrip uji koneksi Windows (.bat)** — belum dikerjakan, masih diskusi. Yang sudah teruji dari
   Linux: `dotnet build` + 8 uji alur password lewat socket.io. Yang **belum** pernah tersentuh:
   named pipe service↔overlay, benar-benar bertayinya Tampilan XAML di layar, apakah `.exe` jalan,
