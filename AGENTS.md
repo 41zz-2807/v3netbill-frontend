@@ -829,12 +829,20 @@ berarti nomor versinya benar, dan seluruh HP kasir akan menampilkan penanda
 ditempatkan **setelah** "Kumpulkan APK", karena berkas yang diperiksa baru ada
 setelah langkah itu.
 
-⚠️ **Nomor versi lokal dan nomor CI bisa bentrok.** Build lokal 30 Sep memakai
-`--build-number=13,14,15`; CI berikutnya juga akan menghasilkan 13, 14, 15 dari
-`run_number`. Dua APK berbeda bisa sama-sama mengklaim `versionCode 13`.
-Yang benar-benar mengidentifikasi sebuah APK adalah **sha256-nya**, bukan nomornya.
-Kalau ini jadi masalah, ubah namespace-nya (mis. awalan build lokal dengan `9`),
-bukan sekadar membandingkan nomor.
+⚠️ **Ruang nomor CI dan lokal sudah DIPISAH (30 Sep).** Sempat keduanya
+pakai ruang yang sama dan bentrok sungguhan: build lokal memakai 13/14/15, CI juga
+menghasilkan 13/14/15. Akibatnya **artifact CI bernomor 13 tidak bisa dipasang
+di HP yang sudah punya 15** (Android menolak downgrade), dan dua APK berbeda
+sama-sama mengklaim `versionCode 13`.
+
+Sekarang **CI memakai `1000 + run_number`** (terbukti: run 14 → `versionCode 1014`),
+sedangkan build lokal untuk uji coba tetap di bawah 1000. Konsekuensi yang
+disengaja: APK dari CI selalu dianggap lebih baru oleh build lokal mana pun, dan
+itu benar karena APK CI adalah rilis sungguhan.
+
+Aturan praktis: **jangan pernah mengunggah APK bernomor lebih kecil ke server**,
+dan jangan mengayangkan artifact CI ke HP yang sudah punya build lokal. Yang
+benar-benar mengidentifikasi sebuah APK adalah **sha256-nya**, bukan nomornya.
 
 ### Backend: baca versi + sha256 dari dalam APK
 
@@ -1485,16 +1493,13 @@ untuk attacker yang menyisir.
   jadi `rm` dari host biasa gagal `Permission denied`; harus lewat
   `docker exec v3netbill-backend rm -f /data/apk/<nama>`.
 - **Uji pembaruan diri di HP sungguhan** — fitur sudah terpasang di server
-  (`versionCode 15`) dan semua bagian yang bisa diuji dari Linux sudah lulus, tapi
-  **belum pernah ada yang benar-benar memasang APK-nya di Android**. Yang perlu dicek
-  di HP: apakah "Pasang aplikasi tidak dikenal" muncul dan bisa dinyalakan, apakah
-  unduhan 54 MB selesai di WiFi warnet, dan apakah sha256 selalu cocok. Ini satu-satunya
-  bagian yang tidak bisa dibuktikan di sini.
-- **Duplikasi nomor versi lokal vs CI** — build lokal 30 Sep memakai 13/14/15, dan
-  CI berikutnya juga akan menghasilkan 13/14/15 dari `run_number`. Dua APK berbeda
-  bisa mengklaim `versionCode` yang sama. Belum jadi masalah karena `apk_meta`
-  hanya menunjuk satu APK aktif, tapi akan membingungkan saat menelusuri riwayat.
-  Saran: awalan build lokal dengan angka besar.
+  (`versionCode 16`) dan semua bagian yang bisa diuji dari Linux sudah lulus. Yang
+  belum bisa dibuktikan di sini: apakah "Pasang aplikasi tidak dikenal" muncul dan
+  bisa dinyalakan, apakah unduhan 54 MB selesai di WiFi warnet, dan apakah Android
+  menerimanya. Sedang diuji di HP kasir.
+- ~~**Duplikasi nomor versi lokal vs CI**~~ — **SELESAI 30 Sep**: CI sekarang
+  memakai `1000 + run_number` (run 14 → 1014), build lokal tetap di bawah 1000.
+  Detail di bagian "Pembaruan diri aplikasi Android".
 - **Upload otomatis dari CI untuk APK** — masih manual. Tidak ada step upload di
   `build-apk.yml` (yang ada di workflow agent, tapi secret-nya belum diisi).
 - **Skrip uji koneksi Windows (.bat)** — belum dikerjakan, masih diskusi. Yang sudah teruji dari
