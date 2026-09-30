@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext.tsx'
 import ProgressBar from '../components/ui/ProgressBar.tsx'
 
 export default function LoginPage() {
-  const { login: doLogin } = useAuth()
+  const { login: doLogin, notice } = useAuth()
   const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -36,6 +36,11 @@ export default function LoginPage() {
       <div className="login-container">
         <div className="heading">Sign In</div>
         <form className="login-form" onSubmit={handleSubmit}>
+          {notice && (
+            <div className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              {notice}
+            </div>
+          )}
           {error && (
             <div className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600">
               {error}

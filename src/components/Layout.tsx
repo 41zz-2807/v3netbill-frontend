@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext.tsx'
+import { PESAN_SESI_BERAKHIR, useAuth } from '../context/AuthContext.tsx'
+import { useIdleLogout } from '../hooks/useIdleLogout.ts'
 
 // `label` = teks pendek yang tampil di dalam pill glass (harus muat satu baris
 // di max-width 560px dengan 6 item). `full` = nama lengkap, dipakai sebagai
@@ -69,6 +70,10 @@ function NavIcon({ d }: { d: string }) {
 function Layout() {
   const { role, logout } = useAuth()
 
+  // Sesi terkunci sendiri setelah 5 menit tanpa aktivitas. Ditaruh di Layout
+  // supaya berlaku di semua halaman, bukan cuma dashboard.
+  useIdleLogout(true, () => logout(PESAN_SESI_BERAKHIR))
+
   const items: NavItem[] = navItems.filter(
     (i) => i.to !== '/settings' || role === 'ADMIN',
   )
@@ -115,7 +120,7 @@ function Layout() {
 
             <button
               type="button"
-              onClick={logout}
+              onClick={() => logout()}
               className="navmenu__exit"
               title="Keluar dari sesi"
               aria-label="Keluar dari sesi"

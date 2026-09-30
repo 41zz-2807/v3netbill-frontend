@@ -188,7 +188,7 @@ Logika bisnis yang sudah berjalan:
   sehingga navigasi SPA tidak 404. Endpoint jadi `/api/auth/login`, `/api/pcs`, `/api/reports/today`,
   dst. Contoh curl: `curl http://localhost:3000/api/reports/today -H "Authorization: Bearer ..."`.
 - Deps baru: axios, react-router-dom, socket.io-client, tailwindcss + @tailwindcss/vite.
-- Login JWT + AuthContext (localStorage token/role/username); interceptor 401 → redirect login.
+- Login JWT + AuthContext (**sessionStorage** token/role/username); interceptor 401 → redirect login.
 
 ## Testing (pola yang dipakai)
 
@@ -835,6 +835,57 @@ keytool -list -v -keystore android/app/v3netbill-release.jks -storepass "…"
 python3 -c "import zipfile;d=zipfile.ZipFile('app-release.apk').read('lib/arm64-v8a/libapp.so');print(b'/session' in d)"
 ```
 
+## Sesi web terkunci otomatis (30 Sep) ✅
+
+Dua lapis, dua alasan berbeda:
+
+| Lapis | Kapan terjadi | Kenapa |
+|---|---|---|
+| `sessionStorage` (bukan `localStorage`) | browser/tab ditutup | `localStorage` bertahan setelah browser ditutup, jadi komputer kasir yang ditinggal masih bisa dibuka siapa pun tanpa password |
+| `useIdleLogout` 5 menit | tidak ada aktivitas | kasir menggeser halaman lalu pergi, tidak ada yang mengunci sendiri |
+
+⚠️ **`sessionStorage`, bukan `localStorage`** (`src/lib/api.ts`, fungsi `store()`).
+Reload (F5) **tidak** mengosongkannya — sesi tetap aman dari refresh biasa — tapi
+menutup tab/browser langsung menghabisi sesi. Tab baru selalu mulai dari layar login,
+karena `sessionStorage` bersifat per-tab. Ini konsekuensi yang **disengaja** untuk
+kasir warnet, jangan diubah ke `localStorage` tanpa diminta user.
+
+- Hook: `src/hooks/useIdleLogout.ts`. Dipakai di `Layout.tsx` supaya berlaku di semua
+  halaman, bukan cuma dashboard. Ambang `IDLE_MS = 5 * 60 * 1000`.
+- Cara kerjanya **bukan** reset `setTimeout` di setiap aktivitas. `pointermove` bisa
+  ratusan kali per detik, jadi satu `setInterval` 1 detik memeriksa satu variabel
+  `batas`; setiap event aktivitas hanya menulis ulang variabel itu.
+- `onIdle` dibaca lewat `ref` yang ditulis di dalam `useEffect` — bukan `cb.current =
+  onIdle` langsung saat render, karena `react-refs` lint itu menolak, dan nilainya
+  baru dipakai 1 detik kemudian.
+- Event aktivitas: `pointerdown`, `pointermove`, `keydown`, `wheel`, `touchstart`,
+  `scroll`. `focus` sengaja **tidak** dipakai: berpindah tab lalu kembali bukan
+  pekerjaan, hanya menahan timer tanpa alasan.
+- Setelah terkunci: `logout(PESAN_SESI_BERAKHIR)` → `App.tsx` merender `LoginPage`
+  (tanpa reload, jadi WebSocket `DashboardPage` ikut `disconnect()` lewat cleanup).
+
+⚠️ **Pesan yang ditampilkan HARUS general** — `PESAN_SESI_BERAKHIR` di
+`AuthContext.tsx` = "Sesi berakhir. Silakan login kembali." Ini permintaan eksplisit
+user: **dilarang** menampilkan "tidak ada kegiatan selama 5 menit" atau sebut
+duranya. Kasir cukup tahu harus login ulang. Kalau nanti ditambah teks penghitung
+mundur, teks itu tetap tidak boleh menyebut penyebab.
+
+- `notice` (`string | null`) ditambahkan ke `AuthContext`; `logout(notice?)` menerima
+  argumen opsional. Tombol Keluar di `Layout.tsx` memanggil `logout()` tanpa argumen
+  → **tidak** memunculkan pesan. Karena `logout` sekarang menerima string, `onClick`
+  tidak boleh `onClick={logout}` lagi — `MouseEvent` akan terbaca sebagai pesan.
+  Sudah `onClick={() => logout()}`.
+
+Verifikasi (Playwright, 30 Sep, 8 tes lolos di domain produksi): token hanya di
+`sessionStorage`; aktivitas menahan timer; geser jam 12 menit tanpa aktivitas → layar
+login; teks layar tidak memuat kata `menit`/`idle`/`aktivitas`/`kegiatan`/`tidak ada`;
+tab baru langsung ke login; reload tetap login; tombol Keluar tidak memunculkan pesan.
+Cara menguji idle 5 menit **tanpa menunggu 5 menit**: suntik `addInitScript` yang
+menambah offset ke `Date.now()` (mis. `Date.now = () => asli() + geser`), lalu
+`page.evaluate(() => window.__geser(12 * 60 * 1000))` untuk melompat melewati ambang.
+Skrip uji-nya sengaja **tidak** disimpan di repo — butuh `playwright-core` yang bukan
+dependensi project, dan file di `/tmp` hilang sendiri.
+
 ## Menu header web — glass pill (27 Sep) ✅ `af4f250`
 
 - Dari Uiverse.io (mymiamo). Selector di-prefix `.navmenu` supaya tidak bentrok dengan
@@ -1043,6 +1094,19 @@ Nilai di bawah ini sengaja tidak dicatat. Kalau registry sudah hilang, jalankan
     sesudah. Hasilnya nol dependensi, kecuali dua skrip `dk` dan `fl` yang memang
     hardcode path. Verifikasi akhir: `flutter build apk --release` dari path baru menghasilkan
     APK **53.955.947 byte**, ukuran identik dengan artifact CI, dan tetap release-signed.
+18. **Build di dalam image bisa ditimpa bind mount — verifikasi hasilnya, bukan cuma
+    exit code-nya.** `docker compose up -d --build v3netbill-backend` keluar **sukses
+    penuh** (build di-cache, container "Recreated/Started"), tapi bundle frontend
+    yang disajikan domain **masih versi lama** — karena `./frontend/dist` di-bind mount
+    ke `/app/frontend-dist`, jadi hasil `npm run build` di dalam image tidak pernah
+    dibaca. Baru ketahuan karena tes Playwright di domain menunjukkan perilaku
+    storage yang **lama**, padahal tes yang sama di dev server sudah lulus.
+    Perintah yang benar: `docker compose exec v3netbill-frontend npm run build`
+    (langsung menulis ke `frontend/dist` di host, tanpa restart backend).
+    Pelajaran yang lebih umum: **"build sukses" bukan bukti "deploy sukses"** kalau
+    ada lapisan mount di antaranya. Cek yang benar-benar disajikan server — di sini
+    lewat `ls -la frontend/dist/assets` (nama file berehash berubah saat build) lalu
+    jalankan ulang tes yang sama terhadap domain.
 
 
 ## Jejak aktivitas (ActivityLog) ✅
@@ -1078,11 +1142,13 @@ private → dipakai untuk memindahkan repo yang paling sensitif (kandidat: backe
 Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
 ⚠️ Kalau pindah, **4 secret keystore APK harus di-set ulang** di hosting yang baru.
 
-### Commit terakhir (27 Sep, sesi terakhir — semua ter-push)
+### Commit terakhir (30 Sep, sesi terakhir)
 
-- **frontend** `8726294` — form buat member tanpa kolom password (kolom dihapus, diganti
-  catatan password awal 0000). Sebelumnya `01c419c`/`39fa0f6` — tombol `Download APK` di
-  card `Aplikasi Android` (`SettingsPage.tsx`) pakai `downloadAuth`.
+- **frontend** — sesi web terkunci otomatis: `sessionStorage` (logout saat browser ditutup)
+  + `useIdleLogout` 5 menit + pesan general "Sesi berakhir. Silakan login kembali."
+  (`src/hooks/useIdleLogout.ts`, `AuthContext`, `Layout`, `LoginPage`, `lib/api.ts`).
+  Verifikasi 8 tes Playwright di domain produksi. Sebelumnya `7453c8f` (dokumentasi),
+  `1f7cd40` (loader dashboard), `8726294` — form buat member tanpa kolom password.
 - **backend** `a695c77` — `client:create_password` **mewajibkan + memverifikasi `passwordLama`**,
   dan `createVoucherAndStart()` (jalur buat voucher dari kartu PC di dashboard) ikut `PASSWORD_DEFAULT`
   — sebelumnya masih `Math.floor(1000 + Math.random()*9000)`, jadi itu satu-satunya jalur pembuatan
@@ -1207,10 +1273,20 @@ Rantai: `https://v3netbill.bilmary.my.id` → `cloudflared` (host) → **`localh
   'frontend-dist'), exclude: ['/api/{*splat}', '/session/{*splat}', '/socket.io/{*splat}'] })`.
   Jadi backend menyajikan **bundle frontend yang sudah di-build**.
 - Bundle itu di-build di tahap pertama `backend/Dockerfile` (`COPY frontend/ ./` +
-  `npm run build`) lalu di-copy ke `/app/frontend-dist` pada tahap kedua.
-- Dev server Vite di 5173 **tidak** dipakai langsung oleh user. Mengubah kode frontend tidak
-  langsung terlihat di domain: harus `docker compose up -d --build v3netbill-backend`
-  supaya bundle di-build ulang.
+  `npm run build`) lalu di-copy ke `/app/frontend-dist` pada tahap kedua — **tapi hasil
+  build itu praktis tidak pernah terpakai**, karena `/app/frontend-dist` di-timpa bind
+  mount (lihat kotak peringatan di bawah).
+- ⚠️ **Cara deploy frontend yang benar: build lewat container frontend, BUKAN build image
+  backend.** `docker compose up -d --build v3netbill-backend` **tidak** memperbarui
+  bundle yang disajikan domain, karena `./frontend/dist` di-bind mount ke
+  `/app/frontend-dist`. Yang benar:
+  ```bash
+  docker compose exec v3netbill-frontend npm run build
+  ```
+  Bundle langsung tersimpan ke `frontend/dist` di host, jadi **tidak perlu restart
+  backend**. Verified 30 Sep: habis `up -d --build` domain masih menyajikan bundle lama
+  (`localStorage` token), setelah `npm run build` lewat container frontend langsung
+  bundle baru aktif tanpa restart.
 
 ### ⚠️ `frontend/dist` adalah bind mount di KEDUA container
 
@@ -1226,9 +1302,13 @@ Konsekuensi penting:
    `/session`, `/socket.io` yang dikecualikan. Ini sempat dipakai untuk menyajikan
    screenshot mockup berisi data produksi (IP server, kode voucher, riwayat sesi) —
    **berbahaya**, sudah dihapus. Jangan ulangi tanpa peringatan eksplisit ke user.
-2. Isi host `/app/dist` **root-owned** (dibuat saat `docker build`), jadi user non-root
-   tidak bisa menulis. Pakai `docker cp` ke dalam container.
-3. File yang ditaruh manual **hilang** saat container di-recreate atau image di-rebuild.
+2. **Build image backend tidak mengubah isi `frontend/dist`.** Build di dalam image
+   memang membuat `/app/frontend-dist` baru, tapi bind mount menimpanya dengan isi
+   folder di host. Sumber kebenaran tetap `docker compose exec v3netbill-frontend
+   npm run build`.
+3. Isi host `/app/dist` **root-owned** (dibuat saat `npm run build` di container), jadi
+   user non-root tidak bisa menulis. Pakai `docker cp` ke dalam container.
+4. File yang ditaruh manual **hilang** saat container di-recreate atau image di-rebuild.
    Untuk aset permanen harus lewat `frontend/public/` lalu build ulang image (tetapi
    berarti ikut masuk repo).
 
@@ -1240,7 +1320,7 @@ memeriksa apakah sebuah file publik benar-benar ada — periksa `content-type` a
 ukuran body. Contoh setelah mockup dihapus: `/moc-1.png` tetap `HTTP 200` tapi isinya
 HTML 503 B, bukan PNG.
 
-## Kunci localStorage frontend
+## Kunci sessionStorage frontend
 
  bukan `token`/`role`/`username` — kalau salah, inject token saat tes akan gagal diam-diam
 dan halaman jatuh ke login:
@@ -1250,6 +1330,10 @@ v3netbill_token      (src/lib/api.ts:16)
 v3netbill_role       (src/lib/api.ts:17)
 v3netbill_username   (src/lib/api.ts:18)
 ```
+
+⚠️ Ketiganya berada di **`sessionStorage`**, bukan `localStorage` (sejak 30 Sep).
+Jadi saat inject token untuk tes, pakai `sessionStorage.setItem(...)` — kalau
+`localStorage`, halaman tetap jatuh ke login karena tidak ada yang membacanya.
 
 ## Kemampuan verifikasi visual
 
@@ -1269,16 +1353,27 @@ curl -s -X POST https://v3netbill.bilmary.my.id/api/auth/login \
   -d '{"username":"admin","password":"admin123"}'
 # kunci respons: access_token  (BUKAN accessToken)
 
-# 2. inject localStorage + screenshot lewat playwright-core
-docker run --rm -v /tmp/shot:/w -v /tmp/pw:/pw --entrypoint node \
-  mcr.microsoft.com/playwright:v1.55.0-noble /w/cap.mjs
+# 2. inject sessionStorage + screenshot lewat playwright-core
+docker run --rm --network host \
+  -v /tmp/shot:/w -v /tmp/pw/node_modules:/w/node_modules:ro \
+  --entrypoint node mcr.microsoft.com/playwright:v1.55.0-noble /w/cap.mjs
 ```
 
 `playwright-core` perlu `npm i playwright-core@1.55.0` di dalam container (pakai Chromium
-yang sudah ada lewat `executablePath`, tidak perlu download browser). Cookie/localStorage
-per origin, jadi suntik lewat `addInitScript` **sebelum** `goto`.
+yang sudah ada lewat `executablePath`, tidak perlu download browser). Storage per origin,
+jadi suntik lewat `addInitScript` **sebelum** `goto`.
 
-Stub HTML di `file://` tidak bisa menulis localStorage untuk origin https — itu sebabnya
+⚠️ **Dua jebakan menjalankan Playwright dari container** (bikin 3 percobaan gagal
+berturut-turut, 30 Sep):
+- `node_modules` harus di-mount ke `/w/node_modules`, bukan `/pw`. ESM mencari paket
+  relatif terhadap letak file skrip (`/w/cap.mjs`), jadi `/pw/node_modules` tidak
+  ditemukan.
+- Butuh `--network host` **dan** URL pakai IP LAN (`http://192.168.1.65:5173`), bukan
+  `localhost`. Tanpa itu: `ERR_CONNECTION_REFUSED`. Conversely, kalau memakai nama
+  service compose (`v3netbill-frontend:5173`), Vite membalas **403** karena
+  `allowedHosts` tidak memuatnya.
+
+Stub HTML di `file://` tidak bisa menulis storage untuk origin https — itu sebabnya
 stub pertama gagal.
 
 ### Membuat PDF dari HTML (tanpa pdfkit, tanpa Chromium lewat Playwright)

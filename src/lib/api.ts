@@ -17,12 +17,23 @@ const TOKEN_KEY = 'v3netbill_token'
 const ROLE_KEY = 'v3netbill_role'
 const USERNAME_KEY = 'v3netbill_username'
 
+/**
+ * `sessionStorage`, bukan `localStorage`.
+ *
+ * `localStorage` bertahan setelah browser ditutup, jadi kasir yang meninggalkan
+ * komputer dalam keadaan login masih bisa dibuka siapa pun tanpa password.
+ * `sessionStorage` ikut hilang saat tab/browser ditutup, jadi menutup browser
+ * sama dengan keluar. Reload (F5) tidak mengosongkannya, jadi sesi tetap aman
+ * dari refresh biasa.
+ */
+const store = (): Storage => window.sessionStorage
+
 export const api = axios.create({
   baseURL: '/api',
 })
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem(TOKEN_KEY)
+  const token = store().getItem(TOKEN_KEY)
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -41,30 +52,30 @@ api.interceptors.response.use(
 )
 
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY)
+  return store().getItem(TOKEN_KEY)
 }
 
 export function getRole(): Role | null {
-  return (localStorage.getItem(ROLE_KEY) as Role) ?? null
+  return (store().getItem(ROLE_KEY) as Role) ?? null
 }
 
 export function getUsername(): string | null {
-  return localStorage.getItem(USERNAME_KEY)
+  return store().getItem(USERNAME_KEY)
 }
 
 export function setAuth(token: string, role: Role): void {
-  localStorage.setItem(TOKEN_KEY, token)
-  localStorage.setItem(ROLE_KEY, role)
+  store().setItem(TOKEN_KEY, token)
+  store().setItem(ROLE_KEY, role)
 }
 
 export function setUsername(username: string): void {
-  localStorage.setItem(USERNAME_KEY, username)
+  store().setItem(USERNAME_KEY, username)
 }
 
 export function clearAuth(): void {
-  localStorage.removeItem(TOKEN_KEY)
-  localStorage.removeItem(ROLE_KEY)
-  localStorage.removeItem(USERNAME_KEY)
+  store().removeItem(TOKEN_KEY)
+  store().removeItem(ROLE_KEY)
+  store().removeItem(USERNAME_KEY)
 }
 
 export async function login(username: string, password: string): Promise<LoginResponse> {
@@ -251,7 +262,7 @@ export async function downloadAuth(
   fallbackName: string,
   onProgress?: (p: DownloadProgress) => void,
 ): Promise<void> {
-  const token = localStorage.getItem(TOKEN_KEY)
+  const token = store().getItem(TOKEN_KEY)
   const res = await fetch(`/api${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   })
