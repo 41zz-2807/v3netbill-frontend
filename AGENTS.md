@@ -354,6 +354,65 @@ sekaligus. Sudah diperbaiki di `0c13a60`.
 `pg_dump` dijalankan **tanpa** `?schema=public` (query string di-strip dari API URL) —
 lihat `settings.service.ts`.
 
+### Mengosongkan data — skrip `bersihkan-data` (bukan endpoint web)
+
+`/home/warnet/docker/v3netbill/bersihkan-data` (root project, **tidak masuk repo** —
+sejajar dengan `dk` dan `fl`). Menghapus seluruh data operasional:
+
+```
+Transaction, Session, Account, DailyReport, ActivityLog
+```
+
+**Pc, User, dan Setting tidak disentuh.** `User` dihapus berarti tidak ada yang bisa
+login lagi; `Pc` dipakai agent yang sedang jalan.
+
+```bash
+./bersihkan-data              # dry-run: hanya menampilkan yang akan dihapus
+./bersihkan-data --jalankan   # backup otomatis, lalu hapus (minta ketik HAPUS SEMUA)
+```
+
+⚠️ **Kenapa skrip bash, BUKAN endpoint web** — ini keputusan yang disengaja, jangan
+diubah tanpa alasan baru. Endpoint "hapus semua akun + semua transaksi" yang aktif
+permanen di domain publik adalah sasaran bernilai tinggi, dan `JWT_SECRET` masih punya
+fallback hardcoded yang terbaca publik di repo backend (lihat bagian audit keamanan
+di bawah). Membaca data sudah berisiko; menghapus seluruh database berlipat. Operasi
+ini sekali pakai, jadi tidak perlu jadi fitur aplikasi.
+
+**Urutan DELETE wajib begini** — `Transaction.accountId` dan `Session.accountId` punya
+`ON DELETE RESTRICT` (bukan `CASCADE`), jadi menghapus `Account` duluan akan ditolak
+PostgreSQL. `Transaction.kasirId` juga `RESTRICT` ke `User`, makanya `User` tidak boleh
+dihapus. Semua DELETE dibungkus `-1` (`--single-transaction`) + `ON_ERROR_STOP=1`, jadi
+gagal di tengah tidak meninggalkan keadaan setengah jadi.
+
+**Tiga lapis pengaman**, semuanya sudah diuji:
+
+| Lapis | Perilaku |
+|---|---|
+| Default = dry-run | tanpa `--jalankan` tidak ada yang dihapus, exit 0 |
+| Backup otomatis | `pg_dump` ke `data/backup/pre-bersih-<stempel>.sql`; **kalau < 1000 byte skrip berhenti** dan data tidak dihapus |
+| Konfirmasi ketik | harus persis `HAPUS SEMUA`; salah atau stdin bukan TTY → dibatalkan |
+| Guard sesi aktif | kalau ada `Session` berstatus `BERJALAN`, berhenti **sebelum** backup, exit 1 — mencegah waktu pelanggan terpotong di tengah sesi |
+
+⚠️ **Dua jebakan bash yang sudah ditemukan dan tidak boleh diulang** (30 Sep):
+- **`docker exec -i` memakan stdin.** Fungsi `psql_db()` sengaja **tanpa** `-i`. Dengan
+  `-i`, docker mewarisi stdin skrip, dan jawaban konfirmasi ikut hilang — jadi `HAPUS
+  SEMUA` selalu terbaca kosong dan skrip selalu "Dibatalkan" tanpa alasan yang jelas.
+  Semua SQL di skrip ini lewat argumen `-c`, jadi `-i` memang tidak pernah dibutuhkan.
+- **`read`, bukan `baca`.** Versi pertama salah ketik dan `set -e` langsung menghentikan
+  skrip — jadi tidak merusak data, tapi jalur konfirmasi mati tanpa error yang
+  menunjuk ke penyebabnya. Jalankan `bash -n <skrip>` sebelum dipakai.
+
+Verifikasi 30 Sep: dry-run, konfirmasi salah, guard sesi aktif (dibuat 1 sesi uji lalu
+dibuang), dan DELETE sungguhan — keempatnya diuji di **database salinan**
+(`v3netbill_ujicoba`, dibuat dari `pg_dump` lalu di-drop), bukan di produksi. Hanya
+uji jalur DELETE tanpa risiko begitu dua bug di atas ketahuan.
+
+**Sudah dijalankan sekali di produksi, 30 Sep 08:24.** 121 akun (102 masih punya sisa
+waktu), 140 transaksi, 64 sesi, 29 rekap dihapus. Backup pengembalian ada di
+`data/backup/pre-bersih-2026-09-30T08-24-47.sql` (69.542 byte). Setelah itu backend
+direstart; 0 error konsol di 6 halaman. ⚠️ Rekap harian yang **sudah pernah dikirim**
+ke email/Telegram tidak kembali — menghapus tabel tidak menarik kembali yang terkirim.
+
 ### Deteksi IP PC — ringkas + pilihan yang belum dikerjakan
 
 `Pc.ipClient` **hanya data tampilan**. Bukan identitas, bukan kunci unik, tidak dipakai
