@@ -2,7 +2,16 @@
 <html lang="id" data-ui-buttons="uiverse">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Favicon. Sebelumnya hanya menunjuk /favicon.svg yang TIDAK ADA di
+         public/, jadi browser jatuh ke ikon bawaan tanpa error yang terlihat.
+         Ikon diambil dari bagian heksagon logo-v3netbill.png (kolom 0-115),
+         diberi latar navy agar siluetnya tetap terbaca di 16px — garis
+         kawat logo yang asli jadi gumpalan biru di ukuran sekecil itu. -->
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>v3Netbill — Warnet Billing</title>
   </head>
