@@ -581,13 +581,85 @@ permintaan, 0 crash.
 - Config dibaca `GetConfig()` (`Agent.Service/Worker.cs:608`): **registry → appsettings.json → default**.
   Registry `HKLM\Software\v3Netbill\Agent`: `ServerUrl`, `PcId`, `AgentToken` ( ditulis MSI).
 - Wizard installer punya dialog `ServerConfigDialog` (`Installer/Product.wxs:194`) — field
-  **Server URL / PC ID / Agent Token**. Default property `SERVER_URL` diisi saat build MSI
-  (lihat `Installer/Product.wxs`); nilai aslinya tidak disimpan di repo.
+  **Server URL / PC ID / Agent Token**. Default `SERVER_URL` **diisi saat build MSI oleh
+  workflow** lewat `wix build -d SERVER_URL="${{ env.SERVER_URL }}"`, dan nilainya diambil dari
+  **GitHub Actions variable** bernama `SERVER_URL` (bukan secret). Di `Product.wxs` hanya ada
+  fallback yang akan ditimpa itu — jangan andalkan isinya. Detail jebakannya:
+  bagian "Build MSI & WiX" di bawah.
 - **WAJIB isi `ServerUrl` dengan skema lengkap** (`http://192.168.1.65:3000`), karena
-  `Agent.Core/ServerConnection.cs:74` memanggil `new Uri(...)` — string tanpa skema gagal.
+  `Agent.Core/ServerConnection.cs:91` memanggil `new Uri($"{serverBaseUrl.TrimEnd('/')}/session")` —
+  string tanpa skema gagal. ⚠️ `ServerUrl` berisi **base URL saja**, tanpa `/session`;
+  `ServerConnection` yang menambahkannya.
 
 ### Build MSI & WiX — jebakan yang sudah dilewati
 
+⚠️ **`-d NAME=Value` TIDAK menimpa atribut `Property`. Dia hanya membuat
+preprocessor variable, dan harus ditulis `$(var.NAME)` di dalam `.wxs`.**
+
+Ini jebakan paling merusak di repo ini, karena gejalanya muncul **jauh** dari
+penyebabnya: agent terpasang dengan `ServerUrl = http://localhost:3000`, lalu
+mencoba konek ke localhost **di PC kasir**. Akibatnya PC jadi OFFLINE dan
+wallpaper tidak pernah terunduh — padahal endpoint wallpaper di server sehat
+saja. Log server juga tidak menunjukkan apa-apa karena agent tidak pernah
+sampai.
+
+Dua tahap, keduanya sudah terperbaiki:
+
+1. `build-agent.yml` meneruskan `-d SERVER_URL="${{ env.SERVER_URL }}"`.
+   Nilainya dari **GitHub Actions variable** (`SERVER_URL`), bukan secret.
+   Variabelnya sudah ada dari awal dengan nilai yang benar — hanya cablingnya
+   yang belum ada.
+2. `Product.wxs` menulis `Value="$(var.SERVER_URL)"`. Sebelumnya literal
+   `Value="http://localhost:3000"`, jadi define-nya tidak pernah terpakai.
+
+Cara memastikan benar: **`grep 'http://localhost:3000' <file>.msi`**. Kalau
+masih ada, build-nya salah. Pola `$(var.…)` yang sudah bekerja bisa dilihat di
+`Product.wxs` untuk `Source="$(var.SvcPublishDir)"`. Perhatikan bedanya dengan
+`$(WIXUIARCH)` — itu preprocessor variable bawaan WiX, bukan dari `-d`.
+
+Konsekuensinya disengaja: build tanpa `-d SERVER_URL` **gagal** dengan
+`WIX0150: Undefined preprocessor variable`. Itu jauh lebih baik daripada
+menghasilkan MSI yang terpasang tapi tidak konek.
+
+- ⚠️ **Step "Verify MSI contents" sekarang membaca tabel Property MSI dan
+  gagal keras kalau `SERVER_URL` kosong atau masih `localhost:3000`.**
+  Sebelumnya step itu hanya memeriksa file ada, sehingga MSI dengan default
+  salah tetap lolos hijau. Kalau kamu menambah property yang wajib benar,
+  tambahkan juga pemeriksaannya di sini.
+- **Upload manual kalau langkah CI dilewati** (lihat tiga secret kosong di
+  bawah). Rangkaiannya sudah dipakai dan terverifikasi:
+  ```bash
+  # 1. artifact SELALU butuh token, dan sering terpotong di unduhan pertama
+  TOKEN="$(cat v3netbill-mobile/github-token.txt)"
+  curl -L -C - --retry 5 --retry-all-errors -H "Authorization: Bearer $TOKEN" \
+    -o artifact.zip ".../actions/artifacts/<id>/zip"
+  # 2. upload lewat LOCALHOST, bukan lewat domain
+  curl -X POST http://localhost:3000/api/settings/installer \
+    -H "Authorization: Bearer $TOKEN" -F "file=@...msi"
+  ```
+  ⚠️ Upload lewat domain dari host **terpotong di ~18 MB** (Cloudflare); MSI
+  62 MB selalu gagal. Selalu lewat `localhost:3000`.
+  ⚠️ **Ukuran MSI TIDAK berubah antar build.** Dua MSI berturut-turut sama
+ -sama `64822192` byte padahal isinya berbeda — hampir salah mengira artifact itu
+  basi karena ukurannya sama. Yang menentukan hanya `sha256`. Verifikasi
+  unduh ulang dari server dan bandingkan hash, bukan lihat ukuran.
+  ⚠️ Berkas di `/data/installer/` **root-owned** (dibuat container sebagai
+  root). Untuk menghapus berkas lama harus lewat
+  `docker exec v3netbill-backend rm -f ...`, dan **nama aktif dibaca dari
+  `installer_meta`** — jangan hardcode, supaya ada kasir yang mengunduh versi
+  salah. Command lengkap: bagian "Distribusi lewat Settings web".
+- **Validasi lokal WiX (lebih cepat daripada menunggu CI ~4 menit).** Container
+  `mcr.microsoft.com/dotnet/sdk:8.0` sudah ada di cache mesin ini:
+  ```bash
+  docker run --rm -v "$PWD/v3NetbillAgent:/w" -w /w mcr.microsoft.com/dotnet/sdk:8.0 \
+    bash -c 'dotnet tool install --global wix --version 4.0.5
+             wix build Installer/Product.wxs -d SERVER_URL=<url> ...'
+  ```
+  Yang **harus** dicek: `WIX0005` (elemen tak dikenal), `WIX0103` (sumber file
+  tidak ketemu), `WIX0150` (preprocessor variable undefined — ini yang
+  menangkap bug `SERVER_URL`). Yang **diabaikan**: `WIX0389` dan `WIX0000`.
+  ⚠️ `<WixVariable>` di dalam `.wxs` **tidak** memenuhi `$(var.X)` — hanya
+  `-d` yang bisa. Sudah dicoba dan ditolak dengan `WIX0005`.
 - Versi WiX **wajib `4.0.5`**, mengikuti `WIX_VERSION` di `.github/workflows/build-agent.yml`.
   Jangan naikkan ke 5.x tanpa sengaja menguji ulang.
 - ⚠️ **`WixVariable` (cara kustomisasi banner di WiX v3) TIDAK didukung WiX v4.** Ditolak
@@ -620,10 +692,67 @@ permintaan, 0 crash.
   `frontend/public/logo-v3netbill.png`.
 - Transisi versi agent: `1.0.6.0` reconnect supervisor → `1.0.7.0` single reconnect authority
   (anti flapping) → `1.0.8.0` heartbeatimer bug → `1.0.9.0` heartbeat self-diagnosing + tick log.
-  Commit terbaru `86a4b87`. Riwayat detail: `v3NetbillAgent/HANDOFF.md`.
+  Commit terbaru: `38d90a9` (tema terang + perbaikan 4 jebakan rendering). Riwayat detail: `v3NetbillAgent/HANDOFF.md`.
 - Detail arsitektur & prosedur deploy: `v3NetbillAgent/README.md`.
 
-### Redesign UI Agent Client (27 Sep) ✅ `e0c1908`
+### ⚠️ Empat jebakan rendering yang HANYA terlihat dari screenshot (1 Okt)
+
+Semuanya ketahuan **setelah** MSI terpasang di PC kasir dan difoto, bukan dari
+membaca kode. `dotnet build` lulus untuk keempatnya. Kalau ada sesi berikutnya
+yang mengubah XAML, periksa empat hal ini lebih dulu — semuanya sudah diperbaiki
+di commit `a4a4f16` dan `38d90a9`.
+
+1. **Elemen di luar cabang visibility tidak ikut disembunyikan.**
+   `WallpaperVeil` (lapisan putih di atas wallpaper) hanya memanggil
+   `SinkronkanVeil()` di cabang `locked`. Begitu pengguna login dan
+   `OverlayBackground` di-`Collapsed`, **veil 62% tetap menggantung di atas
+   seluruh desktop** dan layar terlihat washed out. Perbaikannya: panggil
+   **sekali di akhir `UpdateVisibility()`**, bukan per cabang.
+
+2. **`DropShadowEffect` = kotak, bukan bayangan, di bawah RDP.**
+   Tanpa GPU, WPF memakai software rendering dan `BlurRadius` tidak lagi
+   diburamai. Hasilnya **kotak transparan dengan tepi tajam** tepat di sekeliling
+   elemen — terlihat di mini panel. Efeknya dihapus; batas 1px + panel putih
+   sudah cukup memisahkan dari desktop. Kalau perlu bayangan halus, jangan
+   pakai `DropShadowEffect` di sini.
+
+3. **`Margin` pada `Border` = ruang DI LUAR panel, bukan jarak di dalam.**
+   Dialog ganti password menaruh `Margin="24,20"` di Border, jadi caption dan
+   ketiga field **nempel di tepi panel putih** sementara judul di header punya
+   jarak. Yang benar: `Padding` di Border. (Kartu login tidak terpengaruh —
+   di sana header pakai `Padding` dan body pakai `Margin`.)
+
+4. **Dua anak dari `StackPanel` yang sama tampil bertumpuk, bukan layering.**
+   `LoginCard` dan `PinDialog` sama-sama anak `ContentPanel`. `ShowPinDialog()`
+   yang hanya mengubah `Visibility` PinDialog membuat keduanya tampil
+   vertikal. Setelah-dialog yang menutup **HARUS** mengembalikan `LoginCard`,
+   kalau tidak layar login jadi kosong tanpa jalan keluar.
+
+**Yang berubah dari 1 Okt:** tema terang. Semua permukaan (kartu login, mini
+panel, dialog PIN, dialog ganti password, jendela uninstall) memakai panel putih
++ header pastel `#E0F7FA` + teks slate, mengikuti kartu PC di aplikasi web. Aksen
+teal `#00D4AA` tetap dipakai untuk LOGIN, fokus field, dan garis timeline hijau.
+Latar layar penuh tetap wallpaper dari Pengaturan, tidak ada gambar baru yang
+dikirim ke PC kasir — hanya ditambah **veil putih** di atasnya supaya wallpaper
+gelap tidak membuat kartu putih terlihat seperti tempelan.
+
+⚠️ **Teks `maintenance` (mode teknisi) memakai `#45FFFFFF` — putih transparan
+yang HILANG TOTAL di atas wallpaper terang.** Sudah diubah ke `#450F172A`. Kalau
+nanti theme diganti lagi, cek semua warna berawanan alpha atau dengan lantain.
+
+⚠️ **Resource bersama harus di `App.xaml`**, bukan `Window.Resources`:
+`FieldInsetBrush`, `FieldCaptionStyle`, `PillPasswordTemplate`. Kalau dipindah ke
+dalam `Window.Resources`, jendela terpisah tidak akan menemukannya saat runtime.
+`OverlayTextStyle` sudah dihapus — dipakai tidak lagi setelah teks diganti jadi
+warna eksplisit.
+
+### Redesign UI Agent Client (27 Sep) ✅ `e0c1908` — ⚠️ TELAH DIGANTI
+
+> **Bagian ini sudah usang.** Seluruh desain gelap (kartu `#1A1A22`, header Uiverse,
+> aksen teal di atas latar gelap) digantikan tema terang pada 1 Okt. Bagian ini
+> disimpan sebagai sejarah saja, bukan spesifikasi yang harus diikuti. Yang berlaku
+> sekarang: bagian "Empat jebakan rendering" di atas.
+
 
 ⚠️ **Penting: ada DUA kartu sesi, dan hanya satu yang pernah tampil.**
 `CountdownCard` (`MainWindow.xaml:36-70`) adalah **dead code** — satu-satunya baris kode
@@ -1805,6 +1934,27 @@ Nilai di bawah ini sengaja tidak dicatat. Kalau registry sudah hilang, jalankan
     yang afterward harus terbukti utuh, bukan sekadar "dijawab 200 kosong".
 
 
+22. ⚠️ **`-d` build hanya membuat variabel, tidak menimpa `Property`.** Dan
+    "hijau di GitHub" tidak berarti apa-apa kalau step upload-nya diam-diam
+    dilewati. Keduanya hampir membuat PC kasir mati: MSI terpasang dengan
+    `ServerUrl = http://localhost:3000`, agent mencoba konek ke localhost di
+    PC-nya sendiri, tidak pernah sampai ke server. Gejalanya (PC OFFLINE +
+    wallpaper tidak berubah) jauh dari penyebabnya, dan log server sama sekali
+    tidak menunjukkan apa-apa karena agent tidak pernah sampai.
+    Tiga aturan yang sekarang ditegakkan:
+    - **Periksa isi build, bukan exit code-nya.** `grep 'http://localhost:3000'
+      <file>.msi` harus kosong. Dan "Verify MSI contents" sekarang membaca
+      tabel Property dan gagal keras kalau nilainya salah.
+    - **Unduh ulang dari server lalu bandingkan `sha256`, bukan ukuran.**
+      Dua MSI berturut-turut bisa sama-sama 64822192 byte padahal isinya beda.
+    - **Upload lewat `localhost:3000`, bukan lewat domain** — Cloudflare
+      memotong di ~18 MB dan MSI-nya 62 MB.
+    Pelajaran yang lebih umum berlaku untuk tool apa pun: kalau sebuah tool
+    menolak input dengan pesan "unexpected child element", **berhenti menebak
+    posisi dan cari sumber kebenarannya** (reflection API, berkas skema, atau
+    dokumentasi). Enam percobaan berurutan di sini semuanya salah karena tidak
+    ada satu pun yang berbasis bukti.
+
 ## Notifikasi push FCM — pelanggan login di komputer warnet (30 Sep) ✅
 
 Admin diberi tahu di HP kalau ada pelanggan yang memulai sesi, supaya tahu
@@ -2248,7 +2398,7 @@ untuk attacker yang menyisir.
 - ~~**Frontend jadi .apk Android**~~ — **SELESAI 27 Sep**, tapi bukan lewat Capacitor.
   Yang dipakai adalah aplikasi Flutter native penuh (repo `v3netbill-mobile`), hasilnya
   dikirim lewat Settings web. Lihat bagian "FASE 8".
-- ~~**Rapi halaman Pengaturan**~~ — **SELESAI** (`97082bd`): 5 tab + kartu kecil per
+- ~~**Rapi halaman Pengaturan**~~ — **SELESAI** (`97082bd`): tab per kelompok + kartu kecil per
   fitur, `SettingsPage.tsx` 897 → 151 baris, sudah dicek di 1440px dan 390px.
   Halaman Informasi Produk & Security Report dihapus sekalian.
 - ~~**Upload MSI baru ke `/data/installer/`**~~ — **SELESAI**, diunggah manual dari artifact
