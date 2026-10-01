@@ -500,17 +500,18 @@ Dua opsi yang sudah dianalisis tapi **belum dikerjakan**:
 - **Frontend** (`frontend/src/pages/SettingsPage.tsx`): section Tarif (harga_per_menit, grace_period_detik via PATCH `/settings`), Ubah Password Sendiri (`/settings/password`), Upload Installer (multer + meta display), Upload Wallpaper (preview), Backup (POST `/settings/backup` + info last), PIN Uninstall (`/settings/pin-uninstall`). Nav item "Pengaturan" admin-only di `Layout.tsx` + route `/settings` di `App.tsx` (admin guard: redirect non-admin).
 - **Kenset**: `data/` bind mount (installer/wallpaper/backup persist), Dockerfile backend tambah `postgresql-client` (pg_dump).
 
-### Halaman Pengaturan — 5 tab (`97082bd`)
+### Halaman Pengaturan — 6 tab (`97082bd`, tab Log Billing 1 Okt)
 
 Dulu `SettingsPage.tsx` 897 baris dengan 6 kartu dalam grid datar. Tinggi baris
 mengikuti kartu tertinggi, jadi Tarif punya ~430 px ruang kosong dan Installer
 ~590 px, karena "Akses Agent" di sebelahnya jauh lebih tinggi. Nama kartu juga
 tidak sesuai isinya: Akses Agent memuat 3 hal tidak berhubungan, Installer 4 hal.
 
-Kini 5 tab, tiap tab 2–3 kartu yang berkelompok:
+Kini **6 tab**, tiap tab 2–3 kartu yang berkelompok. (Semula 5; tab Log
+Billing ditambahkan 1 Okt — lihat bagian "Log billing berkas".)
 
 ```
-src/pages/SettingsPage.tsx        → 151 baris: header, tab, banner, busy overlay
+src/pages/SettingsPage.tsx        → header, tab, banner, busy overlay
 src/pages/settings/shared.ts      → BUSY_TEXT, SettingsCtx, formatBytes/formatDateIndo
 src/pages/settings/SettingsCard.tsx
 src/pages/settings/TabTarif.tsx        Harga per Menit · Grace Period
@@ -518,7 +519,13 @@ src/pages/settings/TabAgent.tsx        PIN Uninstall · PIN Bypass · OTP Telegr
 src/pages/settings/TabInstalasi.tsx    MSI · APK Android · Wallpaper Lock Screen
 src/pages/settings/TabPengguna.tsx     Tambah User · Ganti Kata Sandi
 src/pages/settings/TabData.tsx         Backup · Riwayat Backup
+src/pages/settings/TabLogBilling.tsx   Log Billing Harian · Daftar Tanggal · Isi Log
 ```
+
+⚠️ **Kartu "Log Billing Harian" dan "Daftar Tanggal" sengaja satu baris**
+(`sm:grid-cols-2` + `items-start`), bukan dua kartu terpisah. `items-start`
+supaya tiap kartu memakai tinggi alaminya — kalau tidak, yang lebih pendek ikut
+diregangkan dan muncul ruang kosong (pelajaran no. 16).
 
 `SettingsCtx` (`busy`, `setBusy`, `run`, `setErr`, `setMsg`) dinaikkan ke
 induk lalu dioper ke setiap tab, jadi satu proses mengunci tombol di semua tab
@@ -2018,7 +2025,25 @@ private → dipakai untuk memindahkan repo yang paling sensitif (kandidat: backe
 Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
 ⚠️ Kalau pindah, **4 secret keystore APK harus di-set ulang** di hosting yang baru.
 
-### Commit terakhir (30 Sep – 1 Okt, sesi terakhir)
+### Commit terakhir (1 Okt)
+
+- **frontend** `511e291` — **panel pastel + tombol X untuk popup**: Tambah PC,
+  Buat Voucher, Buat Member memakai `PastelCard` (panel putih, header cyan)
+  dengan tombol X di header. `GradientCard` + `gradientCardStyles.ts` **dihapus**
+  karena cuma dipakai dua modal itu dan namanya tidak benar lagi. Tombol X juga
+  dipasang di popup "Mulai Sesi" di dashboard. Detail: bagian "Modal popup".
+- **frontend** `db12ccd` — **tab Log Billing** + **kartu PC redesigned Soft Pastel
+  Header** (`aa0aee3` backend untuk lognya). Kartu PC dari `.uui-card*` (Uiverse
+  navy + gradien + notch) jadi `.pcc*` (putih, header cyan); tombol jadi dua —
+  Start saat idle, Kunci saat berjalan, Matikan selalu. Detail: bagian
+  "Kartu PC dashboard" dan "Log billing berkas".
+- **backend** `aa0aee3` — **log aktivitas billing harian sebagai berkas teks**
+  (`src/log-billing/`), retensi 30 hari. Dua bug keamanan ditemukan waktu
+  pengujian memakai serangan nyata: validasi tanggal tertelan `catch` "file tidak
+  ada" (traversal dijawab 200, bukan 400) dan `Content-Disposition` dirusak dari
+  input mentah. Detail: bagian "Log billing berkas" + pelajaran no. 20–21.
+- **frontend** `19167ea` —
+
 
 - **mobile** — **kartu PC punya tepat dua tombol**: tombol pertama bergantian
   ("Mulai Sesi" / "Akhiri Sesi"), tombol kedua "Matikan" selalu ada.
