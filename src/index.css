@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+/* Warna dasar layar. Warnanya light (slate-100) dan hanya jadi dasar —
+   gambar latar dipasang sebagai lapisan terpisah di
+   `components/LatarBelakang.tsx`, bukan di sini. Alasannya `url()` tidak
+   bisa dipakai di CSS project ini: satu deklarasi `url(...)` apa pun bikin
+   build gagal dengan `CssSyntaxError: Missed semicolon` dari postcss
+   (Tailwind v4 + Vite 8 Rolldown). Detail lengkapnya di berkas itu. */
+body {
+  background-color: #f1f5f9;
+}
+
 /* Login page — dari Uiverse.io (Smit-Prajapati) */
 .login-container {
   /* max-width 350px + margin 20px kiri/kanan = butuh 390px. Di HP yang lebarnya

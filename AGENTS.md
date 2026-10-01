@@ -1365,6 +1365,60 @@ menambah offset ke `Date.now()` (mis. `Date.now = () => asli() + geser`), lalu
 Skrip uji-nya sengaja **tidak** disimpan di repo — butuh `playwright-core` yang bukan
 dependensi project, dan file di `/tmp` hilang sendiri.
 
+## Latar belakang gambar seluruh aplikasi (1 Okt) ✅
+
+Semua halaman (termasuk layar login) punya latar foto `/bg-globe.jpg` —
+motif jaringan/bumi yang sama dengan logo — dengan **`LAPIS_PUTIH = 0.7`**
+di atasnya, jadi gambarnya terlihat 30% dan Kesan light tetap terjaga.
+
+```
+src/components/LatarBelakang.tsx   <img> fixed + veil putih, z-index -10
+src/App.tsx                        dipasang di sini, bukan di Layout
+public/bg-globe.jpg                1920x1200 q75 = 77 KB (aslinya 8,5 MB)
+```
+
+⚠️ **Dibuat sebagai komponen React, BUKAN `background-image` di CSS —
+karena `url()` sama sekali tidak bisa dipakai di `index.css`.**
+
+Di kombinasi **Tailwind v4 + Vite 8 (Rolldown)** yang dipakai project ini,
+satu deklarasi `url(...)` apa pun bikin build gagal:
+
+```
+[plugin vite:css] /app/src/index.css:2:36262
+CssSyntaxError: [postcss] Missed semicolon
+```
+
+Sudah diuji satu per satu dan **semuanya gagal**: `url()`, `url("...")`,
+`url('...')`, path absolut `/bg-globe.jpg`, path relatif, data URI,
+di `background-image`, di `list-style-image`, di `::before`, dan di custom
+property. Yang aman: `background-color` dan `linear-gradient`.
+
+Masalah ini tidak pernah terlihat sebelumnya karena **tidak ada satu pun
+`url()` di `index.css`** — semua warna dan gradien. Begitu latar ini butuh
+berkas gambar, masalahnya langsung ke depan. Cara yang dipakai sekarang:
+`<img>` + `object-cover` + `pointer-events-none`, karena referensi aset di JSX
+diproses Vite dengan benar dan `public/` disajikan apa adanya.
+
+⚠️ **Jangan memindahkan latar ini ke CSS tanpa mengulang uji build.** Error-nya
+menyebut `index.css:2:36262` — nomor baris itu menunjuk ke CSS **setelah**
+ekspansi Tailwind, bukan ke baris aturan yang menulis. Jadi posisinya sama sekali
+tidak membantu menemukan penyebabnya, dan `background-color` yang harmlessly
+letakkan di file yang sama tetap bisa membuat build gagal.
+
+**Dua lapis, jangan cuma satu.** Gambar memakai `opacity: 0.3` dan di atasnya
+ada `div` putih `opacity: 0.7` — bukan gambar 30% di atas warna solid. Alasannya
+`body` hanya bisa punya satu `background-color`, dan warna itulah yang terlihat
+di sela-sela gambar.
+
+⚠️ **Dipasang di `App.tsx`, bukan di `Layout`.** `LoginPage` tidak memakai
+`Layout`, jadi latar yang ditaruh di sana tidak akan muncul di layar login.
+`Layout.tsx` juga harus **tanpa** warna latar solid (`bg-gray-100` sudah
+dihapus) — kalau masih ada, latar gambarnya tertutupi tanpa error.
+
+Ukuran 1920x1200 dipilih karena foto hanya 30% dan dibungkus veil putih, jadi
+penurunan ukuran hampir tidak terlihat. Rasio aspek 1,6 dijaga sama dengan
+aslinya supaya `object-cover` tidak memotong.
+
 ## Modal popup — panel pastel + tombol X (1 Okt) ✅
 
 Popup **Tambah PC** (`PcPage.tsx`) dan **Buat Voucher / Buat Member**

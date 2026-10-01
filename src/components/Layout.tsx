@@ -81,7 +81,10 @@ function Layout() {
   return (
     // overflow-x-clip: halaman TIDAK boleh bisa di-scroll ke samping di HP. Card & tabel
     // yang lebar tetap bisa di-scroll di dalam lewat `overflow-x-auto` masing-masing.
-    <div className="min-h-screen overflow-x-clip bg-gray-100">
+    /* `bg-gray-100` DIHAPUS: warna solid itu menutupi latar gambar yang
+       dipasang di `body`, jadi halaman ini tetap abu-abu polos. Lihat
+       bagian "Latar belakang seluruh aplikasi" di index.css. */
+    <div className="min-h-screen overflow-x-clip">
       <header className="bg-[#1b233d]">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           {/* Brand berupa logo. Dari JPG 1760x576 berlatar putih, dibuat

@@ -8,14 +8,22 @@ import TransactionsPage from './pages/TransactionsPage.tsx'
 import ReportsPage from './pages/ReportsPage.tsx'
 import SettingsPage from './pages/SettingsPage.tsx'
 import Layout from './components/Layout.tsx'
+import { LatarBelakang } from './components/LatarBelakang.tsx'
 
 function App() {
   const { token } = useAuth()
 
-  if (!token) {
-    return <LoginPage />
-  }
+  // Latar dipasang di sini, BUKAN di Layout: halaman Login tidak memakai
+  // Layout, jadi kalau ditaruh di sana layar login tetap polos.
+  return (
+    <>
+      <LatarBelakang />
+      {token ? <Rute /> : <LoginPage />}
+    </>
+  )
+}
 
+function Rute() {
   return (
     <Routes>
       <Route element={<Layout />}>
