@@ -1793,8 +1793,17 @@ private → dipakai untuk memindahkan repo yang paling sensitif (kandidat: backe
 Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
 ⚠️ Kalau pindah, **4 secret keystore APK harus di-set ulang** di hosting yang baru.
 
-### Commit terakhir (30 Sep, sesi terakhir)
+### Commit terakhir (30 Sep – 1 Okt, sesi terakhir)
 
+- **mobile** — **kartu PC punya tepat dua tombol**: tombol pertama bergantian
+  ("Mulai Sesi" / "Akhiri Sesi"), tombol kedua "Matikan" selalu ada.
+  Dulu keduanya tampil bersamaan, dan itu menyesatkan karena dua aksi
+  yang bertentangan — kasir bisa menekan "Mulai Sesi" di PC yang sedang
+  berjalan lalu ditolak backend. Syarat "sedang berjalan" memakai
+  `hasSession` **dan** `status == active`, karena `session` bisa `null`
+  walau statusnya masih `ACTIVE` sesaat setelah sisi server berubah.
+  6 tes baru di `test/pc_card_test.dart`, 5 dari 6 sudah dibuktikan
+  menangkap bug. 86 test lulus. APK 1.0.23 aktif di server.
 - **mobile** — **tombol "Mulai di PC" di bar aksi Voucher/Member** + sheet
   pemilihan PC + perataan baris info Profile + perbaikan pesan login salah
   password + hapus teks petunjuk di halaman login. 13 test baru, 80 test
