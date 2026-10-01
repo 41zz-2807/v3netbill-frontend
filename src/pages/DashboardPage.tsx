@@ -235,82 +235,110 @@ export default function DashboardPage() {
             const sesi = pc.session
             const sisa = sesi?.sisaDetik ?? 0
             const tipe = sesi ? (sesi.tipe === 'MEMBER' ? 'Member' : 'Voucher') : '—'
-            const statusLabel = pc.status === 'ACTIVE' ? 'Aktif' : pc.status === 'IDLE' ? 'Idle' : 'Offline'
+            const statusLabel =
+              pc.status === 'ACTIVE' ? 'Aktif' : pc.status === 'IDLE' ? 'Idle' : 'Offline'
             const bolehAksi = role === 'ADMIN' || role === 'KASIR'
+
+            // "Sedang berjalan" dipakai untuk SEMUA yang ditampilkan, bukan
+            // cuma untuk milih tombol: hitung mundur, label SISA WAKTU, tipe
+            // akun, dan tombolnya.
+            //
+            // Alasannya `sesi` saja tidak bisa dipercaya. Setelah agent
+            // putus, session masih ada beberapa detik (grace period) sementara
+            // status PC sudah berubah ke OFFLINE. Kalau hanya `sesi` yang
+            // dipakai, card menampilkan hitung mundur yang sudah tidak
+            // jalan berdampingan dengan tombol Start — dan di aplikasi
+            // billing, angka yang tidak lagi benar lebih buruk daripada tidak
+            // ditampilkan sama sekali.
+            const sedangBerjalan = sesi !== null && pc.status === 'ACTIVE'
+
+            const warnaStatus =
+              pc.status === 'ACTIVE'
+                ? 'ok'
+                : pc.status === 'IDLE'
+                  ? 'warn'
+                  : 'danger'
+
             return (
-              <div key={pc.id} className={`uui-card uui-card--${pc.status.toLowerCase()}`}>
-                <div className="uui-card__top">
-                  <div className="uui-card__notch" />
-                  <div className="uui-card__bar">
-                    <span className="uui-card__logo">
-                      <IconTrophy />
-                    </span>
-                    {bolehAksi ? (
-                      <div className="uui-card__actions">
+              <div key={pc.id} className="pcc">
+                <div className="pcc__head">
+                  <div className="min-w-0">
+                    <div
+                      className={`pcc__time${
+                        sedangBerjalan
+                          ? sisa <= 300
+                            ? ' pcc__time--warn'
+                            : ''
+                          : ' pcc__time--teks'
+                      }`}
+                    >
+                      {sedangBerjalan ? formatDuration(sisa) : statusLabel}
+                    </div>
+                    <div className="pcc__time-label">
+                      {sedangBerjalan ? 'SISA WAKTU' : 'TIDAK ADA SESI'}
+                    </div>
+                  </div>
+
+                  {/* Dua tombol, sama seperti kartu PC di aplikasi Android:
+                      yang pertama bergantian Start / Kunci, dan Matikan
+                      selalu ada. Dua-duanya ditampilkan berdampingan —
+                      satu tombol per baris menambah tinggi card. */}
+                  {bolehAksi && (
+                    <div className="pcc__actions">
+                      {sedangBerjalan ? (
                         <button
                           type="button"
-                          className="uui-card__act uui-card__act--start"
-                          onClick={() => bukaModalStart(pc)}
-                          title="Start sesi"
-                          aria-label={`Start sesi ${pc.namaPc}`}
-                        >
-                          <IconStart />
-                        </button>
-                        <button
-                          type="button"
-                          className="uui-card__act uui-card__act--lock"
+                          className="pcc__act pcc__act--lock"
                           onClick={() => kirimPerintah(pc, 'lock')}
-                          title="Kunci layar"
+                          title="Akhiri sesi dan kunci layar"
                           aria-label={`Kunci ${pc.namaPc}`}
                         >
                           <IconKunci />
                         </button>
+                      ) : (
                         <button
                           type="button"
-                          className="uui-card__act uui-card__act--shutdown"
-                          onClick={() => kirimPerintah(pc, 'shutdown')}
-                          title="Matikan PC"
-                          aria-label={`Matikan ${pc.namaPc}`}
+                          className="pcc__act pcc__act--start"
+                          onClick={() => bukaModalStart(pc)}
+                          title="Mulai sesi"
+                          aria-label={`Start sesi ${pc.namaPc}`}
                         >
-                          <IconMatikan />
+                          <IconStart />
                         </button>
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="uui-card__hero">
-                    <span
-                      className={`uui-card__hero-value${
-                        sesi ? (sisa <= 300 ? ' uui-card__hero-value--warn' : '') : ' uui-card__hero-value--sm'
-                      }`}
-                    >
-                      {sesi ? formatDuration(sisa) : statusLabel}
-                    </span>
-                    <span className="uui-card__hero-label">{sesi ? 'Sisa Waktu' : 'Tidak ada sesi'}</span>
-                  </div>
-                </div>
-                <div className="uui-card__bottom">
-                  <span className="uui-card__title">
-                    {pc.namaPc}
-                    <span className="uui-card__title-ip"> - {pc.ipClient || '—'}</span>
-                  </span>
-                  <div className="uui-card__row">
-                    <div className="uui-card__item">
-                      <span
-                        className={`uui-card__big ${
-                          pc.status === 'ACTIVE'
-                            ? 'uui-card__big--ok'
-                            : pc.status === 'IDLE'
-                              ? 'uui-card__big--warn'
-                              : 'uui-card__big--danger'
-                        }`}
+                      )}
+                      <button
+                        type="button"
+                        className="pcc__act pcc__act--power"
+                        onClick={() => kirimPerintah(pc, 'shutdown')}
+                        title="Matikan PC"
+                        aria-label={`Matikan ${pc.namaPc}`}
                       >
+                        <IconMatikan />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pcc__body">
+                  <div className="pcc__name">
+                    {pc.namaPc}
+                    <span className="pcc__name-ip"> - {pc.ipClient || '—'}</span>
+                  </div>
+
+                  <div className="pcc__info">
+                    <div>
+                      <span className="pcc__info-label">Status</span>
+                      <span className={`pcc__info-value pcc__info-value--${warnaStatus}`}>
                         {statusLabel}
                       </span>
-                      <span className="uui-card__regular">Status</span>
                     </div>
-                    <div className="uui-card__item">
-                      <span className={`uui-card__big ${sesi ? '' : 'uui-card__big--muted'}`}>{tipe}</span>
-                      <span className="uui-card__regular">Tipe</span>
+                    <div>
+                      <span className="pcc__info-label">Tipe</span>
+                      <span
+                        className={`pcc__info-value${sedangBerjalan ? '' : ' pcc__info-value--muted'}`}
+                      >
+                        {tipe}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -496,16 +524,6 @@ function StatCard({ label, value, percent, color }: { label: string; value: stri
   )
 }
 
-function IconTrophy() {
-  return (
-    <svg viewBox="0 0 94 94" aria-hidden="true">
-      <path d="M38.0481 4.82927C38.0481 2.16214 40.018 0 42.4481 0H51.2391C53.6692 0 55.6391 2.16214 55.6391 4.82927V40.1401C55.6391 48.8912 53.2343 55.6657 48.4248 60.4636C43.6153 65.2277 36.7304 67.6098 27.7701 67.6098C18.8099 67.6098 11.925 65.2953 7.11548 60.6663C2.37183 56.0036 0 49.2967 0 40.5456V4.82927C0 2.16213 1.96995 0 4.4 0H13.2405C15.6705 0 17.6405 2.16214 17.6405 4.82927V39.1265C17.6405 43.7892 18.4805 47.2018 20.1605 49.3642C21.8735 51.5267 24.4759 52.6079 27.9678 52.6079C31.4596 52.6079 34.0127 51.5436 35.6268 49.4149C37.241 47.2863 38.0481 43.8399 38.0481 39.0758V4.82927Z" />
-      <path d="M86.9 61.8682C86.9 64.5353 84.9301 66.6975 82.5 66.6975H73.6595C71.2295 66.6975 69.2595 64.5353 69.2595 61.8682V4.82927C69.2595 2.16214 71.2295 0 73.6595 0H82.5C84.9301 0 86.9 2.16214 86.9 4.82927V61.8682Z" />
-      <path d="M0 83.2195C0 80.5524 1.96995 78.3902 4.4 78.3902H83.6C86.0301 78.3902 88 80.5524 88 83.2195V89.1707C88 91.8379 86.0301 94 83.6 94H4.4C1.96995 94 0 91.8379 0 89.1707L0 83.2195Z" />
-    </svg>
-  )
-}
-
 function IconStart() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -538,6 +556,7 @@ const LOG_EVENT_LABEL: Record<string, string> = {
   'voucher:created_dashboard': 'Voucher Dibuat',
   'voucher:created': 'Voucher Dibuat',
   'account:revoked': 'Akun Dinonaktifkan',
+  'account:password_changed': 'Password Diubah',
   pc_lock: 'PC Dikunci',
   pc_locked: 'PC Dikunci',
   pc_unlock: 'PC Dibuka',
@@ -553,6 +572,7 @@ const LOG_EVENT_VARIANT: Record<string, 'default' | 'success' | 'warning' | 'dan
   'voucher:created_dashboard': 'success',
   'voucher:created': 'success',
   'account:revoked': 'danger',
+  'account:password_changed': 'warning',
   pc_lock: 'warning',
   pc_locked: 'warning',
   pc_unlock: 'info',

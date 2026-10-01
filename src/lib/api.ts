@@ -11,6 +11,8 @@ import type {
   InstallerMeta,
   BackupResult,
   BackupFile,
+  LogBillingRingkas,
+  LogBillingIsi,
 } from './types'
 
 const TOKEN_KEY = 'v3netbill_token'
@@ -423,4 +425,25 @@ export function formatWaktu(dateStr: string): string {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+/* --- Log billing harian (backend/src/log-billing) --- */
+
+export async function fetchLogBillingList(): Promise<LogBillingRingkas[]> {
+  const { data } = await api.get<LogBillingRingkas[]>('/log-billing')
+  return data
+}
+
+/**
+ * `cari` dikirim sebagai parameter query, bukan difilter di browser. Isi satu
+ * hari kecil, tapi memfilter di server berarti kotak pencarian tetap bekerja
+ * kalau nanti retensinya diubah dari 30 hari ke beberapa bulan.
+ */
+export async function fetchLogBilling(
+  tanggal: string,
+  cari?: string,
+): Promise<LogBillingIsi> {
+  const { data } = await api.get<LogBillingIsi>('/log-billing/' + encodeURIComponent(tanggal), {
+    params: cari && cari.trim() !== '' ? { cari: cari.trim() } : undefined,
+  })
+  return data
 }

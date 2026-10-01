@@ -105,308 +105,241 @@
 }
 
 /* ============================================================
-   Dashboard — kartu PC
-   Diadaptasi dari Uiverse.io "Universe of UI" (adamgiebl).
-   Semua selector di-namespace jadi .uui-card supaya nama generik
-   (.title / .row / .item / .border) tidak bocor ke komponen lain.
+   Dashboard — kartu PC (Soft Pastel Header)
+   HEADER pastel cyan memuat hitung mundur + tombol aksi, BODY
+   putih memuat nama PC dan Status/Tipe. Semua selector
+   di-namespace jadi .pcc supaya nama generik (.time / .actions /
+   .value) tidak bocor ke komponen lain.
+
+   ⚠️ Tombol .pcc__act WAJIB dikecualikan dari aturan tombol
+   global uiverse di bawah (itu memberi border-radius 1.5rem dan
+   gradient navy). Tanpa pengecualian, tombol 32px ini dapat latar
+   navy dan warna pastel-nya hilang.
    ============================================================ */
-.uui-card {
+.pcc {
   width: 100%;
-  /* 340px dipilih agar item "IP" (mis. 192.168.100.24) muat penuh
-     tanpa ellipsis, bahkan di kolom tersempit (4 kolom @ max-w-6xl). */
+  /* 340px supaya "PC001 - 180.178.96.34" muat satu baris di
+     kolom tersempit (4 kolom @ xl). */
   max-width: 340px;
   justify-self: center;
-  border-radius: 20px;
-  background: #1b233d;
-  padding: 5px;
+  border-radius: 16px;
+  background: #ffffff;
   overflow: hidden;
-  box-shadow: rgba(100, 100, 111, 0.2) 0 7px 20px 0;
-  transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275),
-    box-shadow 0.3s ease;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.uui-card:hover {
-  transform: scale(1.03);
-  box-shadow: rgba(100, 100, 111, 0.28) 0 10px 26px 0;
+.pcc:hover {
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.09);
 }
 
-/* ---------- Top: gradien + notch miring ---------- */
-.uui-card__top {
-  height: 158px;
-  border-radius: 15px;
-  display: flex;
-  flex-direction: column;
-  background: linear-gradient(45deg, rgb(4, 159, 187) 0%, rgb(80, 246, 255) 100%);
-  position: relative;
-}
-
-/* Gradien per status — status tetap terbaca sekilas dari warna. */
-.uui-card--active .uui-card__top {
-  background: linear-gradient(45deg, rgb(4, 159, 187) 0%, rgb(80, 246, 255) 100%);
-}
-
-.uui-card--idle .uui-card__top {
-  background: linear-gradient(45deg, #3b5bdb 0%, #748ffc 100%);
-}
-
-.uui-card--offline .uui-card__top {
-  background: linear-gradient(45deg, #6b7280 0%, #9ca3af 100%);
-}
-
-/* Notch: kotak navy yang memotong sudut gradient (ilusi "lubang"). */
-.uui-card__top .uui-card__notch {
-  border-bottom-right-radius: 10px;
-  height: 30px;
-  width: 130px;
-  background: #1b233d;
-  position: relative;
-  transform: skew(-40deg);
-  box-shadow: -10px -10px 0 0 #1b233d;
-}
-
-.uui-card__top .uui-card__notch::before {
-  content: "";
-  position: absolute;
-  width: 15px;
-  height: 15px;
-  top: 0;
-  right: -15px;
-  background: rgba(255, 255, 255, 0);
-  border-top-left-radius: 10px;
-  box-shadow: -5px -5px 0 2px #1b233d;
-}
-
-.uui-card__top::before {
-  content: "";
-  position: absolute;
-  top: 30px;
-  left: 0;
-  background: rgba(255, 255, 255, 0);
-  height: 15px;
-  width: 15px;
-  border-top-left-radius: 15px;
-  box-shadow: -5px -5px 0 2px #1b233d;
-}
-
-/* ---------- Baris atas: logo kiri, tombol aksi kanan ---------- */
-.uui-card__bar {
-  position: absolute;
-  top: 0;
-  z-index: 2;
-  width: 100%;
-  height: 30px;
+/* ---------- Header: hitung mundur kiri, tombol aksi kanan ---------- */
+.pcc__head {
+  background: #e0f7fa;
+  padding: 20px 18px 16px;
+  /* Tinggi tetap, diukur: header berhitung mundur (font 32px) = 90px,
+     sedangkan header teks status (font 20px) cuma 77px. Tanpa min-height
+     ini, baris "PC001" dan "PC-UJI-AKTIF" mulai pada tinggi berbeda —
+     semua card sama tinggi karena grid meregangkan, tapi isinya tidak
+     sejajar. 90px = varian tertinggi, jadi tidak pernah terpotong. */
+  min-height: 90px;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 10px;
 }
 
-.uui-card__logo {
-  height: 100%;
-  aspect-ratio: 1;
-  padding: 6px 0 6px 14px;
-  display: flex;
-}
-
-.uui-card__logo svg {
-  height: 100%;
-  fill: #1b233d;
-}
-
-.uui-card__actions {
-  height: 100%;
-  padding: 0 12px 0 0;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-/* Tombol aksi: warna menandai tindakan (hijau = mulai, kuning = kunci,
-   merah = matikan). Ikon tetap navy agar kontras di ketiga gradien. */
-.uui-card__act {
-  border: none;
-  line-height: 1;
-  padding: 4px;
-  display: flex;
-  border-radius: 7px;
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(27, 35, 61, 0.22);
-  transition: transform 0.15s ease, filter 0.15s ease;
-}
-
-.uui-card__act--start {
-  background: linear-gradient(45deg, #2f9e44 0%, #69db7c 100%);
-}
-
-.uui-card__act--lock {
-  background: linear-gradient(45deg, #f08c00 0%, #ffd43b 100%);
-}
-
-.uui-card__act--shutdown {
-  background: linear-gradient(45deg, #e03131 0%, #ff8787 100%);
-}
-
-.uui-card__act svg {
-  height: 16px;
-  width: 16px;
-  fill: #1b233d;
-}
-
-.uui-card__act:hover:not(:disabled) {
-  transform: scale(1.15);
-  filter: brightness(1.08);
-}
-
-.uui-card__act:hover:not(:disabled) svg {
-  fill: #ffffff;
-}
-
-.uui-card__act:active:not(:disabled) {
-  transform: scale(0.95);
-}
-
-.uui-card__act:disabled {
-  opacity: 0.32;
-  cursor: not-allowed;
-  filter: grayscale(0.5);
-}
-
-/* ---------- Hero: angka besar di tengah gradient ---------- */
-.uui-card__hero {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  padding: 6px 10px 12px;
-  text-align: center;
-  min-width: 0;
-}
-
-.uui-card__hero-value {
-  font-size: 26px;
-  font-weight: 800;
-  color: #1b233d;
-  line-height: 1.15;
+.pcc__time {
+  font-size: 32px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.1;
+  /* Angka mundur terus berubah, jadi font-nya harus rata lebar —
+     kalau tidak, card "bergoyang" tiap detik saat digit berganti. */
   font-variant-numeric: tabular-nums;
-  max-width: 100%;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.uui-card__hero-value--sm {
+/* Tanpa sesi yang ditampilkan status, bukan hitung mundur —
+   supaya "Idle"/"Offline" tidak ikut sebesar angka waktu. */
+.pcc__time--teks {
   font-size: 20px;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
 }
 
 /* Sisa waktu <= 5 menit → merah, penanda waktu mau habis. */
-.uui-card__hero-value--warn {
-  color: #c92a2a;
+.pcc__time--warn {
+  color: #dc2626;
 }
 
-.uui-card__hero-label {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 1.4px;
-  text-transform: uppercase;
-  color: rgba(27, 35, 61, 0.62);
+.pcc__time-label {
+  font-size: 11px;
+  color: #64748b;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
 }
 
-/* ---------- Bottom: judul + 4 item ---------- */
-.uui-card__bottom {
-  margin-top: 15px;
-  padding: 10px 5px;
-}
-
-/* Judul memuat "namaPC - IP". Font 15px + letter-spacing 1px dipilih
-   supaya "PC001 - 192.168.100.254" (22 karakter) tetap muat satu baris
-   di card 340px. */
-.uui-card__title {
-  display: block;
-  font-size: 15px;
-  font-weight: 800;
-  color: #fff;
-  text-align: center;
-  letter-spacing: 1px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.uui-card__title-ip {
-  color: #8fa8d6;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-}
-
-.uui-card__row {
+/* ---------- Tombol aksi ---------- */
+.pcc__actions {
   display: flex;
-  justify-content: space-between;
-  margin-top: 16px;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
-.uui-card__item {
-  flex: 1 1 0;
+.pcc__act {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s ease, filter 0.2s ease;
+}
+
+.pcc__act--start {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.pcc__act--lock {
+  background: #fef9c3;
+  color: #ca8a04;
+}
+
+.pcc__act--power {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.pcc__act:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(0.95);
+}
+
+.pcc__act:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.pcc__act:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Ikon ikut warna tombol (currentColor), bukan warna tetap —
+   kalau fill ditulis di sini, ketiga warna di atas tidak terlihat. */
+.pcc__act svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+/* ---------- Body: nama PC + Status/Tipe ---------- */
+.pcc__body {
+  padding: 16px 18px 18px;
+}
+
+.pcc__name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 14px;
   min-width: 0;
-  text-align: center;
-  padding: 5px 2px;
-  color: rgba(170, 222, 243, 0.721);
-}
-
-.uui-card__item + .uui-card__item {
-  border-left: 1px solid rgba(255, 255, 255, 0.126);
-}
-
-.uui-card__big {
-  font-size: 12px;
-  display: block;
-  color: #fff;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.uui-card__big--warn {
-  color: #ffd166;
+/* IP dipisah warnanya supaya "PC001" yang dicari operator
+   tidak tenggelam di antara angka. */
+.pcc__name-ip {
+  color: #94a3b8;
+  font-weight: 500;
 }
 
-.uui-card__big--danger {
-  color: #ff8787;
+.pcc__info {
+  display: flex;
+  gap: 24px;
 }
 
-.uui-card__big--ok {
-  color: #8ce99a;
-}
-
-.uui-card__big--muted {
-  color: #9fb2d8;
-}
-
-.uui-card__regular {
-  font-size: 9px;
+.pcc__info-label {
   display: block;
-  letter-spacing: 0.3px;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 2px;
+}
+
+.pcc__info-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.pcc__info-value--ok {
+  color: #16a34a;
+}
+
+.pcc__info-value--warn {
+  color: #ca8a04;
+}
+
+.pcc__info-value--danger {
+  color: #dc2626;
+}
+
+.pcc__info-value--muted {
+  color: #94a3b8;
 }
 
 /* ---------- Responsif ---------- */
-/* HP: satu kolom, card mentokang di tengah. */
+/* HP: satu kolom. Padding dan angka diperkecil supaya dua
+   tombol 32px + hitung mundur tetap muat di 260px. */
 @media (max-width: 479px) {
-  .uui-card {
-    max-width: 260px;
+  .pcc {
+    max-width: 280px;
   }
 
-  .uui-card__hero-value {
-    font-size: 23px;
+  .pcc__head {
+    padding: 16px 14px 13px;
+    /* 76px = varian tertinggi di HP (hitung mundur font 26px). */
+    min-height: 76px;
+    gap: 8px;
+  }
+
+  .pcc__time {
+    font-size: 26px;
+  }
+
+  .pcc__time--teks {
+    font-size: 17px;
+  }
+
+  .pcc__body {
+    padding: 13px 14px 15px;
+  }
+
+  .pcc__name {
+    font-size: 14px;
+    margin-bottom: 11px;
+  }
+
+  .pcc__info {
+    gap: 18px;
   }
 }
 
-/* Tablet & laptop: Pointer desktop, hover scale dinonaktifkan agar
-   tidak memotong neighboring card saat cursor lewat. */
+/* Tablet & HP: tidak ada hover, jadi efek-naik tidak boleh
+   ikut — card bisa bergeser saat disentuh. */
 @media (hover: none) {
-  .uui-card:hover {
+  .pcc:hover {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  }
+
+  .pcc__act:hover:not(:disabled) {
     transform: none;
   }
 }
@@ -418,13 +351,13 @@
    (atau hapus blok CSS ini). Tidak mengubah file komponen.
    Warna fill hover = var(--btn-clr), default navy #1b233d.
    Dikecualikan:
-     - button.uui-card__act (tombol aksi kartu PC dashboard) — warna semantik
+     - button.pcc__act (tombol aksi kartu PC dashboard) — warna semantik
        sendiri, hijau/kuning/merah.
      - button.login-button (tombol Sign In) — punya desain sendiri (gradient biru
        + teks putih). Tanpa pengecualian ini, background-image uiverse menimpa
        gradient-nya sehingga teks putih jadi tidak terlihat saat tidak di-hover.
    ============================================================ */
-html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):not(.navmenu__exit) {
+html[data-ui-buttons="uiverse"] button:not(.pcc__act):not(.login-button):not(.navmenu__exit) {
   position: relative;
   line-height: 1;
   border-radius: 1.5rem !important;
@@ -444,12 +377,12 @@ html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):no
   transition: background-position 0.3s ease, color 0.2s ease;
 }
 
-html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):not(.navmenu__exit):hover {
+html[data-ui-buttons="uiverse"] button:not(.pcc__act):not(.login-button):not(.navmenu__exit):hover {
   background-position: 0 0;
   color: #ffffff !important;
 }
 
-html[data-ui-buttons="uiverse"] button:not(.uui-card__act):not(.login-button):not(.navmenu__exit):disabled {
+html[data-ui-buttons="uiverse"] button:not(.pcc__act):not(.login-button):not(.navmenu__exit):disabled {
   background-position: 100% 0;
 }
 

@@ -107,6 +107,7 @@ v3netbill/
 - `DATABASE_URL=postgresql://billing_user:<password>@postgres-15:5432/v3netbill?schema=public`
 - `JWT_SECRET=<isi sendiri — jangan ditulis di dokumen/file teks>`
 - `PORT=3000`, `NODE_ENV=development`
+- `LOG_BILLING_DIR=/data/logs` (opsional, default-nya itu juga; lihat bagian "Log billing berkas")
 
 ## Akses test yang sudah dibuat
 
@@ -242,6 +243,7 @@ Semua path diawali `/api` (global prefix di `main.ts`). WebSocket namespace `/se
 | `settings` | `src/settings/` | Tarif, password, upload, backup, PIN uninstall & bypass |
 | `activity-log` | `src/activity-log/` | Jejak aktivitas (paginate + today) |
 | `notifikasi` | `src/notifikasi/` | Token perangkat + push FCM saat pelanggan login |
+| `log-billing` | `src/log-billing/` | Log aktivitas billing harian sebagai berkas teks |
 | `common` | `src/common/` | Guards, decorators, exception filter |
 | `prisma` | `src/prisma/` | `PrismaService` (module global) |
 
@@ -292,6 +294,9 @@ tanpa JWT sama sekali.
 | PATCH | `/api/settings/pin-uninstall` | ADMIN |
 | PATCH | `/api/settings/bypass-pin` | ADMIN |
 | POST | `/api/settings/verify-pin` | **PUBLIC** |
+| GET | `/api/log-billing` | ADMIN |
+| GET | `/api/log-billing/:tanggal?cari=` | ADMIN |
+| GET | `/api/log-billing/:tanggal/unduh` | ADMIN |
 
 Tiga endpoint `PUBLIC` punya alasan spesifik, jangan diubah tanpa paham dulu:
 
@@ -346,6 +351,7 @@ Dikirim server → klien:
 |---|---|---|
 | `auto-backup` | 01:00 | `pg_dump` + hapus backup > 30 hari |
 | `cleanup-activity-logs` | 02:00 | hapus activity log > 30 hari |
+| `cleanup-log-billing` | 03:00 + saat start | hapus berkas log billing > 30 hari |
 | `tutup-hari-laporan` | 23:30 WIB | rekap hari sebelumnya → PDF + email + Telegram |
 
 Batas hari bisnis = **23:30 WIB** (hari T = [23:30 T-1, 23:30 T)). Rekap nol dihitung
@@ -1352,6 +1358,76 @@ menambah offset ke `Date.now()` (mis. `Date.now = () => asli() + geser`), lalu
 Skrip uji-nya sengaja **tidak** disimpan di repo — butuh `playwright-core` yang bukan
 dependensi project, dan file di `/tmp` hilang sendiri.
 
+## Kartu PC dashboard — Soft Pastel Header (1 Okt) ✅
+
+Kartu PC di dashboard web digantitotal ke desain "Soft Pastel Header":
+header pastel cyan (`#e0f7fa`) memuat hitung mundur + tombol aksi, body putih
+memuat nama PC dan Status/Tipe.
+
+**Namespace CSS berubah dari `.uui-card*` jadi `.pcc*`.** Bukan rename tanpa
+alasan — desain lama itu Uiverse "Universe of UI" (navy + gradien + notch) dan
+sudah tidak dipakai. Kalau suatu saat `.uui-card` muncul lagi, berarti ada
+sisa yang lupa diganti.
+
+- `.pcc` — radius 16, bg putih, `box-shadow 0 4px 20px rgba(0,0,0,.06)`, `max-width 340px`
+- `.pcc__head` — cyan, `min-height: 90px` (HP: 76px), `justify-between`
+- `.pcc__time` — 32px/700, `tabular-nums`; `--teks` 20px untuk status;
+  `--warn` merah kalau sisa <= 300 detik
+- `.pcc__act` — 32x32, radius 8, fill `currentColor`
+- `.pcc__body` / `.pcc__name` / `.pcc__info*`
+
+### ⚠️ `.pcc__act` WAJIB dikecualikan dari aturan tombol global
+
+`html[data-ui-buttons="uiverse"] button:not(...)` memberi `border-radius: 1.5rem
+!important` + `background-image` gradient navy ke **semua** tombol. Dua
+pengecualian yang sudah ada (`button.pcc__act`, `button.login-button`) ditambahkan
+karena keduanya punya desain sendiri. Tanpa pengecualian, tombol 32px ini dapat
+latar navy dan warna pastel-nya hilang. Kalau menambah kelas tombol bespoke
+baru, **tambahkan juga ke ketiga selector `button:not(...)` itu**.
+
+### ⚠️ `min-height` header bukan hiasan
+
+Tanpa itu, header dengan hitung mundur (font 32px) = 90px sedangkan header
+teks status (font 20px) = 77px. Grid meregangkan card sehingga **tinggi card
+sama**, tapi isi mulai pada tinggi berbeda — baris "PC001" dan "PC-UJI-AKTIF"
+tidak sejajar. Angka 90px/76px hasil pengukuran, bukan tebakan.
+
+### ⚠️ "Sedang berjalan" dipakai untuk SEMUA yang ditampilkan
+
+```tsx
+const sedangBerjalan = sesi !== null && pc.status === 'ACTIVE'
+```
+
+Dulu hanya dipakai untuk milih tombol. Sekarang juga untuk hitung mundur, label
+SISA WAKTU, dan Tipe. Alasannya `sesi` saja tidak bisa dipercaya: setelah agent
+putus, `Session` masih ada beberapa detik (grace period) sementara `Pc.status`
+sudah OFFLINE. Kalau hanya `sesi` yang dipakai, card menampilkan hitung mundur
+yang **sudah tidak jalan** berdampingan dengan tombol Start.
+
+Ini ketahuan karena screenshot menunjukkan `9j 59:27 SISA WAKTU` + tombol
+`start` di card yang sama — dua informasi yang saling bertentangan. Di aplikasi
+billing, angka yang tidak lagi benar lebih buruk daripada tidak ditampilkan.
+
+### ⚠️ `transform: translateY(-1px)` di hover, bukan `scale()`
+
+Ikon hanya 16px di dalam tombol 32px. `scale(1.15)` bikin ikon meleset dari
+tengah kotak. `translateY(-1px)` aman karena tidak mengubah ukuran. Efeknya
+dimatikan lagi di `@media (hover: none)` supaya card tidak bergeser saat disentuh.
+
+### Tombol: dua, bukan tiga
+
+Sama seperti kartu PC di aplikasi Android:
+
+| Keadaan | Tombol |
+|---|---|
+| Idle / Offline | Start (hijau) + Matikan (merah) |
+| Sedang berjalan | Kunci (kuning) + Matikan (merah) |
+
+Dulu ketiga tombol selalu tampil, jadi ada tombol Start pada PC yang sedang
+berjalan — backend menolaknya dengan "PC sudah memiliki sesi berjalan".
+`IconTrophy` (pada notch kartu lama) ikut dihapus karena tidak ada di desain
+baru.
+
 ## Menu header web — glass pill (27 Sep) ✅ `af4f250`
 
 - Dari Uiverse.io (mymiamo). Selector di-prefix `.navmenu` supaya tidak bentrok dengan
@@ -1581,6 +1657,22 @@ Nilai di bawah ini sengaja tidak dicatat. Kalau registry sudah hilang, jalankan
     berisik — persis masalah no. 2 ("menyapu pekerjaan lain"). Format **hanya
     file yang kamu ubah**, lalu `git status` untuk memastikan tidak ada lain
     yang ikut berubah.
+20. **`try/catch` untuk "file tidak ada" tidak boleh menelan error validasi.**
+    Pola `try { readFile(path) } catch { return kosong }` kelihatan aman, tapi
+    `path` biasanya dihitung di dalam `try` itu juga — sehingga error validasi
+    dari perhitungan path ikut dianggap "file tidak ada". Gejalanya tidak dramatis:
+    server membalas `200` dengan hasil kosong untuk input yang seharusnya ditolak,
+    jadi tes fungsi yang hanya memeriksa "tidak bocor" tetap lulus.
+    **Hitung dan validasi path DI LUAS `try`, baru `try` hanya untuk `readFile`.**
+    Dan jangan pernah membangun nilai header dari input mentah — `filename="log-billing-${tanggal}.txt"`
+    rusak begitu input berisi satu tanda kutip. Lihat bagian "Log billing berkas".
+21. ⚠️ **Uji keamanan pakai serangan nyata, bukan `curl` biasa.** curl menormalkan
+    `../` sebelum request dikirim, jadi request-nya tidak pernah sampai ke
+    controller dan yang terlihat adalah `200` HTML dari SPA fallback — yang
+    membuat validate-nya **tampak** bekerja padahal tidak diuji sama sekali.
+    Gunakan `curl --path-as-is` supaya path mentah benar-benar dikirim.
+    Dan **bikin berkas umpan ada** sebelum menguji: berkas umpan di luar folder log
+    yang afterward harus terbukti utuh, bukan sekadar "dijawab 200 kosong".
 
 
 ## Notifikasi push FCM — pelanggan login di komputer warnet (30 Sep) ✅
@@ -1760,7 +1852,94 @@ Tidak perlu HP untuk membuktikan payload dan kredensialnya benar:
 Kalau jawabannya `400`, payload-nya salah — dan itu persis yang terjadi. Hapus
 file itu setelah selesai: isinya private key.
 
-## Jejak aktivitas (ActivityLog) ✅
+## Log billing berkas (1 Okt) ✅
+
+Semua aktivitas billing ditulis sebagai **berkas teks**, satu hari satu berkas, di
+folder yang sudah bind-mount ke host — bukan tabel database.
+
+```
+LOG_BILLING_DIR   default /data/logs   ->  host: data/logs/
+nama berkas       billing-YYYY-MM-DD.log
+retensi           30 hari (cron 03:00 + dijalankan sekali saat start)
+```
+
+Aksesnya lewat tab **Pengaturan -> Log Billing** (khusus admin): pilih tanggal,
+cari isi, unduh `.txt` per tanggal. Endpointnya tiga, semuanya `ADMIN`:
+`GET /api/log-billing`, `GET /api/log-billing/:tanggal?cari=`,
+`GET /api/log-billing/:tanggal/unduh`.
+
+`src/log-billing/` berisi `log-billing.service.ts`, `log-billing.controller.ts`,
+`log-billing.cron.ts`, `log-billing.module.ts`.
+
+### ⚠️ Satu titik masuk, bukan tersebar di banyak modul
+
+Penulisan dipanggil dari **satu tempat saja**: `broadcastActivityLog()` di
+`session.gateway.ts`. Semua aktivitas yang sudah lewat situ — sesi mulai/berakhir,
+setiap jenis transaksi akun, kunci/matikan/buka PC, akun dinonaktifkan — otomatis
+tercatat. Jadi menambah event baru cukup lewat situ.
+
+Tiga aktivitas **tidak** lewat situ dan sengaja ditambahkan terpisah:
+`auth:login` (di `auth.controller.ts`, memakai `loginDto.username` supaya bentuk
+jawaban `POST /auth/login` tidak berubah), `pc_unlock` (di gateway, hanya kalau
+`unlockPc` benar-benar berhasil), dan `account:password_changed` (di
+`accounts.service.ts#changePassword` — jejak aktivitas lama tidak pernah memuatnya).
+
+⚠️ **`tulis()` tidak pernah melempar, dan itu disengaja.** Ia mengantrekan
+penulisan lewat rantai Promise supaya dua baris tidak saling menimpa di tengah
+satu baris. Kegagalan menulis berkas **tidak boleh** mengganggu operasi yang
+sedang berjalan — bayangkan kasir menekan "matikan PC" lalu seluruh halaman
+hilang dari dashboard karena folder log sedang tidak bisa ditulis.
+
+### ⚠️ Isi berkas memakai allow-list, bukan `JSON.stringify(payload)`
+
+`payload` asli memuat `id` (UUID), `kasirId`, dan `sessionId`. Yang ditulis hanya
+field yang sudah dipetakan: `akun`, `pc` (dari cache nama PC, bukan UUID),
+`kasir` (dari `by` atau `username`), `jenis`, `nominal`, `durasi`, `dipakai`,
+`sisaKembali`, `alasan`, `tipe`, `sandiDiubah`, `sesiDihentikan`, `keterangan`.
+Field lain **tidak pernah** masuk berkas, termasuk password.
+
+Bentuk satu baris:
+`2026-10-01T02:15:55.484Z | Sesi Berjalan | pc=PC001 akun=VCH-1234 durasi=3600`
+
+### ⚠️ Dua bug yang keduanya berasal dari `try` yang terlalu luas
+
+Keduanya baru ketahuan karena pengujiannya memakai serangan nyata, bukan hanya
+membaca kode. Dua-duanya soal hal yang sama: **nama berkas dibangun dari input
+yang belum tentu sah.**
+
+**1. Validasi tanggal tertelan `catch` "file tidak ada".** `baca()` menulis
+`readFile(this.jalurBerkas(tanggal))` di dalam `try`, lalu `catch` mengembalikan
+hasil kosong untuk "berkas tidak ada". Tapi `jalurBerkas()` juga melempar
+`TanggalLogTidakSahError` di titik yang sama — jadi error validasi ikut tertelan
+dan dijawab **`200` dengan hasil kosong** untuk `?tanggal=../../.env`. Isinya
+memang tidak bocor (`readFile` tidak pernah terpanggil karena validasi melompat
+lebih dulu), tapi jawabannya berbohong dan tidak ada yang bisa mempercayai
+`400`-nya. Perbaikan: validasi dilakukan **di luar** `try` yang menangkap
+"tidak ada".
+
+**2. `Content-Disposition` bisa dirusak dari input pengguna.** `unduh()` memakai
+`nama: log-billing-${tanggal}.txt` dari input mentah. Input berisi tanda kutip
+menghasilkan `attachment; filename="log-billing-.." x.txt"` — header sudah rusak
+sebelum diunduh. Perbaikan: nama berkas dibangun dari tanggal yang sudah lolos
+validasi.
+
+Hasil pengujian setelah diperbaiki: path traversal mentah (`../`) ditolak `404`
+oleh Express sebelum sampai ke controller, path ter-encode (`%2F`, `%2e%2e%2f`)
+ditolak `400` oleh validasi, dan berkas rahasia di luar folder log tetap utuh.
+Otorisasi `401` tanpa token, `403` untuk kasir, `200` untuk admin.
+
+⚠️ **Uji path traversal lewat `curl` biasa tidak trustworthy.** curl menormalkan
+`../` sebelum mengirim, sehingga request-nya tidak pernah sampai ke controller dan
+yang terlihat adalah `200` HTML dari SPA fallback — yang membuat validate-nya
+tampak tidak bekerja. Serangan sesungguhnya harus memakai `curl --path-as-is`.
+
+### Berkas log dibuat sebagai root
+
+Container backend berjalan sebagai `root`, jadi berkas log di host di
+`data/logs/` bernilai root-owned seperti `/data/apk/` dan `/data/installer/`.
+Bisa dibaca bebas dari host, tapi untuk menghapus manual harus lewat
+`docker exec v3netbill-backend rm -f /data/logs/<nama>`. Mengosongkan log untuk
+memulai dari nol sebaiknya lewat container, bukan `rm` dari host.
 
 - `GET /api/activity-log?limit&cursor` (paginate) dan `GET /api/activity-log/today`.
 - Dicatat dari `session.gateway.ts#broadcastActivityLog` untuk event `session:started`, `session:stopped`,

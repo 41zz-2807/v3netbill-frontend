@@ -170,3 +170,17 @@ export interface BackupFile {
   sizeBytes: number
   createdAt: string
 }
+
+/** Ringkasan satu berkas log harian, untuk daftar tanggal. */
+export interface LogBillingRingkas {
+  tanggal: string
+  ukuranBytes: number
+  jumlahBaris: number
+}
+
+/** Isi satu berkas log harian setelah pencarian, untuk ditampilkan. */
+export interface LogBillingIsi {
+  tanggal: string
+  baris: string[]
+  jumlahDitemukan: number
+}

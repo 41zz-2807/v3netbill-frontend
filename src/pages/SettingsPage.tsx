@@ -9,9 +9,10 @@ import TabAgent from './settings/TabAgent.tsx'
 import TabInstalasi from './settings/TabInstalasi.tsx'
 import TabPengguna from './settings/TabPengguna.tsx'
 import TabData from './settings/TabData.tsx'
+import TabLogBilling from './settings/TabLogBilling.tsx'
 import { BUSY_TEXT, type SettingsCtx } from './settings/shared.ts'
 
-type TabId = 'tarif' | 'agent' | 'instalasi' | 'pengguna' | 'data'
+type TabId = 'tarif' | 'agent' | 'instalasi' | 'pengguna' | 'data' | 'log'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'tarif', label: 'Tarif' },
@@ -19,6 +20,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'instalasi', label: 'Instalasi' },
   { id: 'pengguna', label: 'Pengguna' },
   { id: 'data', label: 'Data' },
+  { id: 'log', label: 'Log Billing' },
 ]
 
 export default function SettingsPage() {
@@ -166,6 +168,7 @@ export default function SettingsPage() {
           reloadBackups={loadBackups}
         />
       )}
+      {tab === 'log' && <TabLogBilling ctx={ctx} />}
     </div>
   )
 }

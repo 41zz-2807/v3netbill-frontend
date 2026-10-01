@@ -12,11 +12,12 @@ export const BUSY_TEXT: Record<string, string> = {
   pinBypass: 'Menyimpan',
   otp: 'Menyimpan',
   user: 'Menyimpan',
+  'log-download': 'Mengunduh log',
 }
 
 /**
  * Bagian yang dipakai semua tab: penanda proses berjalan, banner pesan, dan
- * pembungkus async yangrau mengunci tombol selama proses.
+ * pembungkus async yang mengunci tombol selama proses.
  */
 export interface SettingsCtx {
   busy: string | null
