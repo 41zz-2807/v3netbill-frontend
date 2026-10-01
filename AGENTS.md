@@ -1802,8 +1802,14 @@ Rencana user: pindah ke **self-hosted Gitea** (deferred, belum dikerjakan).
   berjalan lalu ditolak backend. Syarat "sedang berjalan" memakai
   `hasSession` **dan** `status == active`, karena `session` bisa `null`
   walau statusnya masih `ACTIVE` sesaat setelah sisi server berubah.
-  6 tes baru di `test/pc_card_test.dart`, 5 dari 6 sudah dibuktikan
-  menangkap bug. 86 test lulus. APK 1.0.23 aktif di server.
+  Tombolnya berdampingan, bukan bertumpuk, karena satu baris per tombol
+  menambah tinggi card sekitar 50 px per PC. Tinggi card **diukur**:
+  idle 178 → 120 px, dengan sesi 228 → 166 px (padding card 16 → 12 dan
+  dua celah dalam dikecilkan). Label tombol dibungkus `Flexible` +
+  ellipsis karena dua tombol berbagi lebar card. 9 tes di
+  `test/pc_card_test.dart`, termasuk yang memverifikasi posisi `Top` dan
+  `Left` kedua tombol, bukan cuma bentuk kodenya. 89 test lulus.
+  APK 1.0.24 aktif di server.
 - **mobile** — **tombol "Mulai di PC" di bar aksi Voucher/Member** + sheet
   pemilihan PC + perataan baris info Profile + perbaikan pesan login salah
   password + hapus teks petunjuk di halaman login. 13 test baru, 80 test
