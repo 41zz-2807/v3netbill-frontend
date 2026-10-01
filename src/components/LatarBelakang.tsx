@@ -19,12 +19,15 @@
  * Vite menangani referensi asset di JSX dengan baik, dan `public/`
  * disajikan apa adanya tanpa perlu hashing.
  *
- * ⚠️ Foto aslinya gelap (biru tua). `LAPIS PUTIH` 70% yang membuatnya tetap
- * light — jadi gambar benar-benar terlihat 30%, sesuai permintaan. Jangan
- * diturunkan opacity-nya tanpa mengukur kontras teks di atasnya.
+ * ⚠️ Foto aslinya gelap (biru tua), jadi yang menentukan seberapa terang
+ * layar adalah `LAPIS_PUTIH` — bukan opacity gambarnya. Nilai 0.5 membuat
+ * gambar terlihat 50%. Setiap kenaikannya membuat seluruh aplikasi lebih
+ * gelap, karena teks lain (judul halaman, isi tabel, teks di luar kartu)
+ * tidak ikut berubah. Jangan diubah tanpa mengukur kontras teks yang duduk
+ * langsung di atas latar.
  */
 
-const LAPIS_PUTIH = 0.7
+const LAPIS_PUTIH = 0.5
 
 export function LatarBelakang() {
   return (

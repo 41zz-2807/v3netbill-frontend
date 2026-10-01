@@ -1368,11 +1368,34 @@ dependensi project, dan file di `/tmp` hilang sendiri.
 ## Latar belakang gambar seluruh aplikasi (1 Okt) ✅
 
 Semua halaman (termasuk layar login) punya latar foto `/bg-globe.jpg` —
-motif jaringan/bumi yang sama dengan logo — dengan **`LAPIS_PUTIH = 0.7`**
-di atasnya, jadi gambarnya terlihat 30% dan Kesan light tetap terjaga.
+motif jaringan/bumi yang sama dengan logo — dengan **`LAPIS_PUTIH = 0.5`**
+di atasnya, jadi gambarnya terlihat 50% dan kesan light tetap terjaga.
+
+### ⚠️ Menurunkan `LAPIS_PUTIH` meredupkan seluruh aplikasi
+
+Jadi yang menentukan seberapa terang layar adalah `LAPIS_PUTIH`, **bukan**
+opacity gambarnya. Foto aslinya gelap, jadi layer putih itu yang menahan
+terang. Kontras diukur dari piksel yang benar-benar ter-render:
+
+| `LAPIS_PUTIH` | foto | warna latar | judul (slate-900) | teks isi (slate-600) |
+|---|---|---|---|---|
+| 0.7 | 30% | `#b3cbdd` | 10.63 | 4.51 |
+| 0.6 | 40% | `#9abad1` | 8.77 | 3.72 |
+| **0.5** | **50%** | **`#81a9c6`** | **7.16** | **3.04** |
+
+Yang membuat perubahan ini **aman** ternyata struktur halamannya: hampir
+semua teks kecil duduk di dalam kartu putih, jadi tidak ikut gelap. Satu-
+satunya teks yang benar-benar di atas latar adalah judul halaman, dan itu
+teks besar — syaratnya contrast 3.0, bukan 4.5.
+
+Jadi kalau nanti `LAPIS_PUTIH` diturunkan lagi, **yang harus diukur ulang
+bukan cuma kontrasnya, tapi teks apa saja yang berada di luar kartu.**
+Teks `slate-400` sudah contrast 1.03 di setting sekarang — kalau suatu saat
+ada teks seperti itu diletakkan langsung di atas latar, dia praktis tak
+terbaca.
 
 ```
-src/components/LatarBelakang.tsx   <img> fixed + veil putih, z-index -10
+src/components/LatarBelakang.tsx   <img> fixed + veil putih (LAPIS_PUTIH), z-index -10
 src/App.tsx                        dipasang di sini, bukan di Layout
 public/bg-globe.jpg                1920x1200 q75 = 77 KB (aslinya 8,5 MB)
 ```
