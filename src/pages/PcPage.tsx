@@ -4,8 +4,15 @@ import type { Pc } from '../lib/types.ts'
 import { useAuth } from '../context/AuthContext.tsx'
 import ProgressBar from '../components/ui/ProgressBar.tsx'
 import { Modal } from '../components/ui/Modal.tsx'
-import { GradientCard } from '../components/ui/GradientCard.tsx'
-import { inputClass, buttonClass } from '../components/ui/gradientCardStyles.ts'
+import { PastelCard } from '../components/ui/PastelCard.tsx'
+import {
+  inputClass,
+  buttonClass,
+  buttonSecondaryClass,
+  errorClass,
+  fieldLabelClass,
+  hintClass,
+} from '../components/ui'
 import { Pagination } from '../components/ui/Pagination.tsx'
 import {
   PER_HALAMAN,
@@ -138,9 +145,11 @@ export default function PcPage() {
 
       <Modal open={modal} onClose={tutupModal} locked={creating} label="Tambah PC Baru">
         <form onSubmit={handleCreate}>
-          <GradientCard
+          <PastelCard
             label="PC BARU"
             title={created ? 'PC berhasil dibuat' : 'Tambah PC Baru'}
+            onClose={tutupModal}
+            closeDisabled={creating}
             icon={
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -161,20 +170,19 @@ export default function PcPage() {
             {created ? (
               <>
                 <div>
-                  <p className="text-neutral-500">agentToken</p>
-                  <code className="mt-1 block break-all rounded bg-white/5 px-2 py-1.5 font-mono text-xs text-white">
+                  <p className={fieldLabelClass}>agentToken</p>
+                  <code className="mt-1 block break-all rounded-md bg-slate-50 px-3 py-2 font-mono text-xs text-slate-800">
                     {created.agentToken}
                   </code>
                 </div>
                 <div>
-                  <p className="text-neutral-500">PC ID</p>
-                  <p className="break-all font-mono text-sm text-white">{created.id}</p>
+                  <p className={fieldLabelClass}>PC ID</p>
+                  <p className="break-all font-mono text-sm text-slate-800">{created.id}</p>
                 </div>
-                <p className="text-neutral-500">
-                  agentToken dipakai agent untuk konek ke server. Salin sebelum
-                  menutup.
+                <p className={hintClass}>
+                  agentToken dipakai agent untuk konek ke server. Salin sebelum menutup.
                 </p>
-                  <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col gap-2">
                   <button
                     type="button"
                     onClick={() => void copyToClipboard(created.agentToken, 'agentToken')}
@@ -182,11 +190,7 @@ export default function PcPage() {
                   >
                     Salin agentToken
                   </button>
-                  <button
-                    type="button"
-                    onClick={tutupModal}
-                    className="w-full cursor-pointer rounded-lg border border-white/15 px-3 py-2.5 text-sm font-medium text-neutral-300 transition hover:border-white/30 hover:text-white"
-                  >
+                  <button type="button" onClick={tutupModal} className={buttonSecondaryClass}>
                     Selesai
                   </button>
                 </div>
@@ -194,7 +198,7 @@ export default function PcPage() {
             ) : (
               <>
                 <div>
-                  <label className="mb-1.5 block text-neutral-500">Nama PC</label>
+                  <label className={fieldLabelClass}>Nama PC</label>
                   <input
                     type="text"
                     value={namaPc}
@@ -205,21 +209,17 @@ export default function PcPage() {
                     className={inputClass}
                   />
                 </div>
-                <p className="text-neutral-500">
-                  IP tidak perlu diisi — server mencatatnya otomatis dari koneksi
-                  agent, jadi tetap akurat walau IP PC berubah-ubah (DHCP).
+                <p className={hintClass}>
+                  IP tidak perlu diisi — server mencatatnya otomatis dari koneksi agent, jadi
+                  tetap akurat walau IP PC berubah-ubah (DHCP).
                 </p>
-                {error && (
-                  <p className="rounded-md bg-red-500/15 px-2.5 py-2 text-xs text-red-300">
-                    {error}
-                  </p>
-                )}
+                {error && <p className={errorClass}>{error}</p>}
                 <button type="submit" disabled={creating} className={buttonClass}>
                   {creating ? 'Membuat...' : 'Tambah PC'}
                 </button>
               </>
             )}
-          </GradientCard>
+          </PastelCard>
         </form>
       </Modal>
 

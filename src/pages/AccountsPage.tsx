@@ -11,7 +11,7 @@ import {
 } from '../lib/api.ts'
 import type { Account } from '../lib/types.ts'
 import ProgressBar from '../components/ui/ProgressBar.tsx'
-import { GradientCard } from '../components/ui/GradientCard.tsx'
+import { PastelCard } from '../components/ui/PastelCard.tsx'
 import { Modal } from '../components/ui/Modal.tsx'
 import { TabButton } from '../components/ui/Tabs.tsx'
 import { Pagination } from '../components/ui/Pagination.tsx'
@@ -20,7 +20,14 @@ import {
   usePagination,
   urutkanTerbaru,
 } from '../hooks/usePagination.ts'
-import { inputClass, buttonClass } from '../components/ui/gradientCardStyles.ts'
+import {
+  inputClass,
+  buttonClass,
+  errorClass,
+  fieldLabelClass,
+  hintClass,
+  secretClass,
+} from '../components/ui'
 
 export default function AccountsPage() {
   const [tab, setTab] = useState<'VOUCHER' | 'MEMBER'>('VOUCHER')
@@ -298,9 +305,11 @@ export default function AccountsPage() {
       >
         {modal === 'VOUCHER' && (
           <form onSubmit={handleCreateVoucher}>
-            <GradientCard
+            <PastelCard
               label="VOUCHER"
               title={createdVoucher ? 'Voucher berhasil dibuat' : 'Buat Voucher Baru'}
+              onClose={tutupModal}
+              closeDisabled={busy}
               icon={
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
                   <path
@@ -313,18 +322,14 @@ export default function AccountsPage() {
               {createdVoucher ? (
                 <>
                   <div>
-                    <p className="text-neutral-500">Kode unik</p>
-                    <p className="font-mono text-3xl font-bold tracking-[0.3em] text-white">
-                      {createdVoucher.kodeUnik}
-                    </p>
+                    <p className={fieldLabelClass}>Kode unik</p>
+                    <p className={`${secretClass} mt-0`}>{createdVoucher.kodeUnik}</p>
                   </div>
                   <div>
-                    <p className="text-neutral-500">Password</p>
-                    <p className="font-mono text-3xl font-bold tracking-[0.3em] text-white">
-                      {createdVoucher.password}
-                    </p>
+                    <p className={fieldLabelClass}>Password</p>
+                    <p className={secretClass}>{createdVoucher.password}</p>
                   </div>
-                  <p className="text-neutral-500">
+                  <p className={hintClass}>
                     Sisa waktu {formatDuration(createdVoucher.sisaWaktuDetik)}. Catat kode &amp;
                     password di atas sebelum menutup.
                   </p>
@@ -335,9 +340,7 @@ export default function AccountsPage() {
               ) : (
                 <>
                   <div>
-                    <label className="mb-1.5 block text-neutral-500">
-                      Nominal (kelipatan 500)
-                    </label>
+                    <label className={fieldLabelClass}>Nominal (kelipatan 500)</label>
                     <input
                       type="number"
                       step="500"
@@ -350,12 +353,8 @@ export default function AccountsPage() {
                       className={inputClass}
                     />
                   </div>
-                  {error && (
-                    <p className="rounded-md bg-red-500/15 px-2.5 py-2 text-xs text-red-300">
-                      {error}
-                    </p>
-                  )}
-                  <p className="text-neutral-500">
+                  {error && <p className={errorClass}>{error}</p>}
+                  <p className={hintClass}>
                     Sisa waktu dihitung otomatis dari tarif per menit yang berlaku.
                   </p>
                   <button type="submit" disabled={busy} className={buttonClass}>
@@ -363,15 +362,17 @@ export default function AccountsPage() {
                   </button>
                 </>
               )}
-            </GradientCard>
+            </PastelCard>
           </form>
         )}
 
         {modal === 'MEMBER' && (
           <form onSubmit={handleCreateMember}>
-            <GradientCard
+            <PastelCard
               label="MEMBER"
               title="Buat Member Baru"
+              onClose={tutupModal}
+              closeDisabled={busy}
               icon={
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -389,12 +390,12 @@ export default function AccountsPage() {
                 </svg>
               }
             >
-              <p className="mb-3 rounded-md bg-white/5 px-2.5 py-2 text-[11px] leading-relaxed text-neutral-400">
-                Password awal semua akun 0000. Pelanggan bisa menggantinya sendiri dari
-                komputer lewat tombol &quot;Buat Password&quot; di layar login.
+              <p className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-[11px] leading-relaxed text-slate-600">
+                Password awal semua akun 0000. Pelanggan bisa menggantinya sendiri dari komputer
+                lewat tombol &quot;Buat Password&quot; di layar login.
               </p>
               <div>
-                <label className="mb-1.5 block text-neutral-500">Nama member</label>
+                <label className={fieldLabelClass}>Nama member</label>
                 <input
                   type="text"
                   value={memberNama}
@@ -406,9 +407,7 @@ export default function AccountsPage() {
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-neutral-500">
-                  Nominal (kelipatan 500)
-                </label>
+                <label className={fieldLabelClass}>Nominal (kelipatan 500)</label>
                 <input
                   type="number"
                   step="500"
@@ -420,13 +419,11 @@ export default function AccountsPage() {
                   className={inputClass}
                 />
               </div>
-              {error && (
-                <p className="rounded-md bg-red-500/15 px-2.5 py-2 text-xs text-red-300">{error}</p>
-              )}
+              {error && <p className={errorClass}>{error}</p>}
               <button type="submit" disabled={busy} className={buttonClass}>
                 {busy ? 'Membuat...' : 'Buat Member'}
               </button>
-            </GradientCard>
+            </PastelCard>
           </form>
         )}
       </Modal>

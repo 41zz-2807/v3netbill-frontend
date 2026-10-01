@@ -346,6 +346,43 @@
 
 
 /* ============================================================
+   Tombol X tutup modal
+   Dipakai di header PastelCard (Tambah PC, Buat Voucher, Buat Member).
+   WAJIB masuk daftar pengecualian tombol global di bawah, karena
+   tombol 28px ini punya warna sendiri — tanpa itu dia dapat gradient
+   navy dan radius 1.5rem yang menabrak bentuk pastelnya.
+   ============================================================ */
+.modal-x {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: none;
+  background: #ffffff;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.modal-x:hover:not(:disabled) {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.modal-x:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.modal-x svg {
+  width: 16px;
+  height: 16px;
+}
+
+
+/* ============================================================
    Uiverse.io (Creatlydev) buttons — GLOBAL untuk SEMUA tombol.
    Rollback: hapus atribut data-ui-buttons="uiverse" di index.html
    (atau hapus blok CSS ini). Tidak mengubah file komponen.
@@ -353,11 +390,20 @@
    Dikecualikan:
      - button.pcc__act (tombol aksi kartu PC dashboard) — warna semantik
        sendiri, hijau/kuning/merah.
+     - button.modal-x (tombol tutup) — SEDAPATNYA dieksplisitkan, jangan
+       hanya lewat `.pastel-card button`. Popup "Mulai Sesi" di dashboard
+       memakai panel-nya sendiri (bukan PastelCard) dan X-nya tetap kena
+       `border-radius: 1.5rem !important` kalau hanya mengandalkan itu —
+       terukur 24px, bukan 8px yang diminta.
+     - .pastel-card button (semua tombol di dalam panel modal) — panelnya
+       putih dan tombolnya slate, bukan navy. Ditulis sebagai
+       `button:not(.pastel-card button)` supaya otomatis berlaku untuk
+       tombol baru apa pun yang ditambahkan di dalam panel.
      - button.login-button (tombol Sign In) — punya desain sendiri (gradient biru
        + teks putih). Tanpa pengecualian ini, background-image uiverse menimpa
        gradient-nya sehingga teks putih jadi tidak terlihat saat tidak di-hover.
    ============================================================ */
-html[data-ui-buttons="uiverse"] button:not(.pcc__act):not(.login-button):not(.navmenu__exit) {
+html[data-ui-buttons="uiverse"] button:not(.pcc__act):not(.modal-x):not(.pastel-card button):not(.login-button):not(.navmenu__exit) {
   position: relative;
   line-height: 1;
   border-radius: 1.5rem !important;
@@ -377,12 +423,12 @@ html[data-ui-buttons="uiverse"] button:not(.pcc__act):not(.login-button):not(.na
   transition: background-position 0.3s ease, color 0.2s ease;
 }
 
-html[data-ui-buttons="uiverse"] button:not(.pcc__act):not(.login-button):not(.navmenu__exit):hover {
+html[data-ui-buttons="uiverse"] button:not(.pcc__act):not(.modal-x):not(.pastel-card button):not(.login-button):not(.navmenu__exit):hover {
   background-position: 0 0;
   color: #ffffff !important;
 }
 
-html[data-ui-buttons="uiverse"] button:not(.pcc__act):not(.login-button):not(.navmenu__exit):disabled {
+html[data-ui-buttons="uiverse"] button:not(.pcc__act):not(.modal-x):not(.pastel-card button):not(.login-button):not(.navmenu__exit):disabled {
   background-position: 100% 0;
 }
 

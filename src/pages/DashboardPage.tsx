@@ -393,11 +393,32 @@ export default function DashboardPage() {
             >
               <div className="mb-1 flex items-center justify-between">
                 <h2 className="text-lg font-bold text-slate-900">Start PC {startPc.namaPc}</h2>
+                {/* `modal-x` dipakai supaya sama persis dengan tombol X di
+                    modal Tambah PC / Buat Voucher. Versi sebelumnya cuma
+                    `rounded-md px-2 py-1`, sehingga kena aturan tombol global
+                    uiverse: dapat gradient navy dan border-radius 1.5rem. */}
                 <button
+                  type="button"
+                  className="modal-x"
                   onClick={() => !startBusy && setStartPc(null)}
-                  className="rounded-md px-2 py-1 text-slate-500 hover:bg-slate-100"
+                  disabled={startBusy}
+                  aria-label="Tutup"
+                  title="Tutup"
                 >
-                  ✕
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M18 6 6 18M6 6l12 12" />
+                  </svg>
                 </button>
               </div>
 

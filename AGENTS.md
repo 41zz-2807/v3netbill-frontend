@@ -1358,6 +1358,52 @@ menambah offset ke `Date.now()` (mis. `Date.now = () => asli() + geser`), lalu
 Skrip uji-nya sengaja **tidak** disimpan di repo — butuh `playwright-core` yang bukan
 dependensi project, dan file di `/tmp` hilang sendiri.
 
+## Modal popup — panel pastel + tombol X (1 Okt) ✅
+
+Popup **Tambah PC** (`PcPage.tsx`) dan **Buat Voucher / Buat Member**
+(`AccountsPage.tsx`) memakai panel putih dengan header pastel cyan, sama seperti
+kartu PC dashboard. Ditambah tombol **X** di kanan header untuk keluar.
+
+```
+src/components/ui/PastelCard.tsx         header cyan + X + body putih
+src/components/ui/pastelCardStyles.ts    cardClass, inputClass, buttonClass, ...
+```
+
+`GradientCard.tsx` + `gradientCardStyles.ts` **dihapus**, bukan diedit. Keduanya
+cuma dipakai oleh dua modal itu, dan namanya sudah tidak benar (gradien ungu
+gone, sekarang putih). `inputClass`/`buttonClass` yang tadinya gelap
+(`bg-white/5`, teks putih) diganti terang (`border-slate-300`).
+
+⚠️ **X diletakkan di header, bukan di bawah konten.** Alasannya panel ini punya
+dua tahap — form lalu layar hasil — dan "Selesai" hanya ada di tahap hasil. Di
+tahap form satu-satunya jalan keluar selain X adalah klik backdrop atau Escape,
+dan klik backdrop mudah tidak disengaja saat mengisi form. `closeDisabled`
+memakai disable, bukan sembunyikan, supaya posisi tombol tidak bergeser di
+tengah proses.
+
+### ⚠️ Tiga pengecualian tombol, dan hanya satu yang boleh "cukup"
+
+Aturan `html[data-ui-buttons="uiverse"] button:not(...)` sekarang punya
+`.modal-x` **dan** `.pastel-card button`:
+
+- `.pcc__act` — tombol aksi kartu PC (32px)
+- `.modal-x` — tombol tutup (28px)
+- `.pastel-card button` — semua tombol di dalam panel modal, otomatis berlaku
+  untuk tombol baru apa pun yang ditambahkan
+- `.login-button`, `.navmenu__exit`
+
+⚠️ **Jangan mengandalkan `.pastel-card button` saja untuk `.modal-x`.** Popup
+"Mulai Sesi" di `DashboardPage.tsx` adalah satu-satunya dialog inline di repo
+ini — panelnya `rounded-xl bg-white` sendiri, **bukan** `PastelCard`. Waktu
+`.modal-x` baru dipasang di sana, `.modal-x` masih kena
+`border-radius: 1.5rem !important` dan **terukur 24px, bukan 8px**. Karena itu
+`.modal-x` wajib ada sebagai `:not()` tersendiri, bukan hanya lewat
+`.pastel-card`.
+
+Verifikasi (Playwright, 1280px & 390px): ketiga modal panel radius 16px, header
+`rgb(224,247,250)`, X 28px bg putih radius 8px `aria-label="Tutup"`, X menutup,
+Escape menutup, overflow 390px = 0 px, konsol bersih.
+
 ## Kartu PC dashboard — Soft Pastel Header (1 Okt) ✅
 
 Kartu PC di dashboard web digantitotal ke desain "Soft Pastel Header":
