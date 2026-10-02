@@ -529,6 +529,7 @@ src/pages/settings/TabPengguna.tsx     Tambah User · Ganti Kata Sandi
 src/pages/settings/TabData.tsx         Backup · Riwayat Backup
 src/pages/settings/TabLogBilling.tsx   Log Billing Harian · Daftar Tanggal · Isi Log
 src/pages/settings/TabDiagnosa.tsx     Daftar paket diagnosa agent + unduh
+src/pages/settings/TabNav.tsx           Sidebar (desktop) / pemicu yang menutup sendiri (mobile)
 ```
 
 ⚠️ **Kartu "Log Billing Harian" dan "Daftar Tanggal" sengaja satu baris**
@@ -2301,6 +2302,15 @@ Ditambah indikator **`SERVER TERPUTUS` merah** dengan angka countdown yang jadi 
 kalau server tak terjangkau, hitung mundur memang tidak bergerak dan itu wajib terlihat.
 Timeline progress bar **dihapus** — tidak ada di kartu web.
 
+⚠️ **Veil putih DI ATAS wallpaper sudah dihapus (2 Okt).** Dulu ada Border putih
+`Opacity="0.62"` yang membuat wallpaper hanya tampil sekitar 40 persen, jadi
+operator tidak bisa melihat layar PC. Kelemahannya jauh lebih besar dari
+gunaannya: kartu putih punya border 1px slate sehingga tetap terbatas dari
+wallpaper dan tidak "tempel". `WallpaperVeil` + `SinkronkanVeil()` +
+`_wallpaperDimuat` ikut dibuang supaya tidak ada elemen tak terpakai. Kalau
+nanti kartu putih ternyata sulit dibaca di wallpaper tertentu, penanganannya
+`Border` kartu — **jangan** membuat seluruh layar pucat lagi.
+
 ### `.bat` diagnosa yang dikirim otomatis
 
 `Agent.Service/kumpul-log.bat` ikut ter-install MSI (terbukti ada di hasil
@@ -2326,6 +2336,110 @@ tidak bisa diakses publik (sudah diuji: jalur publik mengembalikan SPA fallback)
 Sudah diuji dengan serangan nyata: 401 tanpa token, 403 kasir, 401 `agentToken` salah,
 400 bukan zip, traversal mentah & ter-encode 404 dengan berkas umpan tetap utuh, dan
 sha256 berkas unduhan identik dengan aslinya.
+
+### 🔴 Tiga bug yang ketahuan dari screenshot PC, bukan dari kode (2 Okt)
+
+Semuanya **lolos `dotnet build`**, dan tiga di antaranya kode yang tulis sendiri
+di sesi yang sama. Yang ketiga hampir tidak mungkin ketahuan tanpa-installed MSI.
+
+**1. Hitung mundur kosong untuk setiap sesi di bawah 1 jam.** Di dalam *verbatim
+string* `@"..."` tidak ada escaping, jadi `@"mm\\:ss"` berarti **dua backslash**
+dan `TimeSpan.ToString` melempar `FormatException`. Binding WPF yang melempar
+tidak menampilkan apa pun — jadi yang tampil cuma label "SISA WAKTU" dengan
+angka kosong. Terbukti dengan eksekusi .NET:
+
+```
+verbatim 1 backslash (lama)     -> "18:01"              OK
+verbatim 2 backslash (yang ditulis) -> FormatException   GAGAL
+```
+
+Sekarang `@"mm\:ss"` + dibungkus `try/catch` dengan cadangan `${SisaDetik}s`.
+Regresinya ada di `.verify/CountdownTest/` (11 kasus, termasuk `600` detik =
+voucher 500 yang memang jadi kasus di lapangan).
+
+⚠️ **Jangan pakai `hh` di format itu.** `hh` adalah jam-DALAM-SEHARI, jadi
+3600 detik jadi `1j 01:00` — jamnya dobel dengan angka jam total yang sudah
+dicetak di depannya. Yang dipakai hanya `mm` dan `ss`.
+
+**2. `Registry.CurrentUser` tidak pernah memblokir Task Manager.**
+`Worker.cs` menulis `DisableTaskMgr` ke `CurrentUser`, tapi service jalan sebagai
+LocalSystem, jadi `CurrentUser` = `HKEY_USERS\S-1-5-18`. Nilai itu hanya
+berlaku untuk akun SYSTEM dan tidak pernah sampai ke akun pelanggan.
+Fitur ini sudah ada sejak awal tetapi **tidak pernah berfungsi**.
+Sekarang ditulis ke setiap profil di `HKEY_USERS` (lewat `_Classes` dan key
+berawalan titik), plus `WM_SETTINGCHANGE` disiarkan supaya tidak baru berlaku
+setelah Task Manager ditutup.
+
+**3. Flag stop dibaca dari path BERBEDA oleh service dan overlay.**
+`Environment.SpecialFolder.CommonDocuments` bernilai
+`C:\Users\Public\Documents` untuk user interaktif, tapi
+`C:\Windows\System32\config\systemprofile\Documents` untuk LocalSystem.
+Jadi flag yang ditulis overlay tidak pernah terlihat service — watchdog akan
+membangunkan overlay terus-menerus sepanjang mode maintenance.
+Sekarang satu definisi di `Agent.Core/FlagPaths.cs`, dipakai service, overlay,
+`watchdog.cmd`, dan `uninstall-old-agent.bat`. Pola yang sama seperti nama
+channel FCM: satu nama, wajib sama di semua pihak.
+
+### Notifikasi Telegram saat uninstall / kill paksa
+
+Service **tidak bisa** mengirim peringatan tentang kematiannya sendiri. Yang
+bisa adalah `watchdog.cmd` — scheduled task yang jalan tiap menit sebagai SYSTEM
+dan tidak bergantung pada agent. Di situlah deteksinya.
+
+```
+Agent.Service/watchdog.cmd     deteksi + hidupkan lagi
+Agent.Service/kirim-alert.ps1  kirim ke Telegram, cooldown 6 jam
+```
+
+Tiga keadaan: service tidak ada → *di-uninstall*; ada tapi STOPPED → *dihentikan
+paksa* (lalu dihidupkan lagi); tidak bisa start → *exenya hilang*.
+
+⚠️ **Dua hal yang TIDAK boleh ikut dilaporkan:** operator menekan STOP AGENT
+(ada flag-nya), dan uninstall dengan PIN admin yang diterima
+(`UninstallGuardWindow` menulis penanda `…uninstall-sah.flag` yang dibaca
+watchdog lalu dihapus). Tanpa pembeda itu, tiap uninstall resmi akan mengirim
+peringatan palsu.
+
+Token bot dibaca dari registry PC dan langsung dipakai ke `api.telegram.org` —
+tidak pernah ditulis ke berkas dan tidak pernah dikirim ke server v3netbill.
+
+### Cara menguji fitur kirim-log tanpa PC Windows
+
+`Agent.Core` menyasar **net8.0** (bukan `net8.0-windows`), jadi
+`AgentDiagnostics` bisa dijalankan dari Linux. Harness di
+`.verify/DiagTest/` memanggil server sungguhan:
+
+```
+salah-token -> ditolak          benar     -> terkirim
+file-besar  -> log 3 MB DILEWATI  cooldown -> panggilan ke-2 ditolak
+```
+
+⚠️ **Setiap kasus harus proses terpisah.** Cooldown disimpan di `static field`,
+jadi dua kasus dalam satu proses saling menutupi — dan hasil ujinya
+menyesatkan: kasus "file giantsa" pernah gagal **hanya karena** diblokir
+cooldown dari kasus sebelumnya, bukan karena log besarnya.
+
+Bukti bahwa batas ukuran benar-benar bekerja: zip kasus normal berisi 3 berkas
+(487 byte), zip kasus file-besar berisi **2 berkas** (365 byte) — log 3 MB-nya
+tidak ikut. Yang **tidak** bisa diuji dari sini adalah isi `kumpul-log.bat`
+itu sendiri; itu baru terbukti setelah MSI terpasang.
+
+### Halaman Pengaturan — sidebar (2 Okt)
+
+Tujuh tab yang tadinya deretan horizontal dipindah jadi **sidebar di kiri mulai
+`lg` (1024px)**, isi halaman di kanan. Di bawah `lg` sidebar menjadi satu
+pemicu yang **tertutup secara bawaan** dan menutup sendiri begitu ada bagian
+yang dipilih — supaya tidak memakan layar HP yang sempit.
+
+```
+src/pages/settings/TabNav.tsx   navigasi dua tata letak dalam satu komponen
+```
+
+Dua tata letak dipilih dalam SATU komponen, bukan dua komponen terpisah —
+dipisah berarti daftar label dan perilaku buka-tutup harus dijaga sinkron di dua
+tempat. `aria-expanded` dipakai karena daftar mobile benar-benar bisa
+dibuka-tutup; membacanya sebagai "kotak yang terpotong" akan menghitung
+kolaps yang disengaja sebagai kegagalan.
 
 ## Laporan tutup hari (LaporanModule) ✅
 

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext.tsx'
 import { fetchSettings, fetchBackupList, fetchUsers, parseMeta } from '../lib/api.ts'
 import type { BackupFile, BackupResult, InstallerMeta, OperatorUser } from '../lib/types.ts'
-import { TabButton } from '../components/ui/Tabs.tsx'
 import ProgressBar from '../components/ui/ProgressBar.tsx'
 import TabTarif from './settings/TabTarif.tsx'
 import TabAgent from './settings/TabAgent.tsx'
@@ -11,18 +10,19 @@ import TabPengguna from './settings/TabPengguna.tsx'
 import TabData from './settings/TabData.tsx'
 import TabLogBilling from './settings/TabLogBilling.tsx'
 import TabDiagnosa from './settings/TabDiagnosa.tsx'
+import TabNav, { type TabNavItem } from './settings/TabNav.tsx'
 import { BUSY_TEXT, type SettingsCtx } from './settings/shared.ts'
 
 type TabId = 'tarif' | 'agent' | 'instalasi' | 'pengguna' | 'data' | 'log' | 'diagnosa'
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: 'tarif', label: 'Tarif' },
-  { id: 'agent', label: 'Agent & Keamanan' },
-  { id: 'instalasi', label: 'Instalasi' },
-  { id: 'pengguna', label: 'Pengguna' },
-  { id: 'data', label: 'Data' },
-  { id: 'log', label: 'Log Billing' },
-  { id: 'diagnosa', label: 'Diagnosa Agent' },
+const TABS: TabNavItem[] & { id: TabId }[] = [
+  { id: 'tarif', label: 'Tarif', hint: 'Harga per menit & grace period' },
+  { id: 'agent', label: 'Agent & Keamanan', hint: 'PIN uninstall, bypass, OTP' },
+  { id: 'instalasi', label: 'Instalasi', hint: 'MSI, APK, wallpaper' },
+  { id: 'pengguna', label: 'Pengguna', hint: 'Tambah operator, ganti sandi' },
+  { id: 'data', label: 'Data', hint: 'Backup database' },
+  { id: 'log', label: 'Log Billing', hint: 'Aktivitas billing harian' },
+  { id: 'diagnosa', label: 'Diagnosa Agent', hint: 'Log yang dikirim agent' },
 ]
 
 export default function SettingsPage() {
@@ -126,16 +126,14 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Di layar sempit deretan tab digeser horizontal supaya tidak memaksa
-          halaman melebar. min-w-max di TabButton menjaga tiap tombol tetap
-          satu baris. */}
-      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-        {TABS.map((t) => (
-          <TabButton key={t.id} active={tab === t.id} onClick={() => setTab(t.id)}>
-            {t.label}
-          </TabButton>
-        ))}
-      </div>
+      {/* Sidebar di kiri mulai lg (1024px). Di bawah itu TabNav menjadi
+          pem-trigger yang menutup sendiri — lihat TabNav untuk alasannya. */}
+      <div className="lg:grid lg:grid-cols-[230px_minmax(0,1fr)] lg:items-start lg:gap-6">
+        <nav aria-label="Bagian pengaturan">
+          <TabNav items={TABS} active={tab} onChange={(id) => setTab(id as TabId)} />
+        </nav>
+
+        <div className="mt-4 min-w-0 lg:mt-0">
 
       {tab === 'tarif' && (
         <TabTarif
@@ -172,6 +170,8 @@ export default function SettingsPage() {
       )}
       {tab === 'log' && <TabLogBilling ctx={ctx} />}
       {tab === 'diagnosa' && <TabDiagnosa ctx={ctx} />}
+        </div>
+      </div>
     </div>
   )
 }
