@@ -2444,34 +2444,50 @@ Penjaga ada di `session.gateway.ts#registerAgent()`:
 event saja". Justru handshake yang membuat daemon reconnect pulih sendiri —
 `agent:register` cuma jaring pengaman.
 
-### 🔴 Overlay tak terlihat: window lahir di desktop service (2 Okt, 1.0.11.0)
+### 🔴 Overlay tidak muncul: ternyata FLAG MAINTENANCE (2 Okt)
 
-Kasus paling membingungkan di repo ini karena **tidak ada satu pun symptom di server**.
-Service sehat, agent konek, `agent.log` bersih, dan `Agent.Overlay.exe` **ada
-di tasklist** — tapi layar tetap bersih.
+Penyebab sebenarnya, terbukti dari `overlay-2026-10-02.log`:
 
-Penyebabnya `InteractiveProcess.Launch()` memakai `CreateProcessAsUser` dengan
-token user yang login, tapi `STARTUPINFO.lpDesktop` **kosong**. Nilai kosong
-berarti anak mewarisi desktop **pemanggil**, yaitu desktop service di session 0.
-Window hidup di desktop yang tidak pernah dilihat user.
+```
+Stop flag 'C:\Users\Public\v3netbill-agent-stop.flag' ada
+— overlay keluar (mode maintenance)
+```
 
-Yang membuatnya bertahan lama bukan bug-nya, tapi **watchdog-nya**: karena
-prosesnya ada, `WatchdogCallback()` mengira overlay sehat dan tidak pernah
-meluncur ulang. Overlay tak terlihat bisa menggantung selamanya.
+Overlay **MELETAK, lalu LANGSUNG KELUAR** — setiap kali, berulang. Jadi
+.launch `CreateProcessAsUser` selalu sukses dan proses selalu ada di tasklist
+sesaat. Semua perbaikan sebelumnya (termasuk yang saya buat) hanya menggeser
+gejalanya tanpa menyentuh penyebabnya.
 
-Dua perbaikan (`bfe599a`):
+**Akhirnya**: hapus `%PUBLIC%\v3netbill-agent-stop.flag`, `sc start v3NetbillAgent`.
 
-| Yang | Perbaikan |
-|---|---|
-| Jendela lahir di desktop service | `lpDesktop = winsta0\default` + `CreateEnvironmentBlock` (dari `userenv.dll`) supaya anak pakai environment user, bukan SYSTEM |
-| Proses tak terlihat dianggap sehat | Watchdog bandingkan `p.SessionId` dengan sesi konsol aktif; proses di luar sesi itu **dibunuh** lalu diluncapkan ulang |
+### ⚠️ Tiga jebakan yang membuat masalah ini sulit
 
-Perbaikan kedua bukan hiasan: tanpa itu, **upgrade dari build rusak tidak akan
-pernah memulihinya sendiri**, karena shortcut Startup baru jalan saat logon
-berikutnya — dan logon berikutnya tidak selalu terjadi.
+**1. Path flag TIDAK SERAGAM, dan dokumentasi yang salah justru memperburuk.**
+`Agent.Core/FlagPaths.cs` mengambilnya dari environment variable `PUBLIC`, jadi
+nilainya `C:\Users\Public\...` — **tanpa** `Documents`. Tapi `watchdog.cmd`
+dan `uninstall-old-agent.bat` masih memakai `%PUBLIC%\Documents\...` dan
+`%USERPROFILE%\Documents\...`, dan `HANDOFF.md` mendokumentasikan path yang
+SALAH. Dua konsekuensi:
+- `watchdog.cmd` tidak pernah melihat flag yang ditulis overlay.
+- Setiap kali mencari penyebab, dokumentasi mengarahkan ke path yang tidak ada
+  isinya — termasuk petunjuk yang saya berikan ke user. Sudah diperbaiki di
+  `a0e631f` (kode, `.cmd`, `.bat`, dan dua dokumen).
 
-⚠️ **"Proses ada" ≠ "overlay terlihat".** Setiap kali menulis logika watchdog,
-cek **sesi** prosesnya, bukan hanya keberadaannya.
+**2. Mode maintenance BISU di `agent.log`.** `WatchdogCallback()` menulis ke
+`_logger.LogInformation` saja, bukan `AgentLog`. Dari `agent.log` terlihat
+watchdog **tidak pernah jalan**, padahal justru sedang menahan pelepasan.
+Sekarang ditulis ke `AgentLog` beserta path flagnya.
+
+**3. "Proses ada" ≠ "overlay terlihat".** Kalau proses overlay sudah ada,
+watchdog tidak meluncur ulang — jadi overlay tak terlihat bisa menggantung
+selamanya. Tapi kriteria SessionId yang terlalu longgar justru lebih buruk:
+ begitu operator memakai RDP, `WTSGetActiveConsoleSessionId()` mengembalikan
+sesi konsol sementara overlay berjalan di sesi RDP, sehingga overlay yang
+**benar-benar tampil** dibunuh tiap 5 detik. Yang aman hanya session 0.
+
+⚠️ Pelajaran: sebelum mengejar penyebab, **baca log yang diberikan sampai
+sampai**. Baris pertama file itu sudah menjawab pertanyaan, dan saya
+membuild dua MSI sebelum menyadarinya.
 
 ### ⚠️ Uninstall: PIN diminta DUA KALI, dan cancel = agent kehilangan identitas (2 Okt)
 
