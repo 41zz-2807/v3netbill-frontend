@@ -2380,6 +2380,49 @@ Sekarang satu definisi di `Agent.Core/FlagPaths.cs`, dipakai service, overlay,
 `watchdog.cmd`, dan `uninstall-old-agent.bat`. Pola yang sama seperti nama
 channel FCM: satu nama, wajib sama di semua pihak.
 
+### ⚠️ Uninstall: PIN diminta DUA KALI, dan cancel = agent kehilangan identitas (2 Okt)
+
+Kejadian nyata. `uninstall-old-agent.bat` memverifikasi PIN ke server dengan
+benar, lalu memanggil `msiexec /x`. MSI itu sendiri punya `UninstallGuardAction`
+yang **menanyakan PIN lagi**. Membatalkan dialog kedua membuat `msiexec` keluar
+dengan error, dan skrip lalu
+
+```
+echo [WARN] msiexec selesai dengan kode error - lanjut hapus manual.
+```
+
+lalu menghapus semuanya, termasuk `reg delete "HKLM\Software\v3Netbill"`.
+Akibatnya `PcId` dan `AgentToken` terhapus sementara produk MSI **masih
+terdaftar** — agent tidak bisa menemukan server lagi, dan tidak ada jalan
+memperbaikinya selain memasang ulang.
+
+Tiga perbaikan:
+
+| Yang | Perbaikan |
+|---|---|
+| PIN dua kali | Condition `UninstallGuardAction` jadi `... AND NOT V3PINVERIFIED`; `.bat` memanggil `msiexec /x {code} V3PINVERIFIED=1` |
+| `msiexec` gagal tapi skrip lanjut hapus | `if errorlevel 1` sekarang `goto :abort`. Service, folder, dan registry **tidak** disentuh |
+| Registry bisa berubah di tengah jalan | Sebelum langkah destruktif, `PcId` di registry dibandingkan dengan `PcId` yang PIN-nya baru diverifikasi |
+
+⚠️ **`V3PINVERIFIED` sengaja TIDAK diberi `Secure="yes"`.** Nilai ini bukan
+rahasia, dan `Secure` mensyaratkan juga mendaftarkan property itu di
+`SecureCustomProperties` agar diteruskan — satu langkah lagi yang bisa
+menggagalkan seluruh mekanisme.
+
+⚠️ **Jalan keluar (`:jalan_keluar`) wajib ada di SETIAP cabang penolakan.**
+Versi pertama hanya menunjukkannya untuk satu kasus, dan teksnya **tidak
+menyebut penghapusan task watchdog** — jadi service akan hidup lagi dalam satu
+menit. Urutannya wajib: hapus task watchdog DULU, baru `sc stop`/`sc delete`.
+
+**Pemulihan ketika registry sudah hilang:** produk MSI masih terdaftar karena
+uninstall-nya dibatalkan, jadi **pasang MSI baru** — jalur upgrade tidak meminta
+PIN (`NOT UPGRADINGPRODUCTCODE`) dan `ConfigComponents` menulis ulang `PcId`,
+`AgentToken`, serta `ServerUrl`. Itu jalan tercepat dan tidak perlu `.bat`.
+
+⚠️ **`uninstall-old-agent.bat` tidak ikut ter-install MSI.** Skrip itu hanya ada
+di repo, jadi operator harus menyimpan salinannya sendiri. Ini perilaku lama,
+bukan regresi — tapi rapuh, karena `.bat` adalah jalur uninstall utama.
+
 ### Notifikasi Telegram saat uninstall / kill paksa
 
 Service **tidak bisa** mengirim peringatan tentang kematiannya sendiri. Yang
