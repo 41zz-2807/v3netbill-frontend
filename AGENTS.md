@@ -2444,6 +2444,35 @@ Penjaga ada di `session.gateway.ts#registerAgent()`:
 event saja". Justru handshake yang membuat daemon reconnect pulih sendiri —
 `agent:register` cuma jaring pengaman.
 
+### 🔴 Overlay tak terlihat: window lahir di desktop service (2 Okt, 1.0.11.0)
+
+Kasus paling membingungkan di repo ini karena **tidak ada satu pun symptom di server**.
+Service sehat, agent konek, `agent.log` bersih, dan `Agent.Overlay.exe` **ada
+di tasklist** — tapi layar tetap bersih.
+
+Penyebabnya `InteractiveProcess.Launch()` memakai `CreateProcessAsUser` dengan
+token user yang login, tapi `STARTUPINFO.lpDesktop` **kosong**. Nilai kosong
+berarti anak mewarisi desktop **pemanggil**, yaitu desktop service di session 0.
+Window hidup di desktop yang tidak pernah dilihat user.
+
+Yang membuatnya bertahan lama bukan bug-nya, tapi **watchdog-nya**: karena
+prosesnya ada, `WatchdogCallback()` mengira overlay sehat dan tidak pernah
+meluncur ulang. Overlay tak terlihat bisa menggantung selamanya.
+
+Dua perbaikan (`bfe599a`):
+
+| Yang | Perbaikan |
+|---|---|
+| Jendela lahir di desktop service | `lpDesktop = winsta0\default` + `CreateEnvironmentBlock` (dari `userenv.dll`) supaya anak pakai environment user, bukan SYSTEM |
+| Proses tak terlihat dianggap sehat | Watchdog bandingkan `p.SessionId` dengan sesi konsol aktif; proses di luar sesi itu **dibunuh** lalu diluncapkan ulang |
+
+Perbaikan kedua bukan hiasan: tanpa itu, **upgrade dari build rusak tidak akan
+pernah memulihinya sendiri**, karena shortcut Startup baru jalan saat logon
+berikutnya — dan logon berikutnya tidak selalu terjadi.
+
+⚠️ **"Proses ada" ≠ "overlay terlihat".** Setiap kali menulis logika watchdog,
+cek **sesi** prosesnya, bukan hanya keberadaannya.
+
 ### ⚠️ Uninstall: PIN diminta DUA KALI, dan cancel = agent kehilangan identitas (2 Okt)
 
 Kejadian nyata. `uninstall-old-agent.bat` memverifikasi PIN ke server dengan
