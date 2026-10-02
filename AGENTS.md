@@ -2380,6 +2380,49 @@ Sekarang satu definisi di `Agent.Core/FlagPaths.cs`, dipakai service, overlay,
 `watchdog.cmd`, dan `uninstall-old-agent.bat`. Pola yang sama seperti nama
 channel FCM: satu nama, wajib sama di semua pihak.
 
+### Nomor versi MSI — bisa dibaca, dan tidak bisa lagi basi (2 Okt)
+
+`Product/@Version` sudah **1.0.9.0 sejak versi 1.0.9.0**, padahal MSI dibangun
+ulang belasan kali sejak itu. Semuanya tercatat `1.0.9.0`, jadi mustahil
+diketahui mana yang benar-benar terpasang di PC kasir.
+
+Sekarang:
+
+| Yang | Nilai |
+|---|---|
+| `Product/@Version` | `1.0.10.0` |
+| `HKLM\...\Agent\AgentVersion` | `[ProductVersion]` — otomatis, tidak diketik |
+| `HKLM\...\Agent\InstalledBuildUtc` | `[InstallDate]` — properti MSI bawaan |
+
+Cek langsung di PC:
+
+```cmd
+reg query "HKLM\SOFTWARE\v3Netbill\Agent" /v AgentVersion
+reg query "HKLM\SOFTWARE\v3Netbill\Agent" /v InstalledBuildUtc
+```
+
+Step "Verify MSI contents" membaca `ProductVersion` dari MSI dan **GAGAL** kalau
+masih `1.0.9.0` **atau kosong**. Lupa menaikkan tidak bisa lagi lolos ke artifact.
+
+⚠️ **Tiga jebakan yang sudah dilewati di sini — semuanya lolos build lokal.**
+
+**1. `wix build -d` HANYA membuat preprocessor variable, bukan properti MSI.**
+`<Property Id="X" Value="$(var.X)" />` dengan `-d X=...` merusak build di CI:
+nilainya kosong sampai `WIX0006`. Diganti `[InstallDate]`, properti MSI
+bawaan yang selalu terisi dan tidak butuh apa pun dari luar.
+
+**2. `<Property>` tanpa `Value` dan tanpa Admin/Secure/Hidden diabaikan WiX
+(`WIX1006`).** `V3PINVERIFIED` yang ditambahkan untuk "PIN hanya diminta
+sekali" **tidak pernah dipakai** — uninstall-old-agent.bat mengirim
+`V3PINVERIFIED=1` tapi MSI tidak memperhatikannya. Public property yang dikirim
+baris perintah dibuat otomatis oleh installer, jadi **tidak perlu
+dideklarasikan sama sekali**.
+
+**3. Nama property versi MSI adalah `ProductVersion`, bukan `Version`.**
+Check yang membaca `Version` selalu dapat string kosong, dan karena itu
+**tidak pernah gagal sama sekali** — persis jenis bug yang seharusnya diceknya.
+Karena itu versi kosong juga harus dianggap gagal.
+
 ### ⚠️ Uninstall: PIN diminta DUA KALI, dan cancel = agent kehilangan identitas (2 Okt)
 
 Kejadian nyata. `uninstall-old-agent.bat` memverifikasi PIN ke server dengan
