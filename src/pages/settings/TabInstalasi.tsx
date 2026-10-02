@@ -99,6 +99,18 @@ export default function TabInstalasi({
               <span className="font-medium">{installed.filename}</span> ·{' '}
               {formatBytes(installed.sizeBytes)}
             </div>
+            {/* Versi dibaca backend dari dalam berkas MSI (ProductVersion),
+                bukan dari nama berkas. Nama berkas selalu
+                `installer-<timestamp>.msi` — bentuknya sama persis antar build,
+                jadi tanpa baris ini halaman ini tidak bisa menjawab
+                "installer versi berapa yang ada di server sekarang?". */}
+            <div className="mt-0.5 text-slate-500">
+              {installed.versionName ? (
+                <>Versi {installed.versionName}</>
+              ) : (
+                'Nomor versi tidak terbaca dari installer ini'
+              )}
+            </div>
             {adaTanggal(installed.uploadedAt) && (
               <div className="mt-0.5 text-slate-500">
                 Diunggah {formatDateIndo(installed.uploadedAt)}
