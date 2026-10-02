@@ -2423,6 +2423,27 @@ Check yang membaca `Version` selalu dapat string kosong, dan karena itu
 **tidak pernah gagal sama sekali** — persis jenis bug yang seharusnya diceknya.
 Karena itu versi kosong juga harus dianggap gagal.
 
+### ⚠️ Satu koneksi agent = DUA kali register (2 Okt)
+
+Agent menaruh `pcId`+`agentToken` di **handshake query** Socket.IO (dibaca
+`handleConnection`) **dan** mengirim event `agent:register`. Keduanya bertemu di
+`registerAgent()`, jadi tanpa penjaga tiap koneksi:
+
+- menulis `lastHeartbeatAt` dua kali,
+- mendorong `dashboard:pc_update` dua kali,
+- mengirim `agent:otp_config` + `agent:bypass_config` dua kali ke socket yang sama.
+
+Terlihat sebagai dua baris `registered with socket` berselang satu detik.
+**Gejalanya tidak merusak apa pun**, jadi mudah lolos — hanya pekerjaan yang
+terlipat ganda dan config OTP terkirim ganda.
+
+Penjaga ada di `session.gateway.ts#registerAgent()`:
+`if (this.socketPcMap.get(client.id) === pcId) return true;`
+
+⚠️ Jangan menghapus handshake query `pcId`/`agentToken` dengan alasan "cukup pakai
+event saja". Justru handshake yang membuat daemon reconnect pulih sendiri —
+`agent:register` cuma jaring pengaman.
+
 ### ⚠️ Uninstall: PIN diminta DUA KALI, dan cancel = agent kehilangan identitas (2 Okt)
 
 Kejadian nyata. `uninstall-old-agent.bat` memverifikasi PIN ke server dengan
