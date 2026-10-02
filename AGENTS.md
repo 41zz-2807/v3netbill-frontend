@@ -281,6 +281,7 @@ tanpa JWT sama sekali.
 | PATCH | `/api/settings` | ADMIN |
 | PATCH | `/api/settings/password` | — |
 | POST | `/api/settings/installer` | ADMIN |
+| GET | `/api/settings/installer/info` | — |
 | GET | `/api/settings/installer` | — |
 | POST | `/api/settings/apk` | ADMIN |
 | GET | `/api/settings/apk/info` | — |
@@ -311,13 +312,15 @@ Tiga endpoint `PUBLIC` punya alasan spesifik, jangan diubah tanpa paham dulu:
   `pcId` + `agentToken`, sama seperti `verify-pin`. Paket yang diterima **tidak
   pernah bisa diakses tanpa JWT**: daftar & unduh hanya ADMIN.
 
-⚠️ **`GET /api/settings/apk/info` wajib JWT, dan JANGAN digantikan
-`GET /api/settings`.** Yang terakhir mengembalikan seluruh isi tabel `Setting` —
+⚠️ **`GET /api/settings/apk/info` dan `GET /api/settings/installer/info` wajib
+JWT, dan JANGAN digantikan `GET /api/settings`.** Yang terakhir mengembalikan seluruh isi tabel `Setting` —
 termasuk `agent_otp_bot_token` (token bot Telegram yang aktif),
 `agent_otp_chat_id`, `pin_bypass_hash`, dan `pin_uninstall_hash` dalam bentuk
 jelas. Aplikasi Android cukup butuh enam field: `ada`, `versionCode`,
-`versionName`, `ukuranBytes`, `sha256`, `tanggalUpload`. Endpoint `info`
-mengembalikan 192 byte; `settings` mengembalikan semuanya.
+`versionName`, `ukuranBytes`, `sha256`, `tanggalUpload`. Halaman Pengaturan
+cukup lima field untuk MSI: `ada`, `versionName`, `ukuranBytes`, `sha256`,
+`tanggalUpload`. Endpoint `info` mengembalikan unbelasan byte; `settings`
+mengembalikan semuanya.
 
 ### WebSocket namespace `/session`
 
@@ -2488,6 +2491,41 @@ sesi konsol sementara overlay berjalan di sesi RDP, sehingga overlay yang
 ⚠️ Pelajaran: sebelum mengejar penyebab, **baca log yang diberikan sampai
 sampai**. Baris pertama file itu sudah menjawab pertanyaan, dan saya
 membuild dua MSI sebelum menyadarinya.
+
+### Nomor versi MSI tampil di halaman Pengaturan (2 Okt)
+
+Kartu **Installer Agent** di tab Instalasi sekarang menampilkan
+`Versi 1.0.12.0`, sejajar dengan versi APK. Sebelumnya hanya nama berkas dan
+ukuran — dan keduanya **tidak bisa membedakan build**:
+
+- nama berkas selalu `installer-<timestamp>.msi`, bentuknya sama persis;
+- ukuran juga tidak berubah antar build (dua MSI berturut-turut bisa sama-sama
+  64.867.608 byte padahal isinya berbeda).
+
+Jadi halaman ini sebelumnya tidak bisa menjawab pertanyaan yang paling sering
+muncul: *installer versi berapa yang ada di server sekarang?*
+
+Pola yang sama dengan `apk_meta` + `GET /apk/info`, diterapkan ke
+`installer_meta` + `GET /settings/installer/info` (lima field aman, JWT wajib).
+
+⚠️ **MSI bukan berkas teks, dan string pool-nya tidak punya byte panjang.**
+Byte di sebelah `ProductVersion` **langsung** adalah versinya:
+
+```
+ProductVersion1.0.12.0UpgradeCode{7F3A9B1E-...
+```
+
+Entri string diletakkan berdampingan tanpa pemisah. Versi pertama dari
+`bacaVersiMsi()` mengira ada satu byte panjang seperti reader tabel biasa, dan
+**selalu mengembalikan `null`** — yang terlihat seperti "MSI-nya rusak", padahal
+MSI-nya baik-baik saja. Pola ini diverifikasi langsung terhadap berkas MSI asli,
+bukan dari dokumentasi.
+
+Karena tidak ada pemisah, versi yang lebih panjang bisa **terpotong**
+(`1.0.12.05` terbaca `1.0.12.0`). Jadi karakter setelahnya wajib dicek bukan
+angka dan bukan titik sebelum nilainya dipakai — kalau tidak, halaman ini akan
+menampilkan nomor versi yang **salah**, dan justru itu yang paling berbahaya
+karena orang akan mempercayainya.
 
 ### ⚠️ Uninstall: PIN diminta DUA KALI, dan cancel = agent kehilangan identitas (2 Okt)
 
