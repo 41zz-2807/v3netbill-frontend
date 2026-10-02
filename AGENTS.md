@@ -297,6 +297,9 @@ tanpa JWT sama sekali.
 | GET | `/api/log-billing` | ADMIN |
 | GET | `/api/log-billing/:tanggal?cari=` | ADMIN |
 | GET | `/api/log-billing/:tanggal/unduh` | ADMIN |
+| POST | `/api/diagnosa` | **PUBLIC** |
+| GET | `/api/diagnosa` | ADMIN |
+| GET | `/api/diagnosa/:nama` | ADMIN |
 
 Tiga endpoint `PUBLIC` punya alasan spesifik, jangan diubah tanpa paham dulu:
 
@@ -304,6 +307,9 @@ Tiga endpoint `PUBLIC` punya alasan spesifik, jangan diubah tanpa paham dulu:
 - `settings/verify-pin` — dipakai `.bat` uninstall & `UninstallGuardWindow` yang
   **tidak punya JWT**. Identitas PC (`pcId` + `agentToken`) yang dipakai, bukan akun.
 - `settings/wallpaper` — layar lock agent mengambil wallpaper tanpa punya JWT.
+- `diagnosa` — agent Windows mengirim paket log sendiri tanpa JWT. Identitasnya
+  `pcId` + `agentToken`, sama seperti `verify-pin`. Paket yang diterima **tidak
+  pernah bisa diakses tanpa JWT**: daftar & unduh hanya ADMIN.
 
 ⚠️ **`GET /api/settings/apk/info` wajib JWT, dan JANGAN digantikan
 `GET /api/settings`.** Yang terakhir mengembalikan seluruh isi tabel `Setting` —
@@ -352,6 +358,7 @@ Dikirim server → klien:
 | `auto-backup` | 01:00 | `pg_dump` + hapus backup > 30 hari |
 | `cleanup-activity-logs` | 02:00 | hapus activity log > 30 hari |
 | `cleanup-log-billing` | 03:00 + saat start | hapus berkas log billing > 30 hari |
+| `cleanup-diagnosa` | 04:00 + saat start | hapus paket diagnosa agent > 14 hari |
 | `tutup-hari-laporan` | 23:30 WIB | rekap hari sebelumnya → PDF + email + Telegram |
 
 Batas hari bisnis = **23:30 WIB** (hari T = [23:30 T-1, 23:30 T)). Rekap nol dihitung
@@ -500,15 +507,16 @@ Dua opsi yang sudah dianalisis tapi **belum dikerjakan**:
 - **Frontend** (`frontend/src/pages/SettingsPage.tsx`): section Tarif (harga_per_menit, grace_period_detik via PATCH `/settings`), Ubah Password Sendiri (`/settings/password`), Upload Installer (multer + meta display), Upload Wallpaper (preview), Backup (POST `/settings/backup` + info last), PIN Uninstall (`/settings/pin-uninstall`). Nav item "Pengaturan" admin-only di `Layout.tsx` + route `/settings` di `App.tsx` (admin guard: redirect non-admin).
 - **Kenset**: `data/` bind mount (installer/wallpaper/backup persist), Dockerfile backend tambah `postgresql-client` (pg_dump).
 
-### Halaman Pengaturan — 6 tab (`97082bd`, tab Log Billing 1 Okt)
+### Halaman Pengaturan — 7 tab (`97082bd`, tab Log Billing 1 Okt, tab Diagnosa 2 Okt)
 
 Dulu `SettingsPage.tsx` 897 baris dengan 6 kartu dalam grid datar. Tinggi baris
 mengikuti kartu tertinggi, jadi Tarif punya ~430 px ruang kosong dan Installer
 ~590 px, karena "Akses Agent" di sebelahnya jauh lebih tinggi. Nama kartu juga
 tidak sesuai isinya: Akses Agent memuat 3 hal tidak berhubungan, Installer 4 hal.
 
-Kini **6 tab**, tiap tab 2–3 kartu yang berkelompok. (Semula 5; tab Log
-Billing ditambahkan 1 Okt — lihat bagian "Log billing berkas".)
+Kini **7 tab**, tiap tab 2–3 kartu yang berkelompok. (Semula 5; tab Log
+Billing ditambahkan 1 Okt, tab Diagnosa Agent 2 Okt — lihat bagian
+"Diagnosa agent otomatis".)
 
 ```
 src/pages/SettingsPage.tsx        → header, tab, banner, busy overlay
@@ -520,6 +528,7 @@ src/pages/settings/TabInstalasi.tsx    MSI · APK Android · Wallpaper Lock Scre
 src/pages/settings/TabPengguna.tsx     Tambah User · Ganti Kata Sandi
 src/pages/settings/TabData.tsx         Backup · Riwayat Backup
 src/pages/settings/TabLogBilling.tsx   Log Billing Harian · Daftar Tanggal · Isi Log
+src/pages/settings/TabDiagnosa.tsx     Daftar paket diagnosa agent + unduh
 ```
 
 ⚠️ **Kartu "Log Billing Harian" dan "Daftar Tanggal" sengaja satu baris**
@@ -2227,6 +2236,96 @@ memulai dari nol sebaiknya lewat container, bukan `rm` dari host.
 - Field `by` = nama user JWT, `kasirId` = id user. `by` diisi dari `client.data.username`
   (diisi saat verifikasi JWT di handshake, `session.gateway.ts:55`).
 - Cron `cleanup-activity-logs` tiap 02:00 — retensi 30 hari.
+
+## Diagnosa agent otomatis (2 Okt) + perbaikan bug agent offline 8 jam
+
+### Insidennya
+
+PC001 terputus **03:28:58 WIB** dan baru konek lagi **11:35 WIB** — 8 jam 7 menit.
+Server **tidak pernah restart, tidak crash, dan semua cron-nya normal**. Yang rusak
+sep entirety ada di agent Windows.
+
+Penyebabnya bukan service yang mati. `SocketIOClient.Connected` **macet di `true`**
+waktu WebSocket-nya sebenarnya sudah mati: middlebox (Cloudflare tunnel/NAT) drop flow
+tanpa FIN/RST, jadi client tidak pernah diberi tahu. Supervisor reconnect
+(`MaintainConnectionAsync`) memeriksa flag itu, jadi **tidak pernah memanggil
+`ConnectAsync` lagi**. Bukti di `agent.log`: **318 kegagalan heartbeat berturut-turut
+semuanya dengan `connected=True`**, dan `catch`-nya hanya menulis ke log.
+
+Tigacacat ditemukan dari log PC (`C:\ProgramData\v3NetbillAgent\logs\`):
+
+| Temuan | Perbaikan |
+|---|---|
+| `IsConnected` hanya percaya `SocketIO.Connected` | `IsConnected` sekarang `c.Connected && !_socketMati && !SudahStale` |
+| Heartbeat gagal cuma dilog | 2x gagal beruntun (30 dtk) -> `TandaiSocketMati()` -> supervisor buat **instance Socket.IO baru** |
+| Tidak ada jaring kalau heartbeat diam | `SudahStale`: 60 dtk tanpa bukti hidup -> dianggap mati (juga menutup kelas bug timer 1.0.8.0) |
+| `SendStopSessionAsync` tanpa `try/catch` | Ditambah guard + try/catch. **Ini yang membuat pipeitus 26 ms setelah tombol STOP ditekan** (`11:30:56.532` stop diterima, `11:30:56.558` pipe putus) |
+| `PipeListenerAsync` satu catch untuk semua | Try/catch **per pesan** — satu perintah gagal tidak lagi membuang pipa |
+| `_registered` di-set setelah `await` | Di-set **sebelum** `await` — hilangkan 2-3x `agent:register` per koneksi |
+| `agent:register` fire-and-forget | Dibungkus `RegisterAsyncAman()` supaya tidak jadi unobserved task exception |
+
+### Bug tambahan yang ditemukan saat membaca kode
+
+⚠️ **`CountdownText` memakai `mm:ss` yang SALAH untuk sesi >= 1 jam.**
+`TimeSpan.ToString(@"mm\:ss")` memakai komponen menit-dalam-sejam, jadi sesi
+member 10 jam **selalu tampil "00:00"**. Di aplikasi billing angka yang salah lebih
+buruk daripada tidak ditampilkan. Sekarang memakai format dashboard web (`Xj HH:MM`).
+
+⚠️ **`AgentLog.TrimIfNeeded()` memakai `fs.SetLength(250_000)`** — memotong 75%
+log **di tengah baris, tanpa penanda**. Itulah yang menghapus jendela 26 Sep 11:17
+sampai 2 Okt 10:14, yaitu persis periode yang dibutuhkan saat insiden. Batas potongnya
+terlihat sebagai dua baris tertimpa: `Heartbeat tick #42026-10-02 10:14:29.020 ...`.
+
+### Log sekarang satu berkas per tanggal
+
+```
+C:\ProgramData\v3NetbillAgent\logs\agent-2026-10-02.log
+C:\ProgramData\v3NetbillAgent\logs\overlay-2026-10-02.log
+retensi 30 hari, dihapus otomatis sekali per hari
+```
+
+`fs.SetLength` **sudah dihapus**. Batas 20 MB/hari: setelah itu hanya baris "tick
+sehat" yang dilewati, **kegagalan tetap dicatat**. Tick sehat cukup dicatat tiap 20
+tick (5 menit) lewat `AgentLog.WriteRutin` — dulu tiap 15 detik, itu sendiri 5.760
+baris sehari.
+
+### Kartu mini meniru kartu PC dashboard
+
+Mini window sekarang memakai identitas visual yang sama dengan `.pcc` di dashboard
+web: panel putih radius 16, header pastel `#E0F7FA` min-height 90, hitung mundur 32px,
+body berisi **nama akun + STATUS (BERJALAN) + TIPE (Voucher/Member)**.
+
+Tombol STOP dan GANTI PASSWORD jadi **ikon saja 32x32 radius 8 dengan ToolTip**
+(minimize, ganti password, stop). Warna diambil apa adanya dari `.pcc__act--power`.
+Ditambah indikator **`SERVER TERPUTUS` merah** dengan angka countdown yang jadi redup:
+kalau server tak terjangkau, hitung mundur memang tidak bergerak dan itu wajib terlihat.
+Timeline progress bar **dihapus** — tidak ada di kartu web.
+
+### `.bat` diagnosa yang dikirim otomatis
+
+`Agent.Service/kumpul-log.bat` ikut ter-install MSI (terbukti ada di hasil
+`dotnet publish`, jadi masuk `SvcDepComponents` otomatis). Dipicu dari
+`TandaiSocketMati`, dijeda 45 detik supaya log ikut memuat prosesKesembuhannya.
+Cooldown 30 menit, maks 4/hari, zip <= 4 MB.
+
+Isinya: log 7 hari, `sc qc`/`sc query`, state scheduled task watchdog, tasklist,
+Event Log 7031/7034/1000.
+
+⚠️ **Yang SENGAJA tidak dikumpulkan: registry dan `appsettings.json`.**
+`HKLM\Software\v3Netbill\Agent` memuat `AgentToken` (mengizinkan `create_password`
++ `stop_session`), `OtpBotToken` yang merupakan **token bot Telegram aktif**
+(ditulis `OtpService.SimpanConfig`), `OtpChatId`, dan `BypassPinHash`. `diagnosa.bat`
+yang lama di root repo **melakukan `reg query` ke key itu** — jangan dipakai untuk
+dikirim ke server.
+
+Sisi server: `POST /api/diagnosa` (`@Public()`, identitas `pcId`+`agentToken`),
+`GET /api/diagnosa` + `GET /api/diagnosa/:nama` (ADMIN), cron `cleanup-diagnosa`
+04:00 hapus > 14 hari. Disimpan di `/data/diagnosa/` — di luar `frontend-dist`, jadi
+tidak bisa diakses publik (sudah diuji: jalur publik mengembalikan SPA fallback).
+
+Sudah diuji dengan serangan nyata: 401 tanpa token, 403 kasir, 401 `agentToken` salah,
+400 bukan zip, traversal mentah & ter-encode 404 dengan berkas umpan tetap utuh, dan
+sha256 berkas unduhan identik dengan aslinya.
 
 ## Laporan tutup hari (LaporanModule) ✅
 

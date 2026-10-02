@@ -171,6 +171,14 @@ export interface BackupFile {
   createdAt: string
 }
 
+/** Satu paket diagnosa yang dikirim agent ke server. */
+export interface DiagnosaFile {
+  filename: string
+  sizeBytes: number
+  createdAt: string
+  pcId: string
+}
+
 /** Ringkasan satu berkas log harian, untuk daftar tanggal. */
 export interface LogBillingRingkas {
   tanggal: string

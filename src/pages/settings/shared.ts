@@ -13,6 +13,8 @@ export const BUSY_TEXT: Record<string, string> = {
   otp: 'Menyimpan',
   user: 'Menyimpan',
   'log-download': 'Mengunduh log',
+  'diagnosa-download': 'Mengunduh diagnosa',
+  'diagnosa-muat': 'Memuat daftar diagnosa',
 }
 
 /**

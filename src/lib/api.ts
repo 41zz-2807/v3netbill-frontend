@@ -12,6 +12,7 @@ import type {
   BackupResult,
   BackupFile,
   LogBillingRingkas,
+  DiagnosaFile,
   LogBillingIsi,
 } from './types'
 
@@ -426,6 +427,14 @@ export function formatWaktu(dateStr: string): string {
     minute: '2-digit',
   })
 }
+/* --- Diagnosa agent (backend/src/diagnosa) --- */
+
+/** Daftar paket diagnosa yang sudah dikirim agent. Hanya ADMIN. */
+export async function fetchDiagnosaList(): Promise<DiagnosaFile[]> {
+  const { data } = await api.get<DiagnosaFile[]>('/diagnosa')
+  return data
+}
+
 /* --- Log billing harian (backend/src/log-billing) --- */
 
 export async function fetchLogBillingList(): Promise<LogBillingRingkas[]> {

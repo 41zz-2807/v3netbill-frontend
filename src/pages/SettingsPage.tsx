@@ -10,9 +10,10 @@ import TabInstalasi from './settings/TabInstalasi.tsx'
 import TabPengguna from './settings/TabPengguna.tsx'
 import TabData from './settings/TabData.tsx'
 import TabLogBilling from './settings/TabLogBilling.tsx'
+import TabDiagnosa from './settings/TabDiagnosa.tsx'
 import { BUSY_TEXT, type SettingsCtx } from './settings/shared.ts'
 
-type TabId = 'tarif' | 'agent' | 'instalasi' | 'pengguna' | 'data' | 'log'
+type TabId = 'tarif' | 'agent' | 'instalasi' | 'pengguna' | 'data' | 'log' | 'diagnosa'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'tarif', label: 'Tarif' },
@@ -21,6 +22,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'pengguna', label: 'Pengguna' },
   { id: 'data', label: 'Data' },
   { id: 'log', label: 'Log Billing' },
+  { id: 'diagnosa', label: 'Diagnosa Agent' },
 ]
 
 export default function SettingsPage() {
@@ -169,6 +171,7 @@ export default function SettingsPage() {
         />
       )}
       {tab === 'log' && <TabLogBilling ctx={ctx} />}
+      {tab === 'diagnosa' && <TabDiagnosa ctx={ctx} />}
     </div>
   )
 }
