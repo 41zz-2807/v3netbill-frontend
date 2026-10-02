@@ -704,8 +704,10 @@ menghasilkan MSI yang terpasang tapi tidak konek.
   dipakai header kartu login). Keduanya hasil potong dari
   `frontend/public/logo-v3netbill.png`.
 - Transisi versi agent: `1.0.6.0` reconnect supervisor → `1.0.7.0` single reconnect authority
-  (anti flapping) → `1.0.8.0` heartbeatimer bug → `1.0.9.0` heartbeat self-diagnosing + tick log.
-  Commit terbaru: `38d90a9` (tema terang + perbaikan 4 jebakan rendering). Riwayat detail: `v3NetbillAgent/HANDOFF.md`.
+  (anti flapping) → `1.0.8.0` heartbeat timer bug → `1.0.9.0` heartbeat self-diagnosing + tick log →
+    `1.0.10.0` nomor versi terbaca → `1.0.11.0` `lpDesktop` + watchdog session 0 →
+    `1.0.12.0` flag path seragam + log mode maintenance.
+    Riwayat detail: `v3NetbillAgent/HANDOFF.md`.
 - Detail arsitektur & prosedur deploy: `v3NetbillAgent/README.md`.
 
 ### ⚠️ Empat jebakan rendering yang HANYA terlihat dari screenshot (1 Okt)
@@ -1178,8 +1180,13 @@ lib/core/apk/view/update_card.dart kartu, dipakai Home saja (30 Sep)
   dengan sendirinya. Jadi unduhan 54 MB, verifikasi sha256, layar izin
   "Pasang aplikasi tidak dikenal", dan installer Android **semuanya bekerja**.
   Ini menutup bagian yang tadinya mustahil dibuktikan dari Linux.
-- APK aktif di server sekarang `versionCode 19` (`1.0.19`) — lihat bagian
-  "Notifikasi push FCM". `1.0.18` hanya perataan UI, sudah dilewati.
+- APK aktif di server per 2 Okt: `versionCode 1023` (`1.0.1023`), universal,
+  55.527.893 byte, `sha256 2e854f2b…`, dari artifact CI run `37026237394`.
+  Sertifikat `CN=v3Netbill` SHA-256 `d38e3993…` — identik dengan keystore
+  rilis dan dengan APK yang sudah terpasang di HP kasir.
+  ⚠️ Nomor itu adalah `1000 + run_number`. **Rilas selalu dari artifact
+  CI** — build lokal selalu bernomor `1`, dan mengunggahnya merusak pembaruan
+  untuk semua HP. Pelajaran no. 22.
 
 ### Perbaikan input dari pemakaian nyata (30 Sep, versi 1.0.17)
 
@@ -1265,6 +1272,61 @@ font, jadi teks 14 px diuji jadi **2× lebih lebar** dari aslinya di HP
 ("Versi aplikasi" 199.5 px, di HP sekitar 62 px). Untuk asserts posisi tepi
 tidak masalah, tapi jangan pernah memakai angka lebar teks dari test untuk
 menyesuaikan ukuran layout di HP.
+
+### Dialog "Mulai Sesi" hanya menerima angka — member tidak bisa dipakai (2 Okt)
+
+Dilaporkan dari pemakaian nyata: dari kartu PC, dialog "Mulai Sesi" menampilkan
+keyboard yang **hanya punya tombol angka**, jadi member dengan nama berhuruf
+tidak bisa diinput.
+
+Field `kodeCtrl` di `lib/features/pcs/view/widgets/pc_card.dart` menerima kode
+voucher **dan** nama member, tapi dikonfigurasi seolah voucher saja:
+
+```dart
+maxLength: 6,
+keyboardType: TextInputType.number,   // keyboard hanya angka
+```
+
+Jadi ada **dua cacat di satu field**, dan yang kedua lebih halus karena tidak
+menolak — memotong. Nama member seperti "Budi Santoso" jadi "Budi S", lalu
+server menjawab "Akun tidak ditemukan" tanpa petunjuk kenapa.
+
+Mengapa member bisa lebih dari 6 karakter: member **tidak punya `kodeUnik`
+sama sekali** (17 dari 17 member di server punya kolom itu kosong), jadi backend
+mencari lewat `nama` (`session.service.ts`), dan `nama` boleh huruf, spasi,
+sampai `maksKarakterNama` (40) — sama dengan batas di form "Buat Member".
+
+⚠️ **Jangan tambahkan `textCapitalization` di field ini.** Backend
+mencocokkan `nama` **tanpa** `mode: 'insensitive'` (`cariAkunAktif()` cuma
+`where: { nama }`), jadi mengubah huruf saat diketik berisiko membuat nama yang
+diketik berbeda dari yang tertulis di kartu pelanggan — gejalanya "Akun tidak
+ditemukan" untuk nama yang dari sekilas jelas benar.
+
+### ⚠️ Tes yang menyalin konfigurasi produksi bisa menutupi bug yang sama
+
+`test/mulai_sesi_dialog_test.dart` menyalin field itu **apa adanya** dari
+`pc_card.dart` — termasuk `maxLength: 6` dan `keyboardType: number`. Jadi
+tiga tes di berkas itu lulus sementara aplikasinya tidak bisa menerima nama
+member sama sekali.
+
+Ini memperluas pelajaran no. 7 ("jangan percaya kode yang sudah dibaca") ke arah
+sebaliknya: **tes yang menyalin nilai dari produksi tanpa memverifikasinya hanya
+mengulang nilai itu.** Kalau nilai itu salah, tesnya mengabadikan kesalahannya
+dan bersertifikat hijau.
+
+Dua tes baru, dan keduanya **sudah dibuktikan menangkap bug** — dikembalikan
+ke kode lama:
+
+```
+Expected: 'Budi Santoso'
+Actual:   'Budi S'
+Expected: not TextInputType.number
+Actual:   TextInputType.number
+```
+
+Cara membuktikannya: kembalikan field ke `maxLength: 6` +
+`TextInputType.number`, jalankan `./fl test test/mulai_sesi_dialog_test.dart`, dan
+lihat kedua tes gagal dengan pesan di atas.
 
 ### Menonaktifkan akun harus menghentikan sesi yang sedang berjalan (30 Sep)
 
@@ -1945,9 +2007,28 @@ Nilai di bawah ini sengaja tidak dicatat. Kalau registry sudah hilang, jalankan
     Gunakan `curl --path-as-is` supaya path mentah benar-benar dikirim.
     Dan **bikin berkas umpan ada** sebelum menguji: berkas umpan di luar folder log
     yang afterward harus terbukti utuh, bukan sekadar "dijawab 200 kosong".
+22. ⚠️ **Build APK lokal SELALU bernomor `versionCode 1`, dan mengunggahnya
+    merusak pembaruan untuk semua HP kasir.** `./fl build apk --release` tidak
+    mengoper `--build-name`/`--build-number`, jadi hasilnya memakai `pubspec.yaml`
+    yang masih `version: 1.0.0+1`. Saya mengunggahnya, dan `apk_meta` berubah
+    dari `versionCode 24` jadi `1` — itu **penurunan versi**.
 
+    Akibatnya bukan cuma satu HP: `UpdateProvider` membandingkan nomor server
+    dengan nomor miliknya, jadi seluruh HP kasir yang sudah di `24` akan
+    melihat "server lebih tua" dan **berhenti menampilkan pembaruan sama sekali**.
+    Gejalanya muncul di HP orang lain, sementara penyebabnya di mesin ini.
 
-22. ⚠️ **`-d` build hanya membuat variabel, tidak menimpa `Property`.** Dan
+    Pemulihan tanpa mengedit database: **unggah ulang berkas APK lama** ke
+    `POST /api/settings/apk`. `saveApk()` membaca versi dan `sha256` dari berkas
+    itu, jadi `apk_meta` kembali persis seperti sebelumnya — lalu hapus berkas
+    baru yang salah unggah. (`UPDATE apk_meta` manual berisiko membuat meta dan hash
+    tidak sinkron dengan berkas yang benar-benar ada.)
+
+    Aturan yang berlaku: **rilis selalu dari artifact CI.** Build lokal hanya
+    untuk menguji, dan kalau harus diuji mekanismenya, jangan pernah
+    menyentuh `POST /api/settings/apk`.
+
+23. ⚠️ **`-d` build hanya membuat variabel, tidak menimpa `Property`.** Dan
     "hijau di GitHub" tidak berarti apa-apa kalau step upload-nya diam-diam
     dilewati. Keduanya hampir membuat PC kasir mati: MSI terpasang dengan
     `ServerUrl = http://localhost:3000`, agent mencoba konek ke localhost di
@@ -2393,9 +2474,18 @@ Sekarang:
 
 | Yang | Nilai |
 |---|---|
-| `Product/@Version` | `1.0.10.0` |
+| `Product/@Version` | `1.0.12.0` |
 | `HKLM\...\Agent\AgentVersion` | `[ProductVersion]` — otomatis, tidak diketik |
 | `HKLM\...\Agent\InstalledBuildUtc` | `[InstallDate]` — properti MSI bawaan |
+
+WAJIB menaikkan `Product/@Version` di setiap perubahan MSI. Ini satu-satunya
+tempat yang harus diedit manual; `AgentVersion` di registry dan nomor versi di
+halaman Pengaturan ikut dari sini, jadi kalau lupa, seluruh nomor versi yang
+tampil di web ikut bohong.
+
+Lintasan 2 Okt: `1.0.9.0` (terbaca di semua build sebelumnya) -> `1.0.10.0`
+(nomor versi jadi terbaca) -> `1.0.11.0` (`lpDesktop` + watchdog session 0) ->
+`1.0.12.0` (flag path seragam + log mode maintenance).
 
 Cek langsung di PC:
 
