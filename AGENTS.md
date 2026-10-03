@@ -706,7 +706,9 @@ menghasilkan MSI yang terpasang tapi tidak konek.
 - Transisi versi agent: `1.0.6.0` reconnect supervisor → `1.0.7.0` single reconnect authority
   (anti flapping) → `1.0.8.0` heartbeat timer bug → `1.0.9.0` heartbeat self-diagnosing + tick log →
     `1.0.10.0` nomor versi terbaca → `1.0.11.0` `lpDesktop` + watchdog session 0 →
-    `1.0.12.0` flag path seragam + log mode maintenance.
+    `1.0.12.0` flag path seragam + log mode maintenance ->
+    `1.0.13.0` maintenance ke registry + installer mengakhirinya, login card mockup,
+    log agent ke Nextcloud.
     Riwayat detail: `v3NetbillAgent/HANDOFF.md`.
 - Detail arsitektur & prosedur deploy: `v3NetbillAgent/README.md`.
 
@@ -2474,7 +2476,7 @@ Sekarang:
 
 | Yang | Nilai |
 |---|---|
-| `Product/@Version` | `1.0.12.0` |
+| `Product/@Version` | `1.0.13.0` |
 | `HKLM\...\Agent\AgentVersion` | `[ProductVersion]` — otomatis, tidak diketik |
 | `HKLM\...\Agent\InstalledBuildUtc` | `[InstallDate]` — properti MSI bawaan |
 
