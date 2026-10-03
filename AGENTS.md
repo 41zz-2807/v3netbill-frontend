@@ -2617,6 +2617,109 @@ angka dan bukan titik sebelum nilainya dipakai — kalau tidak, halaman ini akan
 menampilkan nomor versi yang **salah**, dan justru itu yang paling berbahaya
 karena orang akan mempercayainya.
 
+### 🔴 Task Manager justru DIBUKA saat pelanggan mulai sesi (3 Okt)
+
+Dilaporkan dari pemakaian nyata: saat login member/voucher, Task Manager masih
+bisa diklik. Seharusnya tidak boleh.
+
+Penyebabnya **satu baris** di `OnSessionStarted` yang memanggil
+`SetTaskManagerBlocked(false)` — jadi **membuka** Task Manager tepat di saat
+pelanggan mulai sesi berbayar. Baris itu sudah ada sejak commit `5f75dd3`
+(fitur idle-lock), **bukan regresi hari ini**.
+
+Yang membuatnya bertahan lama: tidak ada yang gagal. `dotnet build` lolos, log
+bersih, dan service tetap heartbeat — task manager-nya diam-diam boleh dibuka
+saja. Akibatnya selama sesi berjalan pelanggan bisa mematikan agent, jadi
+hitung mundur berhenti tanpa tercatat dan PC tetap bisa dipakai.
+
+Semua pemanggil diaudit ulang setelah perbaikan:
+
+| Pemanggil | Nilai |
+|---|---|
+| start service | `!maintenance` |
+| **sesi mulai** | **`true`** (dulu `false` — salah) |
+| sesi berhenti | `true` |
+| admin lock | `true` |
+| service berhenti | `false` |
+
+### Mode maintenance pindah ke registry + installer mengakhirinya (3 Okt, 1.0.13.0)
+
+Penyebab "PC tidak terkunci setelah install berikutnya" adalah skema, bukan
+kelalaian: **tidak ada komponen pun yang menghapus flag maintenance.** Satu-satunya
+jalan adalah `del` manual di cmd.
+
+Tiga alasan file diganti registry (`HKLM\Software\v3Netbill\Agent\MaintenanceMode`):
+
+1. Tidak ada penghapus — registry punya jalur: installer membersihkannya.
+2. MSI **tidak bisa** menghapus file di `%PUBLIC%`. `<RemoveFile>` hanya bisa di
+   Directory milik komponennya, dan pohon Directory MSI ini tidak punya
+   `%PUBLIC%` karena WiX tidak punya standard directory untuk itu.
+3. `SpecialFolder.CommonDocuments` **berbeda** antara user interaktif dan
+   LocalSystem — itu sebabnya pembaca tidak pernah sinkron.
+
+Karena itu mode maintenance berarti **PC TERBUKA tanpa penagihan**: service
+berhenti dan overlay tidak jalan, dan mode ini tidak boleh dibiarkan senyap.
+
+**Installer mengakhirinya**, dan urutannya penting: `MajorUpgrade
+Schedule="afterInstallInitialize"` + `ServiceControl Stop="both"` berarti service
+sudah berhenti di awal instalasi dan baru nyala di `StartServices`. Menghapus
+flag di tengah install tidak membuat lock screen muncul mendadak — lock kembali
+**tepat saat instalasi selesai**.
+
+Kotak **"Jaga mode maintenance"** di dialog untuk teknisi yang sedang repair.
+Default **TIDAK dicentang** = instalasi biasa selalu mengakhiri maintenance
+(itulah yang memperbaiki PC terjebak). `Condition="NOT KEEPMAINT"` — jadi
+property kosong berarti "akhiri".
+
+⚠️ **Mode maintenance tidak boleh memblokir Task Manager.** Penjaganya
+diletakkan **di dalam** `SetTaskManagerBlocked()`, bukan di tiap pemanggil —
+satu tempat menutup semua jalur.
+
+### 🔴 Kredensial Nextcloud: jangan pernah di source (3 Okt)
+
+Log agent + overlay dikirim ke Nextcloud tiap 5 menit lewat WebDAV
+(`Agent.Core/NextcloudLogUploader.cs`), supaya kasir tidak perlu Remote Desktop
+ke PC klien.
+
+Kredensialnya diisi **installer** lewat `Agent.Overlay.exe --set-nextcloud` dan
+disimpan di `HKLM`. Repo agent **publik** — URL, username, maupun password yang
+ditaruh di source atau `appsettings.json` akan terbaca seluruh dunia. Pola yang
+sama seperti `AgentToken`.
+
+⚠️ **Kenapa bukan `RegistryValue` di Product.wxs** — padahal itu cara
+paling wajar: nilai properti MSI **tidak bertahan antar instalasi**. Field dialog
+yang dikosongkan — keadaan normal saat operator sok upgrade — akan menulis string
+kosong dan **menimpa nilai lama**. Persis pola yang dulu menghapus `PcId` dan
+membuat agent jatuh ke default `PC001` (terlihat di log PC 2 Okt 17:04). Jadi
+penulisan dipindah ke custom action yang **tidak menulis apa pun kalau
+argumennya kosong**.
+
+### 🔴 Login card mengikuti mockup — dan mockup-nya greyscale (3 Okt)
+
+Mockup `form_login_webdanpc.jpg` (4001×4001) **diekspor dalam GREYSCALE**:
+0 dari 4000 piksel sampel punya selisih channel warna. Jadi tidak ada warna yang
+bisa diambil darinya — struktur yang diikuti, palet dipetakan ke slate yang
+sudah dipakai aplikasi.
+
+- Web: field garis bawah + ikon amplop/gembok inline SVG, tombol pil gelap
+  kapital. **"Remember me" dan "Forgot Password?" tidak diimplementasikan** — tidak ada
+  implementasinya, dan "Remember me" bertentangan dengan `sessionStorage` yang
+  sengaja dipakai supaya sesi kasir ikut terkunci.
+- Desktop: `UnderlineFieldTemplate` / `UnderlinePasswordTemplate` di `App.xaml`
+  (WPF butuh `PART_ContentHost`, dan border built-in harus dibuang). Radius
+  kartu 16→28 = 6,7% lebar kartu, hasil **mengukur** mockup. Watermark pakai
+  `DataTrigger Text=""` supaya placeholder hilang begitu ada isian.
+- Aksen teal pindah dari tombol ke **garis bawah + caret**; kalau tombol juga
+  memakainya, tombol tidak lagi jadi satu-satunya hal gelap di kartu.
+- Latar belakang **tidak** diubah — menggradien abu akan membatalkan pengukuran
+  kontras yang sudah tercatat di bagian "Latar belakang gambar".
+
+### Pelajaran: `<Property>` tanpa `Value` — dan satu siklus CI terbuang
+
+`WixUIBmp_Banner` (tanpa `_`) menggagalkan build dengan `WIX0094`. Terlewat
+karena dialog itu ditulis ulang, dan **hanya ketahuan dari log CI** — build lokal
+memang tidak bisa menangkap `WIX0094` (Butuh Windows).
+
 ### ⚠️ Uninstall: PIN diminta DUA KALI, dan cancel = agent kehilangan identitas (2 Okt)
 
 Kejadian nyata. `uninstall-old-agent.bat` memverifikasi PIN ke server dengan
