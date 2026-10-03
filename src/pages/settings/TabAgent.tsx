@@ -7,10 +7,18 @@ export default function TabAgent({
   ctx,
   otpChatIdAwal,
   otpTerisiAwal,
+  ncUrlAwal,
+  ncUserAwal,
+  ncFolderAwal,
+  ncPasswordTerisi,
 }: {
   ctx: SettingsCtx
   otpChatIdAwal: string
   otpTerisiAwal: boolean
+  ncUrlAwal: string
+  ncUserAwal: string
+  ncFolderAwal: string
+  ncPasswordTerisi: boolean
 }) {
   const { busy, run, setErr } = ctx
   const [pin, setPin] = useState('')
@@ -21,6 +29,17 @@ export default function TabAgent({
   const [otpChatId, setOtpChatId] = useState(otpChatIdAwal)
   const [otpTerisi, setOtpTerisi] = useState(otpTerisiAwal)
   const [otpMsg, setOtpMsg] = useState<string | null>(null)
+
+  // ⚠️ Password Nextcloud TIDAK pernah dimuat ke form. Field ini tampil kosong
+  // dengan placeholder "sudah tersimpan", persis seperti Bot Token di bawah.
+  // Kalau password ikut dimuat, ia masuk ke DOM dan bisa dibaca skrip di
+  // browser — dan `GET /api/settings` memang mengembalikannya apa adanya.
+  const [ncUrl, setNcUrl] = useState(ncUrlAwal)
+  const [ncUser, setNcUser] = useState(ncUserAwal)
+  const [ncPassword, setNcPassword] = useState('')
+  const [ncFolder, setNcFolder] = useState(ncFolderAwal)
+  const [ncTerisi, setNcTerisi] = useState(ncPasswordTerisi)
+  const [ncMsg, setNcMsg] = useState<string | null>(null)
 
   async function submitPin() {
     await run('pin', async () => {
@@ -83,6 +102,51 @@ export default function TabAgent({
    * Simpan konfigurasi OTP Telegram. Kosongkan token untuk mematikan fitur —
    * agent akan kembali memakai PIN emergency bawaan (rollback).
    */
+  /**
+   * Simpan konfigurasi Nextcloud lalu kirim ke agent yang sedang terhubung.
+   *
+   * Password DIKOSONGKAN tidak berarti dihapus. Kalau dihapus, admins tidak
+   * bisa menyimpan username/folder tanpa mengetik ulang password yang
+   * memang tidak pernah ditampilkan lagi. Jadi: password terkirim hanya kalau
+   * diketik. Tombol "Matikan" yang benar-benar mengosongkan semuanya.
+   */
+  async function saveNextcloud(matikan: boolean) {
+    await run('nc', async () => {
+      try {
+        setErr(null)
+        if (matikan) {
+          await patchSetting('nextcloud_url', '')
+          await patchSetting('nextcloud_user', '')
+          await patchSetting('nextcloud_password', '')
+          await patchSetting('nextcloud_folder', '')
+          setNcUrl('')
+          setNcUser('')
+          setNcPassword('')
+          setNcFolder('log-pc-warnet')
+          setNcTerisi(false)
+          setNcMsg('Upload log ke Nextcloud dimatikan di semua PC.')
+          return
+        }
+
+        await patchSetting('nextcloud_url', ncUrl.trim())
+        await patchSetting('nextcloud_user', ncUser.trim())
+        await patchSetting('nextcloud_folder', ncFolder.trim() || 'log-pc-warnet')
+        if (ncPassword.trim()) {
+          await patchSetting('nextcloud_password', ncPassword.trim())
+          setNcPassword('')
+        }
+        setNcTerisi(true)
+        setNcMsg(
+          ncPassword.trim()
+            ? 'Tersimpan. Log dikirim tiap 5 menit, dan langsung dicoba sekarang juga.'
+            : 'Tersimpan. Password tidak diubah karena field dikosongkan.',
+        )
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e))
+      }
+    })
+  }
+
   async function saveOtp(matikan: boolean) {
     await run('otp', async () => {
       try {
@@ -160,6 +224,87 @@ export default function TabAgent({
         </div>
         {pinBypassMsg && <div className="mt-2 text-sm text-green-700">{pinBypassMsg}</div>}
       </SettingsCard>
+
+        <SettingsCard
+          title="Log ke Nextcloud"
+          description="Agent mengirim log agent + overlay tiap 5 menit, supaya kasir tidak perlu Remote Desktop ke PC klien."
+        >
+          <label className="block">
+            <span className="mb-1 block text-sm text-slate-600">URL Nextcloud</span>
+            <input
+              value={ncUrl}
+              onChange={(e) => setNcUrl(e.target.value)}
+              placeholder="https://cloud.example.id"
+              autoComplete="off"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="mt-2 block">
+            <span className="mb-1 block text-sm text-slate-600">Username</span>
+            <input
+              value={ncUser}
+              onChange={(e) => setNcUser(e.target.value)}
+              placeholder="akun khusus log, bukan akun admin"
+              autoComplete="off"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="mt-2 block">
+            <span className="mb-1 block text-sm text-slate-600">Password</span>
+            <input
+              type="password"
+              value={ncPassword}
+              onChange={(e) => setNcPassword(e.target.value)}
+              placeholder={
+                ncTerisi ? 'Sudah tersimpan — isi lagi untuk mengganti' : 'Kosongkan untuk tidak memakai'
+              }
+              autoComplete="off"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="mt-2 block">
+            <span className="mb-1 block text-sm text-slate-600">Folder</span>
+            <input
+              value={ncFolder}
+              onChange={(e) => setNcFolder(e.target.value)}
+              placeholder="log-pc-warnet"
+              autoComplete="off"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void saveNextcloud(false)}
+              disabled={busy !== null || !ncUrl.trim() || !ncUser.trim()}
+              className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
+            >
+              {busy === 'nc' ? 'Menyimpan...' : 'Simpan & Kirim'}
+            </button>
+            {ncTerisi && (
+              <button
+                type="button"
+                onClick={() => void saveNextcloud(true)}
+                disabled={busy !== null}
+                className="rounded-md bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                Matikan
+              </button>
+            )}
+          </div>
+
+          {ncMsg && <div className="mt-2 text-sm text-green-700">{ncMsg}</div>}
+
+          <p className="mt-3 text-xs text-slate-500">
+            Diubah sekali di sini, berlaku ke semua PC tanpa pasang ulang. Password tidak pernah
+            ditampilkan lagi setelah disimpan. Disarankan memakai akun Nextcloud khusus untuk log,
+            bukan akun admin.
+          </p>
+        </SettingsCard>
 
       <SettingsCard
         title="OTP Telegram"

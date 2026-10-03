@@ -37,6 +37,10 @@ export default function SettingsPage() {
   const [grace, setGrace] = useState('')
   const [otpChatId, setOtpChatId] = useState('')
   const [otpTerisi, setOtpTerisi] = useState(false)
+  const [ncUrl, setNcUrl] = useState('')
+  const [ncUser, setNcUser] = useState('')
+  const [ncFolder, setNcFolder] = useState('log-pc-warnet')
+  const [ncPasswordTerisi, setNcPasswordTerisi] = useState(false)
   const [installed, setInstalled] = useState<InstallerMeta | null>(null)
   const [apk, setApk] = useState<InstallerMeta | null>(null)
   const [wallFname, setWallFname] = useState<string | null>(null)
@@ -51,7 +55,15 @@ export default function SettingsPage() {
       setHarga(s.harga_per_menit ?? '')
       setGrace(s.grace_period_detik ?? '')
       setOtpChatId(s.agent_otp_chat_id ?? '')
-      setOtpTerisi(Boolean(s.agent_otp_bot_token))
+        setOtpTerisi(Boolean(s.agent_otp_bot_token))
+        // ⚠️ nextcloud_password sengaja TIDAK dimuat ke mana pun di frontend.
+        // Yang masuk ke form cuma "sudah tersimpan atau belum". Nilai aslinya
+        // tetap ada di `s` karena `fetchSettings()` mengambil seluruh Setting,
+        // tapi tidak pernah ditulis ke state maupun ke DOM.
+        setNcUrl(s.nextcloud_url ?? '')
+        setNcUser(s.nextcloud_user ?? '')
+        setNcFolder(s.nextcloud_folder || 'log-pc-warnet')
+        setNcPasswordTerisi(Boolean(s.nextcloud_password))
       setInstalled(parseMeta<InstallerMeta>(s.installer_meta))
       setApk(parseMeta<InstallerMeta>(s.apk_meta))
       setWallFname(s.wallpaper_lockscreen_path ?? null)
@@ -145,7 +157,15 @@ export default function SettingsPage() {
         />
       )}
       {tab === 'agent' && (
-        <TabAgent ctx={ctx} otpChatIdAwal={otpChatId} otpTerisiAwal={otpTerisi} />
+        <TabAgent
+          ctx={ctx}
+          otpChatIdAwal={otpChatId}
+          otpTerisiAwal={otpTerisi}
+          ncUrlAwal={ncUrl}
+          ncUserAwal={ncUser}
+          ncFolderAwal={ncFolder}
+          ncPasswordTerisi={ncPasswordTerisi}
+        />
       )}
       {tab === 'instalasi' && (
         <TabInstalasi
