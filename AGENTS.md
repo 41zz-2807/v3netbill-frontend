@@ -708,7 +708,8 @@ menghasilkan MSI yang terpasang tapi tidak konek.
     `1.0.10.0` nomor versi terbaca → `1.0.11.0` `lpDesktop` + watchdog session 0 →
     `1.0.12.0` flag path seragam + log mode maintenance ->
     `1.0.13.0` maintenance ke registry + installer mengakhirinya, login card mockup,
-    log agent ke Nextcloud.
+    log agent ke Nextcloud -> `1.0.14.0` konfigurasi Nextcloud dari web ->
+    `1.0.15.0` perbaikan tampilan kartu login.
     Riwayat detail: `v3NetbillAgent/HANDOFF.md`.
 - Detail arsitektur & prosedur deploy: `v3NetbillAgent/README.md`.
 
@@ -2476,7 +2477,7 @@ Sekarang:
 
 | Yang | Nilai |
 |---|---|
-| `Product/@Version` | `1.0.13.0` |
+| `Product/@Version` | `1.0.15.0` |
 | `HKLM\...\Agent\AgentVersion` | `[ProductVersion]` — otomatis, tidak diketik |
 | `HKLM\...\Agent\InstalledBuildUtc` | `[InstallDate]` — properti MSI bawaan |
 
@@ -2618,6 +2619,48 @@ Karena tidak ada pemisah, versi yang lebih panjang bisa **terpotong**
 angka dan bukan titik sebelum nilainya dipakai — kalau tidak, halaman ini akan
 menampilkan nomor versi yang **salah**, dan justru itu yang paling berbahaya
 karena orang akan mempercayainya.
+
+### 🔴 Watermark PASSWORD tidak hilang — `PasswordBox.Password` tidak mengikat (3 Okt)
+
+Dilaporkan dari pemakaian nyata: teks "PASSWORD" tetap menempel di atas
+teks yang diketik di kolom password.
+
+Penyebabnya bukan layout/CSS: watermark dikendalikan `DataTrigger` yang
+mengikat ke `PasswordBox.Password`, dan **property itu tidak memberi
+notifikasi ke binding WPF**. Jadi trigger-nya tidak pernah berubah dan
+placeholder tetap tampil.
+
+`TextBox.Text` tidak terkena masalah yang sama — tapi keduanya sekarang
+dikendalikan dari code-behind (`TextChanged` + `PasswordChanged` di
+`MainWindow.xaml.cs`), supaya tidak ada dua mekanisme berbeda di file yang
+sama.
+
+⚠️ Pola "watermark pakai DataTrigger ke Password/PasswordBox" **tidak
+bisa dipakai**. Sudah gagal sekali dan gejalanya sangat menyesatkan, karena
+layar terlihat benar — hanya ada teks yang tidak hilang.
+
+### Konfigurasi Nextcloud pindah ke halaman Pengaturan (3 Okt, 1.0.15.0)
+
+Empat nilai (URL, username, password, folder) diatur dari tab **Agent &
+Keamanan**, bukan dari dialog installer. Alasannya installer hanya dipakai
+sekali, sedangkan kredensial ini perlu bisa berubah kapan saja.
+
+Dialog installer **tetap ada** sebagai nilai awal untuk PC yang belum pernah
+konek, tapi begitu PC itu register, konfigurasi di web yang berlaku.
+
+Pola yang dipakai persis sama dengan token bot Telegram: `patchValue`
+mendorong ke agent yang sedang terhubung, jadi mengorbankan password saja
+sudah langsung berlaku di semua PC tanpa menunggu agent konek ulang.
+
+⚠️ **Password tidak pernah dimuat ke form.** Field itu kosong dengan
+placeholder "sudah tersimpan" — persis seperti Bot Token. Alasannya
+`GET /api/settings` mengembalikan nilai aslinya apa adanya, jadi memuatnya ke
+state cuma memindahkannya ke DOM tempat skrip browser bisa membacanya.
+
+Password yang **dikosongkan tidak berarti dihapus**; kalau dihapus, admin
+tidak bisa menyimpan username/folder tanpa mengetik ulang password yang memang
+tidak pernah ditampilkan lagi. Tombol "Matikan" yang benar-benar mengosongkan
+semuanya.
 
 ### 🔴 Task Manager justru DIBUKA saat pelanggan mulai sesi (3 Okt)
 
