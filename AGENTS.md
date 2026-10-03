@@ -709,7 +709,8 @@ menghasilkan MSI yang terpasang tapi tidak konek.
     `1.0.12.0` flag path seragam + log mode maintenance ->
     `1.0.13.0` maintenance ke registry + installer mengakhirinya, login card mockup,
     log agent ke Nextcloud -> `1.0.14.0` konfigurasi Nextcloud dari web ->
-    `1.0.15.0` perbaikan tampilan kartu login.
+    `1.0.15.0` perbaikan tampilan kartu login -> `1.0.16.0` kolom Nextcloud dibuang dari
+    installer -> `1.0.17.0` nama berkas log pakai nama PC.
     Riwayat detail: `v3NetbillAgent/HANDOFF.md`.
 - Detail arsitektur & prosedur deploy: `v3NetbillAgent/README.md`.
 
@@ -2477,7 +2478,7 @@ Sekarang:
 
 | Yang | Nilai |
 |---|---|
-| `Product/@Version` | `1.0.15.0` |
+| `Product/@Version` | `1.0.17.0` |
 | `HKLM\...\Agent\AgentVersion` | `[ProductVersion]` — otomatis, tidak diketik |
 | `HKLM\...\Agent\InstalledBuildUtc` | `[InstallDate]` — properti MSI bawaan |
 
@@ -2661,6 +2662,52 @@ Password yang **dikosongkan tidak berarti dihapus**; kalau dihapus, admin
 tidak bisa menyimpan username/folder tanpa mengetik ulang password yang memang
 tidak pernah ditampilkan lagi. Tombol "Matikan" yang benar-benar mengosongkan
 semuanya.
+
+### 🔴 Nama berkas log di Nextcloud: UUID, bukan nama PC (3 Okt, 1.0.17.0)
+
+Upload ke Nextcloud **berhasil end-to-end** diuji pertama kalimdash\)- tapi
+nama berkasnya berupa UUID:
+
+```
+16edfa47-4c1a-4bb6-b4e5-5e9607e655bd-agent-2026-10-03.log
+```
+
+Yang bisa dibaca manusia cuma `PC001`. Dan justru folder itu dibuat supaya
+kasir **tidak perlu naik ke PC klien** — nama UUID membuat seluruh advantages itu
+gugur, karena orang tidak tahu berkas itu milik PC yang sedang ia perbaiki.
+
+`pcId` memang UUID, jadi agent tidak bisa menebaknya sendiri; **server yang
+mengetahuinya**. Karena itu `namaPc` ikut dikirim dalam
+`agent:nextcloud_config`, disimpan ke registry sebagai `PcName`, lalu dipakai
+sebagai nama berkas.
+
+Dua detail yang mudah terlewat:
+
+- Nama PC harus diambil **per `pcId`** saat broadcast. Mengambilnya sekali untuk
+  semua agent akan memberi nama yang sama ke semuanya.
+- Fallback ke `pcId` tetap dipakai, supaya nama berkas tidak pernah kosong kalau
+  config-nya belum pernah sampai.
+
+### Kolom Nextcloud di installer — sudah DIHAPUS (3 Okt, 1.0.16.0)
+
+Awalnya dialog installer punya kolom URL/username/password/folder Nextcloud.
+Setelah ditelusuri ulang, **tidak ada skenario yang diselamatkan kolom itu**:
+
+- Agent membaca config dari **registry**, bukan dari server tiap kali upload —
+  server hanya menulis ke registry saat register atau saat admin mengubahnya.
+  Jadi begitu PC register sekali, config tersimpan dan upload tetap jalan walau
+  server mati.
+- PC yang **belum pernah register** tidak punya config dari kolom itu; tapi PC
+  seperti itu juga **tidak bisa billing**, karena tanpa ServerUrl/PcId/
+  AgentToken dia tidak pernah konek sama sekali.
+- Kalau operator mengisinya di installer tapi admin tidak pernah mengaturnya di
+  web, agent punya config sementara halaman web menampilkan "belum diisi" —
+  dualisme yang tidak perlu ada.
+- Kalau setting di server hilang, memulihkannya berarti memasang ulang MSI di
+  **setiap** PC — persis seperti kasus PcId hilang, dan tidak lebih murah.
+
+Installer sekarang hanya menanyakan tiga hal: **Server URL, PC ID, Agent
+Token**. Web jadi satu-satunya sumber konfigurasi Nextcloud.
 
 ### 🔴 Task Manager justru DIBUKA saat pelanggan mulai sesi (3 Okt)
 
