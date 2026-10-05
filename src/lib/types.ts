@@ -73,6 +73,15 @@ export interface DashboardPc {
   ipClient: string
   status: PcStatus
   lastHeartbeatAt: string | null
+  /**
+   * Sisa detik sebelum PC dimatikan otomatis. `null` = tidak akan dimatikan
+   * (sedang ada sesi, ditandai rusak, atau fiturnya dimatikan di Pengaturan).
+   *
+   * ⚠️ Server yang menghitung dan yang benar-benar mematikan. Nilai ini hanya
+   * informatif — kalau frontend yang mematikan, menutup tab kasir akan membuat
+   * PC tidak pernah mati.
+   */
+  matiDalamDetik: number | null
   session: DashboardSession | null
 }
 

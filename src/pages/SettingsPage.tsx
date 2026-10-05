@@ -16,7 +16,7 @@ import { BUSY_TEXT, type SettingsCtx } from './settings/shared.ts'
 type TabId = 'tarif' | 'agent' | 'instalasi' | 'pengguna' | 'data' | 'log' | 'diagnosa'
 
 const TABS: TabNavItem[] & { id: TabId }[] = [
-  { id: 'tarif', label: 'Tarif', hint: 'Harga per menit & grace period' },
+  { id: 'tarif', label: 'Tarif', hint: 'Harga per menit, grace period, auto-matikan PC' },
   { id: 'agent', label: 'Agent & Keamanan', hint: 'PIN uninstall, bypass, OTP' },
   { id: 'instalasi', label: 'Instalasi', hint: 'MSI, APK, wallpaper' },
   { id: 'pengguna', label: 'Pengguna', hint: 'Tambah operator, ganti sandi' },
@@ -35,6 +35,7 @@ export default function SettingsPage() {
 
   const [harga, setHarga] = useState('')
   const [grace, setGrace] = useState('')
+  const [autoMati, setAutoMati] = useState('')
   const [otpChatId, setOtpChatId] = useState('')
   const [otpTerisi, setOtpTerisi] = useState(false)
   const [ncUrl, setNcUrl] = useState('')
@@ -54,6 +55,7 @@ export default function SettingsPage() {
       const s = await fetchSettings()
       setHarga(s.harga_per_menit ?? '')
       setGrace(s.grace_period_detik ?? '')
+      setAutoMati(s.auto_shutdown_menit ?? '5')
       setOtpChatId(s.agent_otp_chat_id ?? '')
         setOtpTerisi(Boolean(s.agent_otp_bot_token))
         // ⚠️ nextcloud_password sengaja TIDAK dimuat ke mana pun di frontend.
@@ -152,6 +154,8 @@ export default function SettingsPage() {
           ctx={ctx}
           harga={harga}
           grace={grace}
+          autoMati={autoMati}
+          setAutoMati={setAutoMati}
           setHarga={setHarga}
           setGrace={setGrace}
         />

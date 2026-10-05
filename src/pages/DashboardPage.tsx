@@ -9,6 +9,10 @@ const WS_URL = window.location.origin
 
 export default function DashboardPage() {
   const [pcs, setPcs] = useState<DashboardPc[]>([])
+  /** Waktu saat payload `dashboard:pc_update` terakhir diterima. */
+  const [payloadMs, setPayloadMs] = useState(() => Date.now())
+  /** Jam lokal, satu tick per detik untuk seluruh halaman. */
+  const [sekarangMs, setSekarangMs] = useState(() => Date.now())
   const [logs, setLogs] = useState<DashboardLog[]>([])
   const [connected, setConnected] = useState(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
@@ -105,8 +109,18 @@ export default function DashboardPage() {
       setConnectionError(`Gagal koneksi: ${err.message}`)
     })
 
-    socket.on('dashboard:pc_update', (data: { pcs: DashboardPc[] }) => {
+    // ⚠️ SATU interval untuk seluruh halaman, bukan satu per kartu.
+    // `pcs.map()` berjalan di dalam callback, jadi `useState`/`useEffect`
+    // tidak boleh dipanggil di sana (violations `rules-of-hooks`). Selain itu,
+    // satu interval per kartu berarti 20 timer berjalan bersamaan untuk 20 PC.
+    const jam = setInterval(() => setSekarangMs(Date.now()), 1000)
+
+    socket.on('dashboard:pc_update', (data: { pcs: DashboardPc[]; at?: string }) => {
       setPcs(data.pcs)
+      // Jangkar hitung mundur auto-matikan. Nilai `matiDalamDetik` dihitung
+      // server pada saat payload dikirim, jadi untuk melanjutkan hitungannya
+      // lokal kita harus tahu payload itu berumur berapa detik.
+      setPayloadMs(Date.parse(data.at ?? '') || Date.now())
     })
 
     socket.on('dashboard:log', () => {
@@ -118,6 +132,7 @@ export default function DashboardPage() {
     })
 
     return () => {
+      clearInterval(jam)
       socket.disconnect()
     }
   }, [])
@@ -252,6 +267,24 @@ export default function DashboardPage() {
             // ditampilkan sama sekali.
             const sedangBerjalan = sesi !== null && pc.status === 'ACTIVE'
 
+            // Hitung mundur auto-matikan. Nilai mulainya datang dari server,
+            // lalu dikurangi lokal setiap detik supaya angka ikut bergerak —
+            // server hanya menyiarkan ulang tiap ~10 detik, jadi kalau tidak
+            // ada penghitung lokal angkanya terlihat macet.
+            //
+            // ⚠️ Server tetap satu-satunya pihak yang benar-benar mematikan PC.
+            // Hitung mundur ini murni informatif; kalau frontend yang matikan,
+            // kasir yang menutup tab akan membuat PC tidak pernah mati.
+            // Dihitung dari jam lokal dikurangi umur payload, BUKAN dari
+            // penghitung yang dikurangi satu per detik. Alasannya: tiap
+            // broadcast baru (~10 detik) mengirim `matiDalamDetik` yang sudah
+            // berkurang, jadi kalau penghitung lokal ikut berkurang, keduanya
+            // saling meniadakan dan angkanya terlihat macet lalu melompat.
+            const sisaMati =
+              sedangBerjalan || pc.matiDalamDetik === null
+                ? null
+                : Math.max(0, pc.matiDalamDetik - Math.floor((sekarangMs - payloadMs) / 1000))
+
             const warnaStatus =
               pc.status === 'ACTIVE'
                 ? 'ok'
@@ -275,7 +308,14 @@ export default function DashboardPage() {
                       {sedangBerjalan ? formatDuration(sisa) : statusLabel}
                     </div>
                     <div className="pcc__time-label">
-                      {sedangBerjalan ? 'SISA WAKTU' : 'TIDAK ADA SESI'}
+                      {sedangBerjalan
+                        ? 'SISA WAKTU'
+                        : sisaMati !== null
+                          ? // ⚠️ Warna makin mencolok di detik-detik terakhir.
+                            // Kalau tetap abu-abu, kasir tidak sempat bereaksi
+                            // dan PC mati tepat saat dia melihat.
+                            `MATI DALAM ${formatHitungMundur(sisaMati)}`
+                          : 'TIDAK ADA SESI'}
                     </div>
                   </div>
 
@@ -569,6 +609,24 @@ function IconMatikan() {
   )
 }
 
+/**
+ * Format hitung mundur auto-matikan: `M:SS`, atau `H:MM:SS` kalau lewat 1 jam.
+ *
+ * ⚠️ BUKAN `formatDuration()` dari `lib/api.ts` — fungsi itu untuk sisa waktu
+ * sesi, jadi 149 detik di sana terbaca "2j 29:29" (jam didahulukan 0, jadi
+ * "0j 29:29" yang tampil sebagai "2j"). Untuk hitung mundur, yang dipakai
+ * cuma menit dan detik.
+ */
+function formatHitungMundur(detik: number): string {
+  const d = Math.max(0, Math.floor(detik))
+  const jam = Math.floor(d / 3600)
+  const menit = Math.floor((d % 3600) / 60)
+  const sec = d % 60
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  if (jam > 0) return `${jam}:${pad(menit)}:${pad(sec)}`
+  return `${menit}:${pad(sec)}`
+}
+
 const LOG_EVENT_LABEL: Record<string, string> = {
   'session:started_dashboard': 'Sesi Berjalan',
   'session:started': 'Sesi Berjalan',
@@ -583,6 +641,7 @@ const LOG_EVENT_LABEL: Record<string, string> = {
   pc_unlock: 'PC Dibuka',
   pc_unlocked: 'PC Dibuka',
   pc_shutdown: 'PC Dimatikan',
+  pc_shutdown_auto: 'PC Mati Otomatis',
 }
 
 const LOG_EVENT_VARIANT: Record<string, 'default' | 'success' | 'warning' | 'danger' | 'info'> = {
