@@ -248,9 +248,10 @@ Logika bisnis yang sudah berjalan:
 ## Catatan migrasi
 
 - Perintah migrasi: `docker compose exec v3netbill-backend npx prisma migrate dev --name <nama>`
-- Migrasi applied (5): `20260922142242_init`, `20260925072311_add_transaction_koreksi`,
+- Migrasi applied (6): `20260922142242_init`, `20260925072311_add_transaction_koreksi`,
   `20260925072645_add_transaction_void`, `20260925163314_add_activity_log`,
-  `20260930100153_add_perangkat_notifikasi`.
+  `20260930100153_add_perangkat_notifikasi`, `20261005083648_pc_rusak`.
+
 ## Referensi API — diverifikasi dari kode
 
 Dihasilkan dengan membaca decorator di `backend/src/**/*.controller.ts` (28 Sep 2026).
@@ -293,6 +294,7 @@ tanpa JWT sama sekali.
 | GET | `/api/pcs/ringkas` | **PUBLIC** (lihat catatan di bawah) |
 | POST | `/api/pcs` | — |
 | PATCH | `/api/pcs/:id/nama` | ADMIN |
+| PATCH | `/api/pcs/:id/rusak` | ADMIN |
 | DELETE | `/api/pcs/:id` | ADMIN |
 | POST | `/api/pcs/:id/unlock` | ADMIN |
 | GET | `/api/accounts` | — |
@@ -368,6 +370,49 @@ Yang **tidak** dikirim dan tidak boleh ditambah: `id`, `agentToken`,
 Sisa waktu dihitung persis seperti `getDashboardData()` — dari
 `Account.sisaWaktuDetik` dikurangi selisih waktu — jadi angkanya tidak mungkin
 berbeda dengan kartu PC di dashboard.
+
+### 🔴 Flag "PC rusak" — bukan arti PC ini benar-benar rusak
+
+Kolom `Pc.rusak` + `Pc.alasanRusak` (migrasi `20261005083648_pc_rusak`). Ini flag
+**operasional**: PC sedang diservis atau sengaja dikosongkan. Yang dijamin hanya
+dua — PC itu tidak bisa dipakai, dan tidak muncul di halaman mana pun kecuali
+Halaman PC.
+
+⚠️ **Jangan pernah menyaring laporan dengan flag ini.** Rekap dihitung dari
+`Transaction`/`Session`, jadi PC yang ditandai tetap masuk laporan.
+
+Tiga titik baca yang menutup dashboard, login, dan mobile sekaligus:
+
+| Fungsi | Menutup |
+|---|---|
+| `PcService.ringkas()` | Halaman Login (publik) |
+| `PcService.findAll()` tanpa param | Mobile `GET /api/pcs` |
+| `SessionService.getDashboardData()` | Dashboard web + Mobile (WS) |
+
+⚠️ **Halaman PC ikut memakai `findAll()`, jadi jangan disaring di sana** — kalau
+begitu flag-nya tidak punya tempat untuk dibatalkan. Karena itu `findAll()` punya
+argumen `termasukRusak`, dan `?termasukRusak=true` **hanya diterima ADMIN**
+(dicek di body controller, bukan `@Roles()`, karena kasir tetap boleh membaca
+daftar PC biasa).
+
+⚠️ **Penjaga sesi HARUS di `createSessionAndStart()`, bukan di tiap pemanggil.**
+Tiga cara mulai sesi — `loginRequest`, `startFromDashboard`,
+`createVoucherAndStart` — semuanya lewat fungsi itu, jadi satu titik menutup
+semuanya termasuk percobaan login langsung dari layar PC yang tidak bisa dicegah
+dari frontend. Dan pengecekan `pc.rusak` **wajib di atas** penulisan
+`lastUsedAt`, kalau tidak voucher pelanggan ikut terpakai tanpa sesi jalan.
+
+⚠️ **Urutan di `setRusak()` bukan gaya penulisan.** Sesi dihentikan → layar
+dikunci → flag ditulis → broadcast. Kalau flag ditulis dulu, ada celah PC sudah
+disingkirkan dari dashboard tapi sesinya masih jalan, jadi kasir tidak pernah
+melihat sesi itu.
+
+⚠️ **`remove()` menolak PC yang ditandai dengan 409.** Menghapus PC menghapus
+sesinya dengan `deleteMany`, jadi seluruh riwayat transaksinya hilang permanen.
+PC rusak justru PC yang paling mungkin perlu ditelusuri ulang. Penolakan ditegakkan
+di server; `disabled` di frontend cuma biar kasir tidak salah klik.
+
+Tes: `backend/test/pc-rusak.spec.ts` (8) + `test/pc-rusak-service.spec.ts` (10).
 
 ### 🔴 `namaPc` itu LABEL, bukan identitas — tapi punya 3 cache yang wajib di-invalidate
 
