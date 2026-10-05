@@ -152,6 +152,8 @@ export default function TransactionsPage() {
                       month: 'short',
                       hour: '2-digit',
                       minute: '2-digit',
+                      // ⚠️ WAJIB — lihat catatan di `formatWaktu()` pada `src/lib/api.ts`.
+                      timeZone: 'Asia/Jakarta',
                     })}
                   </td>
                   <td className="px-4 py-2 font-medium text-slate-900">

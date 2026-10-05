@@ -45,6 +45,9 @@ export function formatDateIndo(dateStr: string): string {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    // ⚠️ WAJIB — lihat catatan di `formatWaktu()` pada `src/lib/api.ts`.
+    // Tanpa `timeZone`, tampilan ikut zona PC dan bisa bergeser 7 jam.
+    timeZone: 'Asia/Jakarta',
   })
 }
 

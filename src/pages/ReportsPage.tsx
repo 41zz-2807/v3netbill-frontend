@@ -40,7 +40,15 @@ function daysAgo(n: number): string {
 
 function labelTanggal(t: string): string {
   return new Date(t + 'T00:00:00Z')
-    .toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })
+    .toLocaleDateString('id-ID', {
+      day: '2-digit',
+      month: 'short',
+      // ⚠️ WAJIB — lihat catatan di `formatWaktu()` pada `src/lib/api.ts`.
+      // String `T00:00:00Z` berarti 00:00 UTC = 07:00 WIB, jadi tanggalnya
+      // tidak bergeser di zona WIB — tapi PC kasir yang disetel di zona
+      // belakang UTC (mis. UTC-5) akan melihat tanggalnya mundur satu hari.
+      timeZone: 'Asia/Jakarta',
+    })
     .replace('.', '')
 }
 

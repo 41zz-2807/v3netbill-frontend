@@ -180,6 +180,278 @@ body {
 }
 
 /* ============================================================
+   Halaman login + daftar status PC di samping (satu kartu)
+   ============================================================
+
+   `.login-container--pc` memakai lebar & radius yang sama dengan
+   `.login-container` supaya dua tampilan ini terasa satu keluarga, hanya
+   kartu login yang bertambah tinggi karena daftar PC di sebelahnya. */
+.login-container--pc {
+  max-width: min(720px, calc(100vw - 24px));
+  padding: 0;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.login-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+/* ---------- kolom kiri: daftar PC (logo sudah pindah ke kolom form) ---------- */
+.login-pc {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 24px 26px 24px 30px;
+}
+
+.login-pc__kepala {
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.login-pc__judul {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.login-pc__rinci {
+  font-size: 11.5px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+/* ⚠️ Tinggi daftar TIDAK boleh menyesuaikan isi. Kalau ikut tinggi, kartu
+   ikut memanjang setiap kali jumlah PC bertambah (terukur: 7 PC = 419px,
+   14 PC = 694px). Jadi tingginya dikunci, dan PC yang tidak muat digulir. */
+.login-pc__daftar {
+  margin-top: 4px;
+  flex: 0 1 auto;
+  height: 274px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.login-pc__daftar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.login-pc__daftar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.login-pc__kosong {
+  padding: 14px 2px;
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.login-pc__baris {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 2px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.login-pc__baris:last-child {
+  border-bottom: none;
+}
+
+/* Indikator bulat: hijau berdenyut, kuning & merah diam. */
+.login-pc__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: 0 0 9px;
+  position: relative;
+  background: #f59e0b;
+}
+
+.login-pc__dot.is-dipakai {
+  background: #10b981;
+}
+
+.login-pc__dot.is-offline {
+  background: #ef4444;
+}
+
+/* Cincin yang membesar lalu hilang — hanya untuk PC yang sedang dipakai.
+   Warna kuning dan merah sengaja TIDAK berdenyut supaya operator bisa
+   membedakan "dipakai" dari sekadar "tersedia" dan "offline" sekilas. */
+@keyframes login-pc-denyut {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  70%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+.login-pc__dot.is-dipakai::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: #10b981;
+  animation: login-pc-denyut 1.9s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-pc__dot.is-dipakai::after {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+.login-pc__nama {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+
+.login-pc__tipe {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #fef3e2;
+  color: #b45309;
+}
+
+.login-pc__tipe.is-dipakai {
+  background: #e8f7ee;
+  color: #047857;
+}
+
+.login-pc__tipe.is-offline {
+  background: #fdecec;
+  color: #b91c1c;
+}
+
+.login-pc__sisa {
+  margin-left: auto;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.login-pc__sisa.is-kosong {
+  color: #cbd5e1;
+  font-weight: 500;
+}
+
+/* ---------- kolom kanan: form login (tanpa kotak sendiri) ---------- */
+.login-form-side {
+  padding: 28px 30px 24px 26px;
+  border-left: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Logo menggantikan tulisan "LOGIN" sebagai judul kolom form.
+   ⚠️ `align-self` dipakai supaya tidak ikut aturan `align-items` kolom. */
+.login-form-side__logo {
+  height: 40px;
+  width: auto;
+  max-width: none;
+  align-self: center;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.login-form-side .login-form {
+  flex: 1 1 auto;
+}
+
+/* ⚠️ Warna tombol saat submit berubah samar. Dulu isinya `ProgressBar`,
+   yang membuat tombol melompat tinggi dan terlihat seperti elemen lain yang
+   tidak sengaja muncul. */
+.login-form .login-button.is-memproses {
+  background: #334155;
+  opacity: 0.85;
+}
+
+/* Tombol lihat/sembunyikan sandi, di dalam baris password. */
+.login-mata {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.login-mata:hover {
+  color: #64748b;
+  background: #f1f5f9;
+}
+
+.login-mata svg {
+  width: 18px;
+  height: 18px;
+}
+
+.login-mata:focus-visible {
+  outline: 2px solid #0d9488;
+  outline-offset: 1px;
+}
+
+/* Di bawah 720px: jadi satu kolom, form login naik ke atas supaya operator
+   tidak perlu menggulir ke bawah untuk menulis sandi. */
+@media (max-width: 719px) {
+  .login-container--pc {
+    max-width: min(400px, calc(100vw - 24px));
+  }
+
+  .login-split {
+    grid-template-columns: 1fr;
+  }
+
+  .login-form-side {
+    order: -1;
+    border-left: none;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 24px 24px 20px;
+  }
+
+  .login-pc {
+    padding: 22px 24px 18px;
+  }
+
+  .login-pc__daftar {
+    height: 168px;
+  }
+}
+
+/* ============================================================
    Dashboard — kartu PC (Soft Pastel Header)
    HEADER pastel cyan memuat hitung mundur + tombol aksi, BODY
    putih memuat nama PC dan Status/Tipe. Semua selector

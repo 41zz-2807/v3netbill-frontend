@@ -244,6 +244,21 @@ export default function AccountsPage() {
 
   async function handleCreateMember(e: React.FormEvent) {
     e.preventDefault()
+    // ⚠️ Nama member adalah kredensial login-nya di komputer, jadi nama 1-3
+    // karakter terlalu mudah ditebak orang lain. Dicek di sini supaya
+    // operator mendapat pesan langsung, bukan pesan validate bawaan browser
+    // yang bahasanya mengikuti setelan browser (bisa jadi English).
+    const nama = memberNama.trim()
+    if (nama.length === 0) {
+      setError('Nama member belum diisi.')
+      return
+    }
+    if (nama.length < 4) {
+      setError(
+        `Nama member harus minimal 4 karakter. "${nama}" baru ${nama.length} karakter — tambah dulu agar tidak mudah ditebak orang lain.`,
+      )
+      return
+    }
     const nilai = bacaNominal(memberNominalInput)
     if (nilai === null) {
       setError('Nominal harus kelipatan 500 dan minimal 500')
@@ -401,10 +416,21 @@ export default function AccountsPage() {
                   value={memberNama}
                   onChange={(e) => setMemberNama(e.target.value)}
                   placeholder="Nama lengkap"
-                  required
                   autoFocus
+                  maxLength={40}
                   className={inputClass}
                 />
+                {/* ⚠️ Validasi BAWAAN browser (`minLength`, `required`) sengaja
+                    TIDAK dipakai untuk nama. Pesannya mengikuti bahasa browser,
+                    jadi operator bisa saja membaca "Please fill out this field"
+                    atau "Please use at least 4 characters" — padahal yang
+                    dibutuhkan penjelasan kenapa. Validasi sendiri ada di
+                    `handleCreateMember()` dengan kalimat Indonesia. */}
+                <p className="mt-1 text-[11px] text-slate-500">
+                  {memberNama.trim().length > 0 && memberNama.trim().length < 4
+                    ? `Nama terlalu pendek — baru ${memberNama.trim().length} dari 4 karakter.`
+                    : 'Pakai 4-40 karakter. Nama ini untuk login pelanggan di komputer.'}
+                </p>
               </div>
               <div>
                 <label className={fieldLabelClass}>Nominal (kelipatan 500)</label>
@@ -572,7 +598,10 @@ export default function AccountsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-2 text-slate-600">
-                    {new Date(a.createdAt).toLocaleDateString('id-ID')}
+                    {new Date(a.createdAt).toLocaleDateString('id-ID', {
+                      // ⚠️ WAJIB — lihat catatan di `formatWaktu()` pada `src/lib/api.ts`.
+                      timeZone: 'Asia/Jakarta',
+                    })}
                   </td>
                 </tr>
               ))}
