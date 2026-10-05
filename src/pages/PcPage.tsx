@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { fetchPcs, createPc, deletePc, unlockPc } from '../lib/api.ts'
+import { fetchPcs, createPc, deletePc, unlockPc, gantiNamaPc } from '../lib/api.ts'
 import type { Pc } from '../lib/types.ts'
 import { useAuth } from '../context/AuthContext.tsx'
 import ProgressBar from '../components/ui/ProgressBar.tsx'
@@ -66,6 +66,49 @@ export default function PcPage() {
     setModal(false)
     setCreated(null)
     setError(null)
+  }
+
+  /* ---------- ganti nama PC ---------- */
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editNama, setEditNama] = useState('')
+  const [editError, setEditError] = useState<string | null>(null)
+  const [menyimpan, setMenyimpan] = useState(false)
+
+  function bukaEdit(pc: Pc) {
+    setEditId(pc.id)
+    setEditNama(pc.namaPc)
+    setEditError(null)
+  }
+
+  function tutupEdit() {
+    if (menyimpan) return
+    setEditId(null)
+    setEditNama('')
+    setEditError(null)
+  }
+
+  async function handleGantiNama(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editId) return
+    const nama = editNama.trim()
+    if (!nama) {
+      setEditError('Nama PC tidak boleh kosong.')
+      return
+    }
+    setMenyimpan(true)
+    setEditError(null)
+    try {
+      await gantiNamaPc(editId, nama)
+      setEditId(null)
+      setEditNama('')
+      // Muat ulang supaya label di seluruh halaman ikut berubah.
+      await load()
+    } catch (err: unknown) {
+      const pesan = (err as { response?: { data?: { message?: string } } }).response?.data?.message
+      setEditError(pesan ?? 'Gagal mengganti nama PC')
+    } finally {
+      setMenyimpan(false)
+    }
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -223,6 +266,47 @@ export default function PcPage() {
         </form>
       </Modal>
 
+      {/* Modal ganti nama PC. Nama PC hanya label — PC ID, Agent Token, dan
+          sesi yang sedang jalan tidak tersentuh. */}
+      {editId && (
+        <Modal open onClose={tutupEdit} locked={menyimpan} label="Ganti nama PC">
+          <PastelCard
+            label="PC"
+            title="Ganti Nama PC"
+            onClose={tutupEdit}
+            closeDisabled={menyimpan}
+            icon={
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            }
+          >
+            <p className={hintClass}>
+              Nama PC hanya label tampilan. PC ID, Agent Token, dan sesi yang sedang
+              berjalan tidak berubah — jadi aman dipakai saat PC sedang dipakai pelanggan.
+            </p>
+            <form onSubmit={handleGantiNama}>
+              <div>
+                <label className={fieldLabelClass} htmlFor="nama-pc-baru">Nama baru</label>
+                <input
+                  id="nama-pc-baru"
+                  className={inputClass}
+                  value={editNama}
+                  onChange={(e) => setEditNama(e.target.value)}
+                  maxLength={30}
+                  autoFocus
+                  placeholder="Contoh: PC001"
+                />
+              </div>
+              {editError && <p className={errorClass}>{editError}</p>}
+              <button type="submit" disabled={menyimpan} className={buttonClass}>
+                {menyimpan ? 'Menyimpan...' : 'Simpan'}
+              </button>
+            </form>
+          </PastelCard>
+        </Modal>
+      )}
+
       {error && !modal && (
         <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>
       )}
@@ -248,7 +332,24 @@ export default function PcPage() {
             <tbody className="divide-y divide-slate-100">
               {baris.map((pc) => (
                 <tr key={pc.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-2 font-medium text-slate-900">{pc.namaPc}</td>
+                  <td className="px-4 py-2 font-medium text-slate-900">
+                    <span className="flex items-center gap-2">
+                      {pc.namaPc}
+                      {role === 'ADMIN' && (
+                        <button
+                          type="button"
+                          onClick={() => bukaEdit(pc)}
+                          className="p-1 text-slate-400 hover:text-slate-700 transition"
+                          title={`Ganti nama ${pc.namaPc}`}
+                          aria-label={`Ganti nama ${pc.namaPc}`}
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+                      )}
+                    </span>
+                  </td>
                   <td className="px-4 py-2 text-slate-600">{pc.ipClient || '— belum connect'}</td>
                   <td className="px-4 py-2">
                     <div className="flex items-center gap-2">
@@ -299,7 +400,10 @@ export default function PcPage() {
                   </td>
                   <td className="px-4 py-2 text-slate-600">
                     {pc.lastHeartbeatAt
-                      ? new Date(pc.lastHeartbeatAt).toLocaleTimeString('id-ID')
+                      ? new Date(pc.lastHeartbeatAt).toLocaleTimeString('id-ID', {
+                          // ⚠️ WAJIB — lihat catatan di `formatWaktu()` pada `src/lib/api.ts`.
+                          timeZone: 'Asia/Jakarta',
+                        })
                       : '—'}
                   </td>
                   {role === 'ADMIN' && (

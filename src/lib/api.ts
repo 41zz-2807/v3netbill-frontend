@@ -2,6 +2,7 @@ import axios from 'axios'
 import type {
   LoginResponse,
   Pc,
+  StatusPcRingkas,
   Account,
   Transaction,
   DailyReport,
@@ -110,8 +111,32 @@ export async function fetchPcs(): Promise<Pc[]> {
   return data
 }
 
+/**
+ * Ringkasan PC untuk halaman login. Endpoint publik — tidak butuh token.
+ *
+ * ⚠️ Jangan pakai `fetchPcs()` di sini: yang itu mengembalikan `agentToken`,
+ * dan halaman login tampil sebelum operator masuk. Endpoint `/pcs/ringkas`
+ * hanya mengembalikan nama PC, status, tipe akun, dan sisa waktu.
+ */
+export async function fetchStatusPcRingkas(): Promise<StatusPcRingkas[]> {
+  const { data } = await api.get<StatusPcRingkas[]>('/pcs/ringkas')
+  return data
+}
+
 export async function createPc(namaPc: string): Promise<Pc> {
   const { data } = await api.post<Pc>('/pcs', { namaPc })
+  return data
+}
+
+/**
+ * Ganti nama/label PC.
+ *
+ * ⚠️ Nama PC bukan identitas — identitas selalu `id` + `agentToken`. Jadi
+ * pemanggilan ini tidak memutus agent dan tidak mengganggu sesi yang sedang
+ * berjalan. Duplikat nama ditolak server dengan 409.
+ */
+export async function gantiNamaPc(id: string, namaPc: string): Promise<{ id: string; namaPc: string }> {
+  const { data } = await api.patch<{ id: string; namaPc: string }>(`/pcs/${id}/nama`, { namaPc })
   return data
 }
 
@@ -425,6 +450,11 @@ export function formatWaktu(dateStr: string): string {
     year: tahunBerbeda ? 'numeric' : undefined,
     hour: '2-digit',
     minute: '2-digit',
+    // ⚠️ WAJIB. Tanpa `timeZone`, `toLocaleString` ikut zona yang disetel di
+    // PC kasir. Kalau PC itu disetel UTC (atau zona lain), semua waktu di
+    // aplikasi bergeser 7 jam — dan di aplikasi billing angka yang salah lebih
+    // buruk daripada tidak ditampilkan.
+    timeZone: 'Asia/Jakarta',
   })
 }
 /* --- Diagnosa agent (backend/src/diagnosa) --- */
