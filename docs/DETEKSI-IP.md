@@ -127,7 +127,7 @@ docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 3000 \
 **koneksi baru dari host** ke container. Akibatnya, dari sudut pandang container, sumber koneksi
 selalu adalah alamat host di bridge Docker = `172.18.0.1`.
 
-Jadi untuk PC LAN yang konek ke `http://192.168.1.65:3000`:
+Jadi untuk PC LAN yang konek ke `http://192.168.1.59:3000`:
 
 ```
 PC-LAN (192.168.1.x) → host:3000 → docker-proxy → container
@@ -147,7 +147,7 @@ PC-LAN (192.168.1.x) → host:3000 → docker-proxy → container
 |---|---|---|
 | PC001 via Cloudflare (asli) | `cf-connecting-ip` | `180.178.96.34` ✅ |
 | PC uji, koneksi langsung tanpa header CF | `handshake.address` | `127.0.0.1` (via `socket`) ✅ |
-| PC LAN ke `192.168.1.65:3000` | — | akan jadi `172.18.0.1` ⚠️ (belum diuji langsung, disimpulkan dari mekanisme `docker-proxy`) |
+| PC LAN ke `192.168.1.59:3000` | — | akan jadi `172.18.0.1` ⚠️ (belum diuji langsung, disimpulkan dari mekanisme `docker-proxy`) |
 
 Jalur `cf-connecting-ip` dan jalur fallback keduanya sudah diuji end-to-end.
 

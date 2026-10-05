@@ -42,11 +42,11 @@ Penting untuk memahami kenapa deteksi IP PC tidak sesederhana yang terlihat:
 
 | Alamat | Interface | Peran |
 |---|---|---|
-| `192.168.1.65` | `enp2s0` | **IP LAN host** — dipakai PC satu jaringan & Cloudflare tunnel |
+| `192.168.1.59` | `enp2s0` | **IP LAN host** — dipakai PC satu jaringan & Cloudflare tunnel |
 | `127.0.0.1` | `lo` | Loopback |
 | `172.17.0.1` | `docker0` | Bridge default Docker |
 | `172.18.0.1` | `br-2a789053939d` | Bridge network Compose v3Netbill |
-| `100.65.44.23` | `tailscale0` | Tailscale (VPN) |
+| `100.89.81.47` | `tailscale0` | Tailscale (VPN) |
 
 > Container backend berada di `172.18.0.2` (bridge Compose). PostgreSQL di `172.18.0.3`.
 
@@ -122,7 +122,7 @@ Jadi **PC001** (di luar jaringan) memakai `https://v3netbill.<domain>` untuk sin
 | `5432` | PostgreSQL | Dari luar via `pg.<domain>` (opsional) |
 | `8000`, `8002`, `8003`, `9443`, `5050` | Service lain di host (project lain) | — |
 
-> Port `3000` **terbuka langsung di LAN** (`192.168.1.65:3000`). PC satu jaringan boleh konek
+> Port `3000` **terbuka langsung di LAN** (`192.168.1.59:3000`). PC satu jaringan boleh konek
 > langsung ke sana. Tapi lihat [`DETEKSI-IP.md`](./DETEKSI-IP.md) soal konsekuensi IP-nya.
 
 ---
@@ -132,7 +132,7 @@ Jadi **PC001** (di luar jaringan) memakai `https://v3netbill.<domain>` untuk sin
 | Skenario | `ServerUrl` di wizard | IP yang tercatat di `ipClient` |
 |---|---|---|
 | **PC di luar jaringan** (PC001) | `https://v3netbill.<domain>` | IP publik asli (dari `cf-connecting-ip`) ✅ |
-| **PC satu jaringan LAN** | `http://192.168.1.65:3000` | `172.18.0.1` untuk semua PC ⚠️ (batasan `docker-proxy`) |
+| **PC satu jaringan LAN** | `http://192.168.1.59:3000` | `172.18.0.1` untuk semua PC ⚠️ (batasan `docker-proxy`) |
 
 Nilai `ServerUrl` **wajib** memakai skema lengkap (`http://` atau `https://`).
 

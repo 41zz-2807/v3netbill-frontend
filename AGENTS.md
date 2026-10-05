@@ -111,7 +111,10 @@ v3netbill/
 
 ## Akses test yang sudah dibuat
 
-- Admin: `admin` / `admin123` (Role ADMIN)
+- ~~Admin: `admin` / `admin123`~~ — **TIDAK ADA LAGI.** Akun `admin` sudah hilang
+  (login balas 401). Akun ADMIN yang sekarang bernama **`aziz`**; passwordnya
+  **sengaja tidak ditulis di dokumen ini** (repo publik). User yang ada per 4 Okt:
+  `aziz` (ADMIN), `kasir` (KASIR), `kasir2` (KASIR).
 - Kasir: `kasir` / `kasir1234` (Role KASIR)
 
 ## Skema DB (8 model)
@@ -152,15 +155,43 @@ Logika bisnis yang sudah berjalan:
   koneksi agent (`session.gateway.ts#alamatIp`), TIDAK diisi manual lagi di form PC.
   Urutan sumber IP: `ip dari agent` → `cf-connecting-ip` → `x-real-ip` → `x-forwarded-for` →
   `handshake.address`. Detail & batasan topologi: `docs/DETEKSI-IP.md`.
-- **`Pc.status` di database TIDAK PERNAH berisi `OFFLINE`.** Kolom itu hanya ditulis
-  `ACTIVE`/`IDLE` di `registerPc` dan saat sesi start/stop, jadi PC yang dimatikan
-  akan menampilkan status lamanya selamanya. Status yang ditampilkan selalu dihitung
-  ulang dari `lastHeartbeatAt` lewat `statusPcEfektif()` di `backend/src/pc/pc-status.ts`,
-  dipakai bersama oleh `GET /api/pcs` (mobile) dan `getDashboardData()` (dashboard web).
+- ⚠️ **`Pc.status` di database BOLEH berisi `OFFLINE`** — pernyataan lama di dokumen ini
+  ("TIDAK PERNAH") sudah salah. `SessionService.checkPcOffline()` tiap 10 detik
+  menuliskannya ke DB lalu broadcast, karena `broadcastPcUpdate()` sebelumnya hanya
+  jalan saat register/start/stop. Kolom itu karena itu **cache**, bukan sumber
+  kebenaran; sumber kebenaran ada dua: `lastHeartbeatAt` (satu-satunya bukti agent
+  masih hidup) dan `Session` berstatus `BERJALAN`.
+  Status yang dikirim ke dashboard & mobile dihitung `statusPcDitampilkan()` di
+  `backend/src/pc/pc-status.ts`: heartbeat basi → `OFFLINE`; heartbeat segar +
+  ada sesi berjalan → `ACTIVE`; selain itu baru nilai kolom. Dipakai bersama oleh
+  `GET /api/pcs` (mobile) dan `getDashboardData()` (dashboard web).
   `lastHeartbeatAt: null` juga berarti OFFLINE, bukan IDLE. Ambang **30 detik** mengikuti
   `HEARTBEAT_INTERVAL_DETIK = 15` di agent (`Agent.Core/ServerConnection.cs:31`).
-  `SessionService.checkPcOffline()` tiap 10 detik menulis OFFLINE ke DB lalu broadcast,
-  karena `broadcastPcUpdate()` sebelumnya hanya jalan saat register/start/stop.
+  - 🔴 **Kalau `Pc.status` boleh ditulis OFFLINE, maka WAJIB ada yang memulihkannya.**
+    Bug 4 Okt: `heartbeat()` hanya memperbarui `lastHeartbeatAt`, jadi heartbeat yang
+    tertinggal satu kali (>30 detik) **tanpa memutus socket** meninggalkan kolom
+    `OFFLINE` sampai agent reconnect — dan `statusPcEfektif()` yang dulu
+    mengembalikan nilai kolom apa adanya ikut memekatkan. Gejalanya di dashboard:
+    hitung mundur hilang, label "TIDAK ADA SESI", tombol **Start** muncul (bukan
+    Kunci) di PC yang sedang tersesi, dan Start itu selalu ditolak "PC sudah memiliki
+    sesi berjalan". Tempel PC client tetap jalan karena `session:tick` tidak bergantung
+    pada status PC — itu sebabnya gejalanya tampak kontradiktif.
+    Dua perbaikan, keduanya wajib: `heartbeat()` menulis `ACTIVE`/`IDLE` lagi, dan
+    `getDashboardData()`/`findAll()` memakai `statusPcDitampilkan()`. Tes regresi:
+    `backend/test/pc-status.spec.ts` (11 kasus) — sudah dibuktikan **gagal** kalau
+    logikanya dikembalikan ke versi lama.
+  - 🔴 **Dan jebakan kedua yang langsung saya buat sendiri di fix yang sama:**
+    `sessionByPc.get(pc.id) !== null` selalu bernilai **true** untuk PC tanpa sesi,
+    karena `Map.get()` mengembalikan `undefined` dan `undefined !== null`. Akibatnya
+    **setiap PC idle tampil "Aktif"** — dan `session` di payload tetap `null`, jadi
+    gejalanya terlihat sangat tidak masuk akal. Yang benar `sessionByPc.has(pc.id)`.
+    ⚠️ Unit test fungsi murni **tidak akan** menangkap ini, karena parameternya
+    sudah berupa boolean; yang perlu dijaga adalah bentuk pemanggilan di call site.
+    Tes yang benar-benar memegangnya ada di `test/pc-status.spec.ts` ("pola
+    pemanggilan di getDashboardData()"). Verifikasi wajib: bandingkan `status` di
+    payload `dashboard:pc_update` **dengan nilai kolom di database pada saat yang
+    sama** — `GET /api/pcs` saja tidak cukup, karena dua jalur itu punya call site
+    berbeda.
 
 ## Status fase
 
@@ -259,7 +290,9 @@ tanpa JWT sama sekali.
 | GET | `/api/auth/users` | ADMIN |
 | DELETE | `/api/auth/users/:id` | ADMIN |
 | GET | `/api/pcs` | — |
+| GET | `/api/pcs/ringkas` | **PUBLIC** (lihat catatan di bawah) |
 | POST | `/api/pcs` | — |
+| PATCH | `/api/pcs/:id/nama` | ADMIN |
 | DELETE | `/api/pcs/:id` | ADMIN |
 | POST | `/api/pcs/:id/unlock` | ADMIN |
 | GET | `/api/accounts` | — |
@@ -302,7 +335,7 @@ tanpa JWT sama sekali.
 | GET | `/api/diagnosa` | ADMIN |
 | GET | `/api/diagnosa/:nama` | ADMIN |
 
-Tiga endpoint `PUBLIC` punya alasan spesifik, jangan diubah tanpa paham dulu:
+Empat endpoint `PUBLIC` punya alasan spesifik, jangan diubah tanpa paham dulu:
 
 - `auth/login` — memang pintu masuk.
 - `settings/verify-pin` — dipakai `.bat` uninstall & `UninstallGuardWindow` yang
@@ -311,6 +344,62 @@ Tiga endpoint `PUBLIC` punya alasan spesifik, jangan diubah tanpa paham dulu:
 - `diagnosa` — agent Windows mengirim paket log sendiri tanpa JWT. Identitasnya
   `pcId` + `agentToken`, sama seperti `verify-pin`. Paket yang diterima **tidak
   pernah bisa diakses tanpa JWT**: daftar & unduh hanya ADMIN.
+- `pcs/ringkas` — dipakai **halaman login** untuk menampilkan daftar PC dan
+  sisa waktu. Halaman login tampil **sebelum** operator login, jadi tidak ada
+  JWT-nya sama sekali.
+
+### 🔴 `GET /api/pcs/ringkas` — JANGAN PERNAH mengganti dengan `GET /api/pcs`
+
+`GET /api/pcs` mengembalikan `{ ...pc }`, jadi **`agentToken` ikut terbawa**.
+Token itu cukup untuk menjalankan `client:create_password` (mengganti password
+akun orang) dan `client:stop_session` (menghentikan sesi). Kalau endpoint itu
+dibuat publik, **siapa pun di internet bisa mengambil semua token agent**.
+
+`pcs/ringkas` sengaja dibuat terpisah dan hanya mengirim empat field:
+
+```json
+{ "namaPc": "PC003", "status": "ACTIVE", "tipe": "MEMBER", "sisaDetik": 5964 }
+```
+
+Yang **tidak** dikirim dan tidak boleh ditambah: `id`, `agentToken`,
+`ipClient`, `lastHeartbeatAt`, nama member, dan kode voucher. Nama member itu
+**kredensial login**-nya, dan halaman login terlihat siapa pun sebelum masuk.
+
+Sisa waktu dihitung persis seperti `getDashboardData()` — dari
+`Account.sisaWaktuDetik` dikurangi selisih waktu — jadi angkanya tidak mungkin
+berbeda dengan kartu PC di dashboard.
+
+### 🔴 `namaPc` itu LABEL, bukan identitas — tapi punya 3 cache yang wajib di-invalidate
+
+`namaPc` **tidak terikat ke apa pun** sebagai identitas:
+
+```
+"Pc_pkey"          PRIMARY KEY, btree (id)          <- identitas
+"Pc_agentToken_key" UNIQUE, btree (agentToken)     <- kunci agent
+```
+
+Tidak ada unique index pada `namaPc`, dan semua foreign key memakai `id`. Jadi
+`PATCH /api/pcs/:id/nama` **aman dipakai saat PC sedang dipakai pelanggan** —
+sesi, agent, dan `agentToken` tidak tersentuh (terbukti: ganti nama PC001 saat
+sesi member berjalan 4308 detik → `id` & `agentToken` tetap, 63 transaksi utuh).
+
+Tiga tempat ini **baca nama dari cache sendiri**, jadi kalau nama diganti
+tanpa membereskan ketiganya, hasilnya justru kebalikan dari tujuan operator:
+
+| Tempat | Gejala kalau dilupakan |
+|---|---|
+| `log-billing.namaPc()` | Cache hanya diisi ulang saat **kosong** → seluruh baris log berikutnya tetap memakai nama **LAMA** selamanya. Panggil `invalidateNamaPc()` |
+| Agent → Nextcloud | Nama PC = awalan nama berkas log (`PC001-agent-....log`). Agent menerimanya lewat `agent:nextcloud_config`, jadi tanpa dorongan ulang log repair tersimpan dengan nama lama. Panggil `SessionService.kirimUlangNamaKeAgent()` |
+| Duplikat nama | Tidak ada unique index → dua PC bisa sama-sama "PC001". Membingungkan, dan `key={namaPc}` di halaman login bentrok. Tolak dengan **409** |
+
+Nama PC juga dipakai untuk **slug nama berkas diagnosa**
+(`diagnosa.service.ts`, disanitasi 24 karakter) — hanya memengaruhi berkas yang
+diunggah setelahnya.
+
+⚠️ **`@IsNotEmpty()` tidak menolak input spasi saja.** `"   "` lolos DTO,
+lalu `.trim()` menjadikannya `""` — dan nama kosong tersimpan di database.
+Validasi WAJIB diulang **setelah** trim (lihat `PcService.gantiNama()`). Ini
+sudah terjadi sungguhan dan baru ketahuan karena mengujinya ke server.
 
 ⚠️ **`GET /api/settings/apk/info` dan `GET /api/settings/installer/info` wajib
 JWT, dan JANGAN digantikan `GET /api/settings`.** Yang terakhir mengembalikan seluruh isi tabel `Setting` —
@@ -366,6 +455,61 @@ Dikirim server → klien:
 
 Batas hari bisnis = **23:30 WIB** (hari T = [23:30 T-1, 23:30 T)). Rekap nol dihitung
 setelah batas ini.
+
+### 🔴 Zona waktu: server & database UTC, aplikasi menampilkan WIB (4 Okt)
+
+Semua yang ada hubungannya dengan **tanggal** di backend harus dihitung eksplisit sebagai WIB.
+Server, container, dan PostgreSQL berjalan di zona **UTC**, jadi tidak ada yang
+otomatis jadi WIB.
+
+**Helper yang wajib dipakai** — `backend/src/common/wib-date.ts`:
+
+| Fungsi | Hasil | Dipakai di |
+|---|---|---|
+| `awalHariWib('2026-10-04')` | `2026-10-03T17:00:00.000Z` = 00:00 WIB | `transactions.service.ts` |
+| `akhirHariWib('2026-10-04')` | `2026-10-04T16:59:59.999Z` = 23:59 WIB | `transactions.service.ts` |
+| `tanggalWib()` | `'2026-10-05'` pada WIB 01:00 | `log-billing.service.ts` |
+
+⚠️ **Dua jebakan yang sudah menyebabkan bug nyata, dan keduanya sudah diperbaiki:**
+
+1. **`setHours()` memakai jam LOKAL server.** Server UTC, jadi
+   `new Date(tgl).setHours(23,59,59,999)` = 23:59 **UTC** = 06:59 WIB **hari
+   berikutnya**. Filter "sampai 04 Okt" jadi ikut menghitung transaksi 05 Okt
+   jam 00:00–06:59. `new Date(tgl)` untuk batas "dari" punya masalah serupa di
+   ujung lain: 00:00 UTC = 07:00 WIB, jadi 7 jam pertama transaksi hilang.
+2. **`toISOString()` mengembalikan UTC.** `toISOString().slice(0,10)` untuk nama
+   berkas log = tanggal UTC, dan antara 00:00–06:59 WIB tanggal UTC masih
+   milik **hari sebelumnya** — aktivitas jam-jam itu masuk
+   `billing-<kemarin>.log`.
+
+**Yang sudah benar dan tidak boleh diubah** — batas **hari buku 23:30 WIB**
+(16:30 UTC) punya hitungannya sendiri, dan memang berbeda:
+
+- `reports.service.ts` — `WIB_OFFSET_MIN` + `CUTOFF_WIB_MIN`, Window 24 jam geser
+- `activity-log.service.ts` — `getTutupHariBoundary()`, `setUTCHours(16,30)`
+- cron `tutup-hari-laporan` — `timeZone: 'Asia/Jakarta'` di decorator `@Cron`
+
+⚠️ **Helper `wib-date.ts` itu batas 00:00, bukan 23:30.** Memakainya di Reports
+atau ActivityLog akan menghapus batas tutup hari.
+
+**Frontend: semua `toLocaleString` WAJIB diberi `timeZone: 'Asia/Jakarta'`.**
+Tanpa itu, `toLocaleString` ikut zona yang disetel di PC kasir — PC yang
+disetel UTC atau zona mana pun di belakang UTC akan menampilkan semua waktu
+7 jam (atau lebih) mundur. Sudah dipasang di `formatWaktu()` (`src/lib/api.ts`),
+`formatDateIndo()`, `TransactionsPage`, `AccountsPage`, `PcPage`, `ReportsPage`.
+
+⚠️ **`ReportsPage.labelTanggal()` parses `t + 'T00:00:00Z'`**, jadi 00:00 UTC =
+07:00 WIB — tanggalnya **tidak** bergeser di zona WIB. Aman diberi `timeZone`,
+dan justru itulah yang melindungi dari PC kasir berzona UTC-5 yang akan melihat
+tanggalnya mundur satu hari.
+
+⚠️ **Waktu yang dicetak di terminal selalu UTC.** `date`, `new Date()`, dan
+`toISOString()` di dalam container semuanya UTC. Kalau hasilnya berbeda dengan
+lokasi kasir (WIB), tambahkan 7 jam — jangan langsung menyalahkan aplikasi.
+Data di database benar; yang salah sering kali cuma command yang dipakai untuk
+memeriksanya.
+
+Tes regresi: `backend/test/wib-date.spec.ts` (9 kasus).
 
 ⚠️ **Semua yang dipanggil dari cron atau `setInterval` wajib dibungkus
 `try/catch`.** Aturan ini sudah tercatat sejak `0c13a60`, tapi **tidak pernah
@@ -599,7 +743,7 @@ permintaan, 0 crash.
   **GitHub Actions variable** bernama `SERVER_URL` (bukan secret). Di `Product.wxs` hanya ada
   fallback yang akan ditimpa itu — jangan andalkan isinya. Detail jebakannya:
   bagian "Build MSI & WiX" di bawah.
-- **WAJIB isi `ServerUrl` dengan skema lengkap** (`http://192.168.1.65:3000`), karena
+- **WAJIB isi `ServerUrl` dengan skema lengkap** (`http://192.168.1.59:3000`), karena
   `Agent.Core/ServerConnection.cs:91` memanggil `new Uri($"{serverBaseUrl.TrimEnd('/')}/session")` —
   string tanpa skema gagal. ⚠️ `ServerUrl` berisi **base URL saja**, tanpa `/session`;
   `ServerConnection` yang menambahkannya.
@@ -1383,6 +1527,29 @@ sesi pengujian notifikasi FCM, PC001 sungguhan sempat ditendang **13 kali
 dalam 2 menit**. Buat PC uji sendiri dengan `agentToken` acak, lalu hapus
 setelah selesai.
 
+### ⚠️ Nama member adalah KREDENSIAL, jadi panjangnya dibatasi dua arah (4 Okt)
+
+`session.service.ts` mencari akun dengan mencocokkan kolom `nama` **persis**
+(`cariAkunAktif` tidak memakai `mode: 'insensitive'`). Jadi nama member bukan
+sekadar tampilan — dia **kredensial login**-nya, dan nama 1-3 karakter terlalu
+mudah ditebak orang lain di warnet.
+
+`src/accounts/nama-member.ts` jadi satu-satunya sumber angka:
+
+| Konstanta | Nilai | Arti |
+|---|---|---|
+| `MIN_KARAKTER_NAMA` | 4 | ditolak dengan pesan "Nama member minimal 4 karakter" |
+| `MAKS_KARAKTER_NAMA` | 40 | mengikuti panjang kolom di database & form aplikasi |
+
+⚠️ **Member yang sudah terlanjur dibuat tidak disentuh.** Validasi ini hanya
+berlaku untuk pembuatan baru, jadi nama lama yang lebih pendek tetap login
+seperti biasa. Men_chipbulk tidak ikut — hanya endpoint create yang membaca.
+
+⚠️ **Batas bawah hanya di BACKEND, belum di form Flutter.** Kalau nanti form
+"Buat Member" di APK masih menerima 1-3 karakter, kasir akan melihat pesan dari
+server — bukan validation sebelum kirim. Itu tidak merusak apa pun, tapi lebih
+baik ditegakkan juga di `TextField` APK (minimal 4) supaya umpan balik cepat.
+
 ## Cara upload APK dari aplikasi (30 Sep, versi 1.0.22) ✅
 
 Voucher/Member sekarang punya tombol **Mulai di PC** di bar aksi, jadi kasir
@@ -1521,6 +1688,65 @@ keytool -list -v -keystore android/app/v3netbill-release.jks -storepass "…"
 # namespace WebSocket harus /session, bukan /socket.io
 python3 -c "import zipfile;d=zipfile.ZipFile('app-release.apk').read('lib/arm64-v8a/libapp.so');print(b'/session' in d)"
 ```
+
+## Halaman login + daftar status PC (4 Okt) ✅
+
+Kartu login **satu kartu besar**: kiri = daftar PC, kanan = form login.
+Tepat sesuai mockup yang disetujui (concept 5 yang disederhanakan).
+
+```
+src/pages/LoginPage.tsx     layout 2 kolom, tombol lihat sandi, DaftarPc
+src/index.css                .login-container--pc, .login-split, .login-pc__*
+                             .login-form-side, .login-form-side__logo
+src/lib/api.ts               fetchStatusPcRingkas()  -> /pcs/ringkas
+```
+
+Data diambil lewat **REST polling 10 detik**, bukan WebSocket — `dashboard:subscribe`
+butuh JWT, sedangkan halaman login belum punya. `PcService.ringkas()` yang
+menghitung, jadi angka di layar login tidak mungkin berbeda dari dashboard.
+Gagal ambil status **tidak boleh** menghalangi login; errornya sengaja diamkan saja.
+
+**Indikator:** 🟢 hijau **berdenyut** = sedang dipakai · 🟡 kuning diam =
+tersedia · 🔴 merah diam = offline. Hanya hijau yang berdenyut supaya operator
+bisa membedakan "dipakai" dari sekadar "tersedia" dalam sekali lihat. Sudah ada
+`@media (prefers-reduced-motion: reduce)` untuk mematikan denyut.
+
+⚠️ **Tinggi daftar PC TIDAK boleh menyesuaikan isi.** Kalau ikut tinggi, kartu
+ikut memanjang setiap kali jumlah PC bertambah — terukur: 7 PC = 429px, **14 PC =
+694px**. Jadi tingginya dikunci (`height: 274px`) + `overflow-y: auto`. Di bawah
+720px layout jadi satu kolom dengan form login **di atas** (`order: -1`), dan
+tinggi daftar diturunkan ke 168px.
+
+### ⚠️ Logo v3Netbill menggantikan tulisan "LOGIN" (4 Okt)
+
+Judul kolom form **bukan teks "Login"** - tapi logo. Alasannya kolom form kini
+sangat pendek (dua field + tombol), jadi judul teks cuma menambah tinggi dan
+ruang kosong di atas. Logo ada di dalam `.login-form-side__logo`, **bukan** lagi
+di kolom kiri seperti versi pertama.
+
+Atribut `width`/`height` asli (411×144) tetap ditulis di `<img>` supaya browser
+tahu rasionya. Yang berubah cuma `align-self`:
+
+```css
+.login-form-side__logo { height: 40px; width: auto; max-width: none; align-self: center; }
+```
+
+⚠️ **`align-self` tetap wajib, hanya nilainya berubah jadi `center`.** Kedua kolom
+adalah flex column dan default `align-items` = stretch, jadi tanpa itu `<img>`
+ikut diregangkan selebar kolom (terukur **299px**) sementara `height` dikunci 40px
+— hasilnya logo melebar dan gepeng. Di bawah 720px `.login-form-side` jadi anak
+pertama, jadi logo otomatis muncul paling atas dan tetap ter-center.
+
+⚠️ **Tombol Login tidak boleh pakai animasi loading.** Semula isinya
+`<ProgressBar>` (komponen `src/components/ui/ProgressBar.tsx`) saat `loading`.
+Dihapus — yang tersisa cuma kelas `.is-memproses` yang mengubah warna tombol
+samar (`#334155`, opacity 0.85). Alasannya `ProgressBar` membuat tombol melompat
+tinggi dan terlihat seperti elemen lain yang tidak sengaja muncul, dan di aplikasi
+billing animasi yang tidak terkait data sumber hanya menambah gangguan.
+
+⚠️ **`key={namaPc}` di `DaftarPc` boleh dipakai sekarang** — server sudah
+menolak nama duplikat dengan 409, jadi dua kunci itu tidak mungkin bentrok. Kalau
+nama duplikat suatu saat diizinkan, key itu harus diganti.
 
 ## Sesi web terkunci otomatis (30 Sep) ✅
 
@@ -2084,12 +2310,32 @@ mengirim `role: "ADMIN"` untuk mendaftarkan dirinya sebagai penerima notifikasi
 admin. Server juga tidak pernah mengirim apa pun soal identitas akun ke notifikasi
 (lihat di bawah).
 
-### ⚠️ Identitas akun tidak boleh masuk notifikasi
+### ⚠️ Identitas akun tidak boleh masuk notifikasi — dan nama member diSENSOR
 
-Isi notifikasi hanya `Member · PC001` atau `Voucher · PC001`. **Nama member dan
-kode voucher tidak pernah dikirim.** Nama member adalah kredensial login-nya
-(`session.service.ts` mencocokkan `nama`), dan notifikasi Android terlihat di
-layar kunci HP yang bisa dilihat siapa saja.
+Nama member adalah **kredensial login**-nya (`session.service.ts` mencocokkan
+`nama`), dan notifikasi Android terlihat di **layar kunci HP yang bisa dilihat
+siapa saja**. Jadi nama member tidak pernah dikirim penuh — hanya **dua karakter
+pertama**, sisanya `***`: `"Budi Santoso"` → `bu***`.
+
+Fungsi `sensorNama()` di `notifikasi.service.ts` (diekspor supaya bisa diuji).
+Kode **voucher** boleh tampil utuh karena bukan kredensial.
+
+Contoh isi notifikasi (4 Okt):
+
+```
+Member bu*** · PC001 (PC)          <- pelanggan login di komputer
+Member bu*** · PC003 (Dashboard)   <- kasir menekan Start di dashboard
+Voucher 500344 · PC005 (Dashboard) <- kasir membuat voucher & Start
+```
+
+⚠️ **Sumbernya wajib ditulis** karena ketiganyakc diarahkan ke admin, dan
+tanpa keterangan itu admin tidak tahu apakah itu pelanggan atau kasir yang
+memulai sesi. Ada **tiga** pemanggil `kabarPemakaiNotifikasi()` — `PC` dari
+`client:login_request`, `Dashboard` dari `dashboard:start_pc` dan
+`dashboard:start_voucher`.
+
+Tes: `backend/test/notifikasi-nama.spec.ts` (7 kasus) — sudah dibuktikan
+**gagal** kalau `sensorNama` dikembalikan tanpa sensor.
 
 ### ⚠️ Channel notifikasi harus importance TINGGI, dan namanya harus sama di tiga tempat
 
@@ -3081,6 +3327,13 @@ IP LAN host, port `3000` terbuka langsung di LAN, nama container `postgres-15`, 
 Cloudflare Tunnel. Tidak berbahaya pada jaringan privat, tapi sangat berguna
 untuk attacker yang menyisir.
 
+⚠️ **IP LAN host per 3 Okt 2026 = `192.168.1.59`** (interface `enp2s0`). Semula
+`192.168.1.65` — nilai itu sudah muncul di beberapa dokumen tapi **salah**, dan
+`docs/DEPLOYMENT.md:45` masih memuatnya. Kalau IP berganti lagi (DHCP), tiga
+dokumen itu harus diperbarui bersama: `AGENTS.md`, `docs/DEPLOYMENT.md`,
+`docs/DETEKSI-IP.md`, plus `v3NetbillAgent/HANDOFF.md`. Cara memastikan cepat:
+`hostname -I | cut -d' ' -f1`.
+
 ### Pending (per 28 Sep, sesi terakhir)
 
 - ~~**Frontend jadi .apk Android**~~ — **SELESAI 27 Sep**, tapi bukan lewat Capacitor.
@@ -3250,7 +3503,7 @@ berturut-turut, 30 Sep):
 - `node_modules` harus di-mount ke `/w/node_modules`, bukan `/pw`. ESM mencari paket
   relatif terhadap letak file skrip (`/w/cap.mjs`), jadi `/pw/node_modules` tidak
   ditemukan.
-- Butuh `--network host` **dan** URL pakai IP LAN (`http://192.168.1.65:5173`), bukan
+- Butuh `--network host` **dan** URL pakai IP LAN (`http://192.168.1.59:5173`), bukan
   `localhost`. Tanpa itu: `ERR_CONNECTION_REFUSED`. Conversely, kalau memakai nama
   service compose (`v3netbill-frontend:5173`), Vite membalas **403** karena
   `allowedHosts` tidak memuatnya.
