@@ -32,6 +32,14 @@ export interface Pc {
   status: PcStatus
   lastHeartbeatAt: string | null
   createdAt: string
+  /**
+   * Flag operasional "PC sedang diservis / dikosongkan", BUKAN arti PC ini
+   * benar-benar rusak. PC yang ditandai tidak muncul di dashboard, halaman
+   * login, dan mobile — hanya di Halaman PC, supaya bisa dibatalkan lagi.
+   */
+  rusak: boolean
+  /** Alasan opsional yang diisi operator saat menandai. Null kalau tidak ditandai. */
+  alasanRusak: string | null
 }
 
 /**

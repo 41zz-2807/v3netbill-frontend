@@ -106,8 +106,16 @@ export async function deleteUser(id: string): Promise<{ deleted: string }> {
   return data
 }
 
-export async function fetchPcs(): Promise<Pc[]> {
-  const { data } = await api.get<Pc[]>('/pcs')
+/**
+ * Daftar PC.
+ *
+ * ⚠️ `termasukRusak` hanya boleh true di Halaman PC. PC yang ditandai rusak
+ * sengaja disembunyikan dari dashboard, halaman login, dan mobile — hanya
+ * Halaman PC yang boleh melihatnya di sini, dan hanya ADMIN yang boleh memakai
+ * parameter ini.
+ */
+export async function fetchPcs(termasukRusak = false): Promise<Pc[]> {
+  const { data } = await api.get<Pc[]>(termasukRusak ? '/pcs?termasukRusak=true' : '/pcs')
   return data
 }
 
@@ -137,6 +145,34 @@ export async function createPc(namaPc: string): Promise<Pc> {
  */
 export async function gantiNamaPc(id: string, namaPc: string): Promise<{ id: string; namaPc: string }> {
   const { data } = await api.patch<{ id: string; namaPc: string }>(`/pcs/${id}/nama`, { namaPc })
+  return data
+}
+
+/**
+ * Nyalakan / matikan flag "PC rusak".
+ *
+ * ⚠️ Flag ini BUKAN arti "PC ini benar-benar rusak" — itu flag operasional:
+ * PC sedang diservis atau sengaja dikosongkan. Yang terjadi kalau
+ * `rusak: true`:
+ *
+ * - sesi yang sedang berjalan langsung dihentikan (sisa waktu kembali),
+ * - layar PC dikunci,
+ * - PC hilang dari dashboard, halaman login, dan aplikasi mobile,
+ * - PC tidak bisa dipakai lagi sampai flag dimatikan.
+ *
+ * Hapus PC yang ditandai ditolak server dengan 409.
+ */
+export async function setPcRusak(
+  id: string,
+  rusak: boolean,
+  alasan?: string,
+): Promise<{ id: string; namaPc: string; rusak: boolean; sesiDihentikan: boolean }> {
+  const { data } = await api.patch<{
+    id: string
+    namaPc: string
+    rusak: boolean
+    sesiDihentikan: boolean
+  }>(`/pcs/${id}/rusak`, { rusak, alasan })
   return data
 }
 

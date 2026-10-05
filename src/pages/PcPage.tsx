@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { fetchPcs, createPc, deletePc, unlockPc, gantiNamaPc } from '../lib/api.ts'
+import { fetchPcs, createPc, deletePc, unlockPc, gantiNamaPc, setPcRusak } from '../lib/api.ts'
 import type { Pc } from '../lib/types.ts'
 import { useAuth } from '../context/AuthContext.tsx'
 import ProgressBar from '../components/ui/ProgressBar.tsx'
@@ -42,7 +42,10 @@ export default function PcPage() {
   async function load() {
     try {
       setLoading(true)
-      setPcs(await fetchPcs())
+      // ⚠️ `termasukRusak` hanya berlaku untuk ADMIN. Kalau kasir yang membuka
+      // halaman ini, PC yang ditandai memang tidak akan terlihat — dan itu
+      // benar, karena hanya ADMIN yang boleh mengubah flag itu.
+      setPcs(await fetchPcs(role === 'ADMIN'))
       setError(null)
     } catch (err: unknown) {
       setError((err as Error).message)
@@ -66,6 +69,50 @@ export default function PcPage() {
     setModal(false)
     setCreated(null)
     setError(null)
+  }
+
+  /* ---------- tandai PC rusak ---------- */
+  const [rusakTarget, setRusakTarget] = useState<Pc | null>(null)
+  const [alasanRusak, setAlasanRusak] = useState('')
+  const [rusakError, setRusakError] = useState<string | null>(null)
+  const [rusakInfo, setRusakInfo] = useState<string | null>(null)
+  const [menyimpanRusak, setMenyimpanRusak] = useState(false)
+
+  function bukaRusak(pc: Pc) {
+    setRusakTarget(pc)
+    setAlasanRusak(pc.alasanRusak ?? '')
+    setRusakError(null)
+  }
+
+  function tutupRusak() {
+    if (menyimpanRusak) return
+    setRusakTarget(null)
+    setAlasanRusak('')
+    setRusakError(null)
+  }
+
+  async function handleSetRusak(rusak: boolean) {
+    if (!rusakTarget) return
+    setMenyimpanRusak(true)
+    setRusakError(null)
+    try {
+      const hasil = await setPcRusak(rusakTarget.id, rusak, alasanRusak.trim() || undefined)
+      setRusakTarget(null)
+      setAlasanRusak('')
+      await load()
+      // Sesi yang dihentikan berarti ada sisa waktu yang dikembalikan ke
+      // pelanggan. Kasir perlu tahu itu terjadi, bukan mengira PC ini idle.
+      if (hasil.sesiDihentikan) {
+        setRusakInfo(
+          `${hasil.namaPc} ditandai rusak. Sesi yang sedang berjalan dihentikan dan sisa waktu dikembalikan.`,
+        )
+      }
+    } catch (err: unknown) {
+      const pesan = (err as { response?: { data?: { message?: string | string[] } } }).response?.data?.message
+      setRusakError(Array.isArray(pesan) ? pesan[0] : (pesan ?? 'Gagal menyimpan flag PC rusak'))
+    } finally {
+      setMenyimpanRusak(false)
+    }
   }
 
   /* ---------- ganti nama PC ---------- */
@@ -311,6 +358,94 @@ export default function PcPage() {
         <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>
       )}
 
+      {rusakInfo && (
+        <div className="mb-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
+          {rusakInfo}
+          <button
+            type="button"
+            onClick={() => setRusakInfo(null)}
+            className="ml-2 underline hover:no-underline"
+          >
+            Tutup
+          </button>
+        </div>
+      )}
+
+      {/* Modal tandai PC rusak.
+          ⚠️ Bunyinya: PC ini TIDAK rusak, hanya ditandai agar tidak dipakai.
+          Operator sering memakai ini saat PC sedang diservis — jadi kalimatnya
+          harus jelas supaya tidak disalahartikan sebagai "PC ini mati". */}
+      {rusakTarget && (
+        <Modal open onClose={tutupRusak} locked={menyimpanRusak} label="Tandai PC rusak">
+          <PastelCard
+            label={rusakTarget.namaPc}
+            title={rusakTarget.rusak ? 'Batalkan Tanda Rusak' : 'Tandai PC Rusak'}
+            onClose={tutupRusak}
+            closeDisabled={menyimpanRusak}
+            icon={
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+            }
+          >
+            {rusakTarget.rusak ? (
+              <>
+                <p className={hintClass}>
+                  Setelah flag dibatalkan, <strong>{rusakTarget.namaPc}</strong> muncul lagi di
+                  dashboard, halaman login, dan aplikasi mobile, lalu bisa dipakai seperti biasa.
+                </p>
+                {rusakError && <p className={errorClass}>{rusakError}</p>}
+                <button
+                  type="button"
+                  disabled={menyimpanRusak}
+                  onClick={() => void handleSetRusak(false)}
+                  className={buttonClass}
+                >
+                  {menyimpanRusak ? 'Menyimpan...' : `Ya, pakai lagi ${rusakTarget.namaPc}`}
+                </button>
+              </>
+            ) : (
+              <>
+                <p className={hintClass}>
+                  Ini <strong>bukan</strong> berarti {rusakTarget.namaPc} rusak. Tanda ini dipakai
+                  supaya PC tidak bisa dipakai dan tidak muncul di dashboard, halaman login, dan
+                  aplikasi mobile.
+                </p>
+                <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+                  Kalau sedang dipakai pelanggan, sesinya langsung dihentikan dan sisa
+                  waktunya dikembalikan.
+                </p>
+                <form
+                  className="mt-3"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    void handleSetRusak(true)
+                  }}
+                >
+                  <div>
+                    <label className={fieldLabelClass} htmlFor="alasan-pc-rusak">
+                      Alasan (opsional)
+                    </label>
+                    <input
+                      id="alasan-pc-rusak"
+                      className={inputClass}
+                      value={alasanRusak}
+                      onChange={(e) => setAlasanRusak(e.target.value)}
+                      maxLength={200}
+                      placeholder="Contoh: ganti hard disk, mouse rusak"
+                    />
+                  </div>
+                  {rusakError && <p className={errorClass}>{rusakError}</p>}
+                  <button type="submit" disabled={menyimpanRusak} className={buttonClass}>
+                    {menyimpanRusak ? 'Menyimpan...' : `Tandai ${rusakTarget.namaPc} rusak`}
+                  </button>
+                </form>
+              </>
+            )}
+          </PastelCard>
+        </Modal>
+      )}
+
       <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
         {loading ? (
           <div className="p-4"><ProgressBar label="Memuat PC" value={null} /></div>
@@ -397,6 +532,22 @@ export default function PcPage() {
                     >
                       {pc.status}
                     </span>
+                    {/* ⚠️ Badge "Rusak" ditampilkan DI BAWAH status, bukan
+                        menggantikannya. Status koneksi masih informasi berguna —
+                        PC yang ditandai masih heartbeat, jadi kasir bisa
+                        membedakan "PC nyala tapi ditandai" dari "PC mati". */}
+                    {pc.rusak && (
+                      <div className="mt-1">
+                        <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
+                          Ditandai rusak
+                        </span>
+                        {pc.alasanRusak && (
+                          <p className="mt-1 max-w-[220px] text-xs text-slate-500">
+                            {pc.alasanRusak}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-slate-600">
                     {pc.lastHeartbeatAt
@@ -408,6 +559,19 @@ export default function PcPage() {
                   </td>
                   {role === 'ADMIN' && (
                     <td className="px-4 py-2 text-right">
+                      {/* ⚠️ Urutan tombol: tanda rusak, buka kunci, hapus.
+                          PC yang ditandai tidak bisa dihapus, jadi tombol
+                          Hapus mati sampai flag dibatalkan. Penolakan juga
+                          ditegakkan server (409) — disable di sini cuma
+                          biar kasir tidak salah klik. */}
+                      <button
+                        type="button"
+                        onClick={() => bukaRusak(pc)}
+                        style={{ '--btn-clr': '#b91c1c' } as React.CSSProperties}
+                        className="mr-2 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-red-700 ring-1 ring-inset ring-red-300 transition hover:bg-red-50"
+                      >
+                        {pc.rusak ? 'Batalkan Tanda' : 'Tandai Rusak'}
+                      </button>
                       {pc.status === 'ACTIVE' && (
                         <button
                           type="button"
@@ -420,8 +584,14 @@ export default function PcPage() {
                       <button
                         type="button"
                         onClick={() => void handleDelete(pc.id)}
+                        disabled={pc.rusak}
+                        title={
+                          pc.rusak
+                            ? 'PC yang ditandai rusak tidak bisa dihapus — batalkan tandanya dulu'
+                            : 'Hapus PC'
+                        }
                         style={{ '--btn-clr': '#dc2626' } as React.CSSProperties}
-                        className="rounded-full bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700"
+                        className="rounded-full bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
                       >
                         Hapus
                       </button>
