@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { PESAN_SESI_BERAKHIR, useAuth } from '../context/AuthContext.tsx'
 import { useIdleLogout } from '../hooks/useIdleLogout.ts'
+import JamDigital from './JamDigital.tsx'
 
 // `label` = teks pendek yang tampil di dalam pill glass (harus muat satu baris
 // di max-width 560px dengan 6 item). `full` = nama lengkap, dipakai sebagai
@@ -132,6 +133,12 @@ function Layout() {
               <span>Keluar</span>
             </button>
           </nav>
+
+          {/* Jam digital WIB. Diletakkan SETELAH pill, bukan di sisi yang sama
+              dengan logo. Baris header `flex-wrap`, jadi jam boleh turun ke
+              baris sendiri kalau tidak muat — dan itu lebih baik daripada
+              memaksa navigasi melebar sampai label terpotong. */}
+          <JamDigital />
         </div>
       </header>
 
