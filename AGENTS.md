@@ -248,9 +248,10 @@ Logika bisnis yang sudah berjalan:
 ## Catatan migrasi
 
 - Perintah migrasi: `docker compose exec v3netbill-backend npx prisma migrate dev --name <nama>`
-- Migrasi applied (6): `20260922142242_init`, `20260925072311_add_transaction_koreksi`,
+- Migrasi applied (7): `20260922142242_init`, `20260925072311_add_transaction_koreksi`,
   `20260925072645_add_transaction_void`, `20260925163314_add_activity_log`,
-  `20260930100153_add_perangkat_notifikasi`, `20261005083648_pc_rusak`.
+  `20260930100153_add_perangkat_notifikasi`, `20261005083648_pc_rusak`,
+  `20261005095854_pc_terakhir_aktif`.
 
 ## Referensi API — diverifikasi dari kode
 
@@ -413,6 +414,88 @@ PC rusak justru PC yang paling mungkin perlu ditelusuri ulang. Penolakan ditegak
 di server; `disabled` di frontend cuma biar kasir tidak salah klik.
 
 Tes: `backend/test/pc-rusak.spec.ts` (8) + `test/pc-rusak-service.spec.ts` (10).
+
+### 🔴 Auto-matikan PC setelah menganggur (5 Okt) ✅
+
+Kolom `Pc.terakhirAktifAt` (migrasi `20261005095854_pc_terakhir_aktif`) +
+Setting `auto_shutdown_menit` (default 5, `0` = mati, diubah dari
+**Pengaturan → Tarif**). PC yang idle selama N menit dimatikan otomatis dengan
+event `admin:shutdown` yang **sudah ada** di agent — tanpa perlu rebuild MSI.
+
+Perilaku yang sudah disepakati, dan ketiganya wajib dijaga:
+
+| Keadaan | Yang terjadi |
+|---|---|
+| PC dinyalakan tapi belum pernah dipakai | **ikut dimatikan** setelah N menit menganggur |
+| Sesi baru dimulai | hitungan mulai ulang dari 0 |
+| Kasir menekan Buka Kunci | hitungan diundur dari sekarang |
+| PC ditandai `rusak` | dilewati, tidak dimatikan |
+
+⚠️ **Timer di-update di TIGA tempat saja**: `registerPc()` (boot/reconnect),
+`stopSession()` (sesi berakhir), `unlockPc()`. Dan di-set `null` di
+`createSessionAndStart()`.
+
+⚠️ **JANGAN pernah meng-update `terakhirAktifAt` dari `heartbeat()`.** Heartbeat
+datang tiap 15 detik — kalau timer ikut di-reset di sana, hitung mundur tidak
+pernah mencapai nol dan PC tidak pernah mati. Ini jebakan yang paling mudah
+terjadi karena `heartbeat()` terlihat seperti tempat yang "tepat" untuk menyalakan
+timer.
+
+⚠️ **Urutan pengaman di `checkAutoShutdown()` jangan diubah.** Semuanya wajib,
+dan yang paling penting adalah cek sesi berjalan:
+
+```
+setting 0                  -> lewati
+rusak = true               -> lewati
+ada Session BERJALAN       -> lewati   ← PC pelanggan tidak boleh mati
+agent tidak tersambung     -> lewati, timer TIDAK disenapkan
+kirim admin:shutdown, catat log, set terakhirAktifAt = null
+```
+
+⚠️ **Kalau agent offline, timer HARUS dibiarkan menyala.** Kalau tetap diset
+`null` "karena sudah dikirim", PC itu menggantung menyala **selamanya** — tidak
+ada perintah kedua yang akan dikirim. Ini sebabnya `matikanPcOtomatis()` di
+gateway mengembalikan `boolean`, bukan `void`.
+
+⚠️ **Setting dibaca ulang tiap 10 detik, tidak di-cache**, supaya admin bisa
+menyetel `0` untuk mematikan fitur dengan segera. Tapi `NaN`/`negatif` selalu
+jatuh ke default 5 — kalau tidak, `NaN` membuat semua PC langsung dianggap sudah
+terlalu lama dan **seluruh PC mati bersamaan**. Warning-nya hanya dicetak sekali
+per nilai berbeda, kalau tidak satu baris rusak akan inundated log tiap 10 detik.
+
+Tes: `backend/test/auto-shutdown.spec.ts` (13 kasus). **Tiga pengaman sudah
+dibuktikan menangkap bug** — masing-masing dimatikan sementara di kode, dan
+tesnya gagal tepat di pengaman itu.
+
+### Hitung mundur di dashboard
+
+`DashboardPcInfo` menambah `matiDalamDetik: number | null`. `null` = PC tidak akan
+dimatikan (ada sesi, ditandai rusak, atau fiturnya dimatikan).
+
+⚠️ **Angka ini hanya informatif. Server tetap satu-satunya pihak yang mematikan
+PC.** Kalau frontend yang mematikan, kasir yang menutup tab akan membuat PC tidak
+pernah mati.
+
+Dua jebakan di sisi frontend yang sudah diperbaiki:
+
+1. **Jangan pakai `formatDuration()` untuk hitung mundur.** Fungsi itu untuk
+   sisa waktu sesi dan menambahkan jam didahulukan, jadi 149 detik terbaca
+   `2j 29:29`. Ada `formatHitungMundur()` khusus (`M:SS`, atau `H:MM:SS` di atas
+   1 jam).
+2. **Hitung mundur dihitung dari `payload.at`, bukan dari penghitung yang
+   dikurangi satu per detik.** Broadcast baru datang tiap ~10 detik dengan nilai
+   yang sudah berkurang — kalau penghitung lokal ikut berkurang, keduanya saling
+   meniadakan dan angkanya terlihat macet lalu melompat. Rumusnya:
+   `matiDalamDetik - floor((sekarangMs - payloadMs) / 1000)`.
+
+⚠️ **Tidak boleh ada `useState`/`useEffect` di dalam `pcs.map()`** — itu
+callback, bukan komponen, dan React menolaknya dengan `rules-of-hooks`. Satu
+`setInterval` global di komponen induk, lalu nilai dihitung per kartu.
+
+⚠️ **Celah yang sengaja dibiarkan**: pelanggan yang berdiri di depan PC **tidak
+melihat** hitung mundur ini — hanya kasir di dashboard yang melihat. Menutupnya
+butuh perubahan WPF di agent → build MSI baru → pasang ulang ke semua PC. Kalau
+pelanggan datang di menit ke-4, PC bisa mati tanpa peringatan di layarnya.
 
 ### 🔴 `namaPc` itu LABEL, bukan identitas — tapi punya 3 cache yang wajib di-invalidate
 
