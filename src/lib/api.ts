@@ -144,6 +144,31 @@ export async function createPc(namaPc: string): Promise<Pc> {
  * pemanggilan ini tidak memutus agent dan tidak mengganggu sesi yang sedang
  * berjalan. Duplikat nama ditolak server dengan 409.
  */
+/**
+ * Unduh laporan uptime sebagai PDF.
+ *
+ * ⚠️ Rentang WAJIB dikirim. Kalau tidak, server memakai default 7 hari —
+ * sementara halaman mungkin sedang menampilkan 1 hari, dan kasir mengunduh
+ * PDF yang berbeda dari yang dia lihat tanpa ada pesan apa pun.
+ */
+export async function unduhUptimePdf(dari: string, sampai: string): Promise<void> {
+  return downloadAuth(
+    `/reports/uptime/pdf?dari=${encodeURIComponent(dari)}&sampai=${encodeURIComponent(sampai)}`,
+    `laporan-uptime-${dari}_${sampai}.pdf`,
+  )
+}
+
+/**
+ * Ubah daya listrik PC (watt) untuk estimasi biaya di laporan uptime.
+ *
+ * ⚠️ WATT, bukan VA — 2.200 VA di meter adalah kapasitas sambungan, bukan
+ * daya yang dipakai satu PC.
+ */
+export async function setWattPc(id: string, watt: number): Promise<{ id: string; watt: number }> {
+  const { data } = await api.patch<{ id: string; watt: number }>(`/pcs/${id}/watt`, { watt })
+  return data
+}
+
 export async function gantiNamaPc(id: string, namaPc: string): Promise<{ id: string; namaPc: string }> {
   const { data } = await api.patch<{ id: string; namaPc: string }>(`/pcs/${id}/nama`, { namaPc })
   return data
@@ -192,6 +217,46 @@ export async function kirimLaporanTutupHari(): Promise<{
   telegram: { ok: boolean; detail?: string; error?: string }
 }> {
   const { data } = await api.post('/laporan/kirim-tutup-hari')
+  return data
+}
+
+
+export interface TeknisiInfo {
+  username: string
+  aktif: boolean
+  adaSesi: number
+}
+
+export async function fetchTeknisi(): Promise<TeknisiInfo[]> {
+  const { data } = await api.get<{ akun: TeknisiInfo[] }>('/teknisi')
+  return data.akun
+}
+
+export async function simpanTeknisi(username: string, password?: string): Promise<void> {
+  await api.post('/teknisi', { username, ...(password ? { password } : {}) })
+}
+
+/**
+ * ⚠️ Mematikan akses teknisi SEKETIKA mengunci PC yang sedang dipakai teknisi,
+ * bukan hanya menolak login berikutnya. `terkunci` mengembalikan berapa PC
+ * yang benar-benar terkunci — kalau 0 padahal `adaSesi` > 0, berarti agentnya
+ * offline, dan operator perlu diberi tahu.
+ */
+export async function setAktifTeknisi(
+  aktif: boolean,
+): Promise<{ aktif: boolean; terkunci: number }> {
+  const { data } = await api.patch<{ aktif: boolean; terkunci: number }>('/teknisi/aktif', { aktif })
+  return data
+}
+
+/**
+ * ⚠️ Hapus akun teknisi. PC yang sedang dipakai teknisi ikut terkunci, jadi
+ * ini bukan sekadar menghapus baris data.
+ */
+export async function hapusTeknisi(username: string) {
+  const { data } = await api.delete<{ terhapus: boolean; terkunci: number }>(
+    `/teknisi/${encodeURIComponent(username)}`,
+  )
   return data
 }
 

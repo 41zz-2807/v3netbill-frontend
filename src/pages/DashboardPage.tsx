@@ -257,8 +257,18 @@ export default function DashboardPage() {
             const sesi = pc.session
             const sisa = sesi?.sisaDetik ?? 0
             const tipe = sesi ? (sesi.tipe === 'MEMBER' ? 'Member' : 'Voucher') : '—'
-            const statusLabel =
-              pc.status === 'ACTIVE' ? 'Aktif' : pc.status === 'IDLE' ? 'Idle' : 'Offline'
+            // ⚠️ PC yang sedang dipakai teknisi TIDAK boleh tampil "Idle".
+            // Teknisi tidak punya sesi, jadi `pc.status` memang IDLE — tapi
+            // operator akan mengira PC itu kosong dan menyalakan voucher di
+            // atas orang yang sedang memperbaiki.
+            const sedangTeknisi = pc.teknisi != null
+            const statusLabel = sedangTeknisi
+              ? 'Teknisi'
+              : pc.status === 'ACTIVE'
+                ? 'Aktif'
+                : pc.status === 'IDLE'
+                  ? 'Idle'
+                  : 'Offline'
             const bolehAksi = role === 'ADMIN' || role === 'KASIR'
 
             // "Sedang berjalan" dipakai untuk SEMUA yang ditampilkan, bukan
@@ -312,8 +322,9 @@ export default function DashboardPage() {
                       )
             }
 
-            const warnaStatus =
-              pc.status === 'ACTIVE'
+            const warnaStatus = sedangTeknisi
+              ? 'teknisi'
+              : pc.status === 'ACTIVE'
                 ? 'ok'
                 : pc.status === 'IDLE'
                   ? 'warn'
@@ -395,16 +406,28 @@ export default function DashboardPage() {
                   <div className="pcc__info">
                     <div>
                       <span className="pcc__info-label">Status</span>
-                      <span className={`pcc__info-value pcc__info-value--${warnaStatus}`}>
+                      <span
+                        className={`pcc__info-value pcc__info-value--${warnaStatus}`}
+                        title={
+                          sedangTeknisi
+                            ? `PC sedang dipakai teknisi ${pc.teknisi!.username} — tidak ada penagihan`
+                            : undefined
+                        }
+                      >
+                        {sedangTeknisi && (
+                          <span className="pcc__info-dot" aria-hidden="true" />
+                        )}
                         {statusLabel}
                       </span>
                     </div>
                     <div>
-                      <span className="pcc__info-label">Tipe</span>
+                      <span className="pcc__info-label">
+                        {sedangTeknisi ? 'Teknisi' : 'Tipe'}
+                      </span>
                       <span
-                        className={`pcc__info-value${sedangBerjalan ? '' : ' pcc__info-value--muted'}`}
+                        className={`pcc__info-value${sedangBerjalan || sedangTeknisi ? '' : ' pcc__info-value--muted'}`}
                       >
-                        {tipe}
+                        {sedangTeknisi ? pc.teknisi!.username : tipe}
                       </span>
                     </div>
                   </div>
@@ -427,13 +450,57 @@ export default function DashboardPage() {
                 <div className="p-4 text-center text-sm text-slate-400">Belum ada aktivitas.</div>
               ) : (
                 <React.Fragment>
-                  <Table
-                    columns={logColumns}
-                    data={logs}
-                    keyExtractor={(log) => `${log.at}-${log.event}`}
-                    striped
-                    hoverable
-                  />
+                  {/* ⚠️ Di bawah `sm` tabel DIJADIkan kartu bertumpuk.
+                      Table memakai `w-full` + `overflow-x-auto`, dan di 390px
+                      isinya melebar jadi 688px: kolom Waktu 116 + Event 144
+                      mengisi layar, sementara kolom Detail 428px mulai di x=260
+                      — jadi kolom yang berisi "PC002 dimatikan otomatis" itu
+                      seluruhnya DI LUAR LAYAR tanpa ada petunjuk bisa digeser.
+                      Gejalanya Persis seperti "kolom kosong": event-nya terbaca,
+                      keterangannya tidak.
+
+                      Pola ini sama dengan tabel riwayat backup di tab Data
+                      Pengaturan, yang sudah dipakai dan terbukti bekerja.
+
+                      ⚠️ Breakept-nya `lg`, bukan `sm`. Terukur: tabel butuh
+                      wrapper minimal 688px ( Waktu 116 + Event 144 + Detail
+                      428 ), dan wrapper baru cukup di viewport ~790px. Dengan
+                      `sm` (640px) tabel masih meluap sampai lebar 768px --
+                      di 768 wrapper hanya 668px tapi tabel tetap 688px. Jadi
+                      kartu dipakai sampai 1024px, bukan hanya sampai 640px. */}
+                  <ul className="space-y-2 lg:hidden">
+                    {logs.map((log) => (
+                      <li
+                        key={`${log.at}-${log.event}`}
+                        className="rounded-md border border-slate-200 p-3"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <Badge variant={logEventVariant(log.event)} size="sm">
+                            {logEventLabel(log.event)}
+                          </Badge>
+                          <span className="whitespace-nowrap text-xs text-slate-500">
+                            {formatWaktu(log.at)}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-sm text-slate-600">
+                          {formatLogDetail(
+                            log,
+                            log.pc ??
+                              (log.pcId ? pcs.find((p) => p.id === log.pcId)?.namaPc : undefined),
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="hidden lg:block">
+                    <Table
+                      columns={logColumns}
+                      data={logs}
+                      keyExtractor={(log) => `${log.at}-${log.event}`}
+                      striped
+                      hoverable
+                    />
+                  </div>
                   {logTotalPages > 1 && (
                     <Pagination
                       currentPage={logPage}
@@ -669,6 +736,8 @@ const LOG_EVENT_LABEL: Record<string, string> = {
   pc_unlocked: 'PC Dibuka',
   pc_shutdown: 'PC Dimatikan',
   pc_shutdown_auto: 'PC Mati Otomatis',
+  'teknisi:login': 'Teknisi Login',
+  'teknisi:logout': 'Teknisi Keluar',
 }
 
 const LOG_EVENT_VARIANT: Record<string, 'default' | 'success' | 'warning' | 'danger' | 'info'> = {
@@ -737,6 +806,10 @@ function formatLogDetail(log: DashboardLog, pcName?: string): string {
     // pemetaan detail-nya.
     case 'pc_shutdown_auto':
       return `${pc} dimatikan otomatis — ${log.keterangan ?? `idle ${log.menit ?? '-'} menit tanpa aktivitas login`}`
+    case 'teknisi:login':
+      return `${pc} dibuka oleh teknisi ${log.teknisi ?? '-'} — tanpa penagihan`
+    case 'teknisi:logout':
+      return `${pc} dikunci — akses teknisi dimatikan${log.teknisi ? ` (${log.teknisi})` : ''}`
     default:
       return ''
   }

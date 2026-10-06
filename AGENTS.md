@@ -248,10 +248,11 @@ Logika bisnis yang sudah berjalan:
 ## Catatan migrasi
 
 - Perintah migrasi: `docker compose exec v3netbill-backend npx prisma migrate dev --name <nama>`
-- Migrasi applied (8): `20260922142242_init`, `20260925072311_add_transaction_koreksi`,
+- Migrasi applied (9): `20260922142242_init`, `20260925072311_add_transaction_koreksi`,
   `20260925072645_add_transaction_void`, `20260925163314_add_activity_log`,
   `20260930100153_add_perangkat_notifikasi`, `20261005083648_pc_rusak`,
-  `20261005095854_pc_terakhir_aktif`, `20261005161709_uptime_pc`.
+  `20261005095854_pc_terakhir_aktif`, `20261005161709_uptime_pc`,
+  `20261006063414_teknisi`.
 
 ## Referensi API — diverifikasi dari kode
 
@@ -311,6 +312,10 @@ tanpa JWT sama sekali.
 | GET | `/api/reports/daily?dari&sampai` | — |
 | GET | `/api/reports/range?dari&sampai` | — |
 | GET | `/api/reports/uptime?dari&sampai` | — |
+| GET | `/api/teknisi` | ADMIN |
+| POST | `/api/teknisi` | ADMIN |
+| PATCH | `/api/teknisi/aktif` | ADMIN |
+| GET | `/api/teknisi/status` | ADMIN |
 | POST | `/api/laporan/kirim-tutup-hari` | — |
 | POST | `/api/notifikasi/token` | — |
 | DELETE | `/api/notifikasi/token` | — |
@@ -874,6 +879,59 @@ cuma angka yang tidak akan pernah sampai.
 Terbukti setelah perbaikan: 4 PC offline beku di `SHUTDOWN DALAM 0:00` selama
 25 detik (3 siklus broadcast), sementara PC bersesi tetap turun normal.
 Mutasi (mengembalikan ke kode lama) mengulang gejala aslinya persis.
+
+### 🔴 Kolom Detail log aktivitas terpotong di HP — tabel harus jadi kartu (6 Okt)
+
+Dilaporkan: baris `PC Mati Otomatis` di tabel Log Aktivitas **tidak punya
+keterangan PC mana**. Padahal backend dan log billing sudah benar.
+
+Gejalanya sangat menyesatkan karena semua yang dicek sudah benar:
+
+| Yang dicek | Hasil |
+|---|---|
+| Isi `ActivityLog.detail` | `{"pc":"PC002", ...}` — **benar** |
+| Isi berkas log billing | `pc=PC002` — **benar** |
+| Isi bundle frontend | ada `case pc_shutdown_auto` — **benar** |
+| Render di dev server 5173 | **benar** |
+| Render di domain produksi 1440px | **benar** |
+
+Jadi verifikasi desktop selalu lolos, dan tidak ada satu pun yang melihat
+keberadaannya. Yang revealing-nya cuma render di **lebar HP**.
+
+Terukur di 390px:
+
+```
+area tabel terlihat    292px
+lebar tabel sebenarnya 688px
+kolom: Waktu 116 | Event 144 | Detail 428
+        Waktu + Event = 260px  -> pas mengisi layar
+        Detail mulai di x=260   -> SELURUHNYA DI LUAR LAYAR
+```
+
+Kolom yang berisi nama PC berada sepenuhnya di kanan layar, dan `Table`
+memakai `overflow-x-auto` **tanpa petunjuk bisa digeser** — jadi dari sisi kasir
+sama saja dengan "kolom kosong".
+
+⚠️ **Jangan percaya `curl`, dev server, atau desktop.** Gejala layout hanya
+tampak saat tabel dirender pada lebar sempit. Sama seperti `flutter test` yang
+memakai permukaan 800x600 padahal HP-nya 390px.
+
+Perbaikannya: di bawah `lg` tabel diganti jadi kartu bertumpuk
+(`lg:hidden` + `hidden lg:block`), pola yang sama dengan tabel riwayat backup
+di tab Data Pengaturan.
+
+⚠️ **Breakept-nya `lg` (1024px), BUKAN `sm` (640px)** — dan ini diukur, bukan
+tebakan. Tabel butuh wrapper minimal 688px (116 + 144 + 428). Wrapper baru
+cukup di viewport ~790px: di 640px wrapper hanya 540px, di 768px hanya 668px
+sementara tabel tetap 688px. Jadi `sm` masih menyisakan celah 640-790px yang
+meluap.
+
+Hasil setelah perbaikan, diuji di 7 lebar: 360 / 390 / 640 / 768 / 900 / 1024
+/ 1440 — nol overflow, nama PC selalu terlihat, nol error konsol.
+
+⚠️ **Kartu mobile memanggil `formatLogDetail()` dengan argumen nama PC yang
+sama persis dengan versi tabel.** Kalau hanya versi kartu yang diisi, kolom
+"PC mana" akan hilang justru di layar yang paling sempit.
 
 ### 🔴 Kolom Detail log aktivitas wajib menyebut siapa & PC mana (6 Okt)
 
@@ -2696,6 +2754,167 @@ HKLM\Software\v3Netbill\Agent  → ditulis MSI saat instalasi
 Nilai di bawah ini sengaja tidak dicatat. Kalau registry sudah hilang, jalankan
 `.bat` lalu isi ketiga nilai tersebut saat diminta.
 
+### 🔴 Menu PC Management hanya ADMIN — dan filter nav pakai FLAG (6 Okt)
+
+Permintaan operator: kasir tidak boleh mengelola PC. Yang disembunyikan adalah
+menu "PC Management" (`/pcs`), karena halaman itu bisa menambah, menghapus,
+mengganti nama, menandai rusak, dan membuka kunci PC.
+
+Dua lapis, dan dua-duanya wajib:
+
+1. Menu disembunyikan lewat `adminOnly: true` di `Layout.tsx`.
+2. Halaman ikut dijaga di `PcPage` — kalau hanya disembunyikan, kasir tetap
+   bisa sampai lewat mengetik `/pcs` atau bookmark lama, jadi jaminannya nol.
+
+⚠️ **Filter nav WAJIB pakai flag `adminOnly`, bukan daftar path.** Versi lama
+`navItems.filter((i) => i.to !== '/settings' || role === 'ADMIN')` hardcode
+satu path. Waktu `/pcs` ikut jadi admin-only, bukan itu diganti flag — dan
+`/settings` **tidak punya flag**, jadi `!i.adminOnly` bernilai true dan
+**menu Pengaturan ikut muncul untuk kasir**. Regresi nyata yang sudah
+terbukti, dan hanya ketahuan karena nav dicek lewat `href`, bukan
+teks label: label pendeknya "Setting" dan yang panjang "Pengaturan", jadi
+pencocokan teks yang salah tidak menemukan apa pun dan terlihat "sudah benar".
+
+⚠️ **Guard tidak boleh ditulis di ATAS hook milik halaman.** `return` sebelum
+`useState`/`useEffect` membuat seluruh hook jadi bersyarat, dan
+`react-hooks/rules-of-hooks` menolaknya — 19 error sekaligus. `SettingsPage`
+lolos hanya karena guard-nya diletakkan SETELAH semua hook. Yang dipakai di
+sini lebih bersih: komponen dipecah jadi `PcPage` (pemeriksa role) +
+`IsiPcPage` (pemegang semua hook), jadi kasir **tidak sampai memanggil API**
+sama sekali.
+
+⚠️ **Pesan penolakan wajib memberi jalan keluar** — tautan "Kembali ke
+Dashboard" plus catatan bahwa Start/Kunci/Matikan tetap dari Dashboard.
+Tanpa itu kasir tiba-tiba kehilangan akses tanpa tahu harus pindah ke mana.
+
+⚠️ **Mematikan menu ini TIDAK boleh mematikan kasir dari bekerja.** Dashboard
+tetap menampilkan kartu PC dengan tombol Start sesi / Kunci / Matikan; itu
+operasional harian kasir dan tidak boleh ikut hilang. Terverifikasi: kasir
+tetap melihat 5 kartu PC dan 10 tombol aksi, 0 error konsol.
+
+### 🔴 JANGAN `npx nest build` manual saat watcher jalan (6 Okt)
+
+`nest-cli.json` punya `deleteOutDir: true`, jadi **setiap** `nest build` menghapus
+seluruh `dist` lalu membangun ulang. Kalau itu dijalankan manual sementara
+`nest start --watch` sedangoliath restarting, proses aplikasi bisa memuat modul
+saat `dist` belum lengkap:
+
+```
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/app/dist/accounts/nama-member.js'
+        imported from /app/dist/accounts/dto/create-member.dto.js
+```
+
+Berkasnya **ada** setelah build selesai — jadi errornya muncul di tengah jendela
+saat `dist` kosong, dan proses Nest mati. Watcher **tidak** selalu bangkitkan
+kembali; menyentuh satu berkas pun tidak membangunkan apa pun.
+
+⚠️ **Akibatnya bukan cuma backend mati — tidak ada satu PC pun yang bisa
+billing.** Pada insiden ini downtime ±15 menit dengan 2 sesi pelanggan aktif.
+
+**Cara memicu compile yang aman:**
+
+```bash
+touch src/app.module.ts      # watcher détection, rebuild penuh, respawn
+```
+
+Kalau watcher sudah tidak responsif, satu-satunya jalan adalah
+`docker compose restart v3netbill-backend`. Sesi pelanggan tetap selamat karena
+`recoverRunningSessions()` menyalakan tick dan waktu dihitung dari
+`Session.waktuMulai`. Terbukti: 2 sesi pulih dengan selisih 1 detik (normal).
+
+⚠️ `npx nest build` hanya aman untuk **pemeriksaan kompilasi** di container yang
+watcher-nya tidak sedang hidup — misalnya saat diagnosis. Jangan jadikan kebiasaan
+memakainya sebagai "cek build" di tengah development.
+
+### 🔴 Akun teknisi — tidak masuk billing, tapi harus terlihat (6 Okt)
+
+Login teknisi di layar kunci **PC client** (bukan web admin): membuka PC tanpa
+waktu dan tanpa penagihan.
+
+**Kenapa tabel terpisah, bukan `Account`:**
+
+| Alasan | Dampak kalau dipaksa lewat `Account` |
+|---|---|
+| `Session.accountId` punya FK `RESTRICT` yang **tidak boleh null** | Harus mengubah skema jalur yang sedang menagih |
+| `Account` selalu menghasilkan `Session` + `Transaction` | `totalLogin` dan pendapatan ikut naik |
+| `Account.nama` adalah **kredensial login pelanggan** | Kredensial teknisi ikut tampil di daftar akun |
+
+Sesi teknisi **tidak pernah membuat baris `Session` maupun `Transaction`**.
+Jejaknya ada di `SesiTeknisi` — cukup untuk indikator dashboard dan audit,
+tanpa menyentuh rekap pendapatan.
+
+**Tiga hal yang paling mudah rusak:**
+
+1. **Nama teknisi tidak boleh sama dengan nama/kode akun pelanggan.**
+   `Account.nama` dipakai `cariAkunAktif` untuk mencocokkan login, jadi nama
+   yang sama membuat satu kode cocok ke DUA tempat: PIN teknisi yang bocor
+   berarti bisa dipakai masuk sebagai pelanggan. Ditolak di `simpanAkun()`.
+2. **Cek teknisi HARUS sebelum `loginRequest()`.** Kalau dibalik, kode `teknisi`
+   lebih dulu dicocokkan ke `Account.nama`.
+3. **Pesan gagalan harus sama dengan akun biasa** ("Akun tidak ditemukan"). Kalau
+   "kode dikenal tapi PIN salah" dibedakan, orang yang menebak di PC client bisa
+   memetakan kode teknisi mana yang terdaftar — dan kode itu sudah setengah dari
+   kredensial.
+
+⚠️ **`setAktif()` harus mengembalikan daftar `pcId` SEBELUM menutup sesi.**
+Versi pertama menutup sesi dulu lalu gateway mencarinya sendiri, hasilnya nol PC
+terkunci padahal log sudah menulis "1 sesi harus dikunci" — sakelar terlihat
+berhasil padahal teknisi masih bebas di dalam PC. Terbukti: `terkunci: 0` dengan
+sesi aktif.
+
+⚠️ **Memakai `admin:lock`, bukan `session:stop`.** `admin:lock` hanya mengunci
+layar di agent dan tidak menyentuh database — persis yang dibutuhkan, karena sesi
+teknisi memang tidak punya baris `Session` untuk dihentikan.
+
+⚠️ **Task Manager diblokir selama mode teknisi**, karena `Worker.OnSessionStarted`
+selalu memanggil `SetTaskManagerBlocked(true)`. Ini konsekuensi dari memilih
+tanpa MSI baru; memperbaikinya butuh perubahan agent.
+
+⚠️ **Angka hitung mundur terlihat** di mini panel PC (12 jam, konstanta
+`DURASI_TEKNISI_DETIK`). Bukan waktu yang dibeli dan tidak berkurang di database.
+
+Tes: `backend/test/teknisi.spec.ts` (18). Mutasi terbukti: hapus syarat `aktif`
+dan hapus penolakan nama bentrok — masing-masing gagal tepat di satu tes.
+
+### 🔴 Log aktivitas terpotong di HP & menu PC Management (6 Okt)
+
+Dua perbaikan UI yang gejalanya sama-sama "ada tapi tidak terbaca".
+
+**Kolom Detail log aktivitas terpotong.** Di 390px: area terlihat 292px, tabel
+sebenarnya 688px, kolom Waktu 116 + Event 144 = 260px (pas mengisi layar),
+kolom Detail 428px mulai di x=260 — **seluruhnya di luar layar** tanpa petunjuk
+bisa digeser. Kolom yang berisi nama PC praktis tidak ada.
+
+⚠️ **Verifikasi desktop selalu lolos.** Data, bundle, dev server, dan domain
+produksi 1440px semuanya benar. Yang revealing cuma render di **lebar HP**.
+
+Di bawah `lg` tabel diganti kartu bertumpuk (`lg:hidden` + `hidden lg:block`).
+⚠️ Breakept-nya **`lg`, bukan `sm`** — tabel butuh wrapper minimal 688px, dan di
+768px wrapper hanya 668px. Diuji di 7 lebar (360–1440): nol overflow, nama PC
+selalu terlihat.
+
+⚠️ **Kartu mobile memanggil `formatLogDetail()` dengan argumen nama PC yang sama
+persis dengan versi tabel.** Kalau hanya versi kartu yang diisi, kolom "PC mana"
+hilang justru di layar paling sempit.
+
+**Menu PC Management hanya ADMIN.** Menu disembunyikan lewat flag `adminOnly`,
+**dan** `PcPage` ikut dijaga — kalau hanya disembunyikan, kasir tetap bisa reach
+lewat `/pcs` atau bookmark lama.
+
+⚠️ **Filter nav WAJIB pakai flag, bukan daftar path.** Mengganti
+`i.to !== '/settings'` dengan flag `adminOnly` membuat `/settings` (tanpa flag)
+muncul untuk semua orang — **regresi nyata**. Baru ketahuan karena nav dicek lewat
+`href`, bukan teks label: labelnya "Setting" (pendek) vs "Pengaturan" (panjang),
+jadi pencarian teks yang salah tidak menemukan apa pun dan terlihat "sudah benar".
+
+⚠️ **Guard tidak boleh ditulis di ATAS hook.** `return` sebelum `useState` membuat
+seluruh hook bersyarat → 19 error `rules-of-hooks`. `SettingsPage` lolos karena
+guard-nya setelah semua hook. Di sini komponen dipecah: `PcPage` (pemeriksa role)
++ `IsiPcPage` (pemegang hook), jadi kasir tidak sampai memanggil API.
+
+⚠️ **Mematikan menu tidak boleh mematikan kasir dari bekerja.** Dashboard tetap
+menampilkan 5 kartu PC dengan 10 tombol Start/Matikan — terverifikasi.
+
 ## Pelajaran proses (penting untuk sesi berikutnya)
 
 1. **Karakter asing nyasar di commit message — sudah 5 kali.** CJK, Korea, dan Rusia
@@ -3964,11 +4183,8 @@ dokumen itu harus diperbarui bersama: `AGENTS.md`, `docs/DEPLOYMENT.md`,
   **tidak jalan** karena secret `V3NETBILL_ADMIN_USER`/`PASSWORD`/`BACKEND_URL` belum diisi,
   dan step itu keluar OK padahal melewati. Detail + cara isi: bagian "Build MSI & WiX".
 - **Hapus fallback JWT** (lihat di atas) — belum dikerjakan. Masih prioritas tinggi.
-- **Tampilan log aktivitas di HP** — kolom Detail terpotong di layar sempit sempit.
-  **Pola yang sudah berhasil dipakai** di tab Data Pengaturan: di bawah `sm` tabel
-  diganti jadi kartu bertumpuk (`sm:hidden` + `hidden sm:block`). Tabel yang
-  `min-w-max` membuat kolom terakhir terdorong keluar layar tanpa petunjuk
-  bisa digeser. Terapkan pola yang sama di log aktivitas.
+- ~~**Tampilan log aktivitas di HP**~~ — **SELESAI 6 Okt**, detail di bagian
+  "Kolom Detail log aktivitas terpotong di HP".
 - **Status voucher sisa 0** — 3 voucher `ACTIVE` dengan sisa 0 ditampilkan dengan
   label "Habis" (perkampilan tampilan saja). Kalau user mau statusnya benar-benar
   jadi `TERPAKAI`, itu **perubahan logika bisnis di backend** + enum, bukan
@@ -4201,4 +4417,224 @@ folder PostgreSQL tidak persis `war-nt-web`, `docker compose up` gagal dengan
 salah satu repo** — ada di root project, jadi harus disalin eksplisit saat membuat bundel
 source.
 
+### 🔴 Batas karakter login PC client (6 Okt)
 
+Ditemukan karena teknisi tidak bisa login sama sekali:
+
+```
+Agent.Overlay/MainWindow.xaml
+KodeTextBox   MaxLength="6"
+PasswordBox   MaxLength="4"
+```
+
+Field login di layar PC **memotong ketikan**, jadi kredensial yang lebih panjang
+tidak ditolak server — tidak pernah bisa diketik sama sekali. Gejalanya sangat
+menyesatkan: akun terlihat "berhasil" dibuat di Pengaturan, lalu teknisi
+mengetik nama dan field berhenti sendiri.
+
+⚠️ Server tidak bisa mengangkat batas ini; batasnya milik agent. Jadi
+`BATAS_LOGIN_PC` di `teknisi.service.ts` harus **selalu sama dengan XAML**, dan
+validasi ditegakkan di server karena itu satu-satunya tempat yang bisa mencegah
+akun yang tidak akan pernah bisa dipakai.
+
+Dampaknya bukan cuma teknisi — member dengan `nama` > 6 karakter juga tidak
+bisa login, begitu password pelanggan yang diganti > 4 karakter. Per 6 Okt
+hanya 1 akun yang terdampak (`maintenance`), karena 29 kode voucher semuanya
+<= 6. Kalau member dengan nama panjang bertambah, ini jadi masalah nyata.
+
+### 🔴 `vitest` TIDAK melakukan type-check — tes hijau != bisa dikompilasi
+
+Saya menulis `this.teknisiService.selesaiSesiForPc()` padahal properti itu
+bernama `teknisi`. **Semua 155 tes lulus** karena vitest memakai esbuild yang
+hanya strip tipe. `nest build` baru menolak:
+
+```
+src/session/session.service.ts:1069:32 - error TS2339:
+Property 'teknisiService' does not exist on type 'SessionService'.
+Found 1 error.
+```
+
+Dan karena `nest start --watch` **menunggu hasil compile**, satu error itu
+berarti server **tidak start sama sekali** — produksi 502 sampai berkasnya
+diperbaiki.
+
+Aturan yang berlaku: setelah edit TypeScript, **selalu lihat baris
+`Found N errors` dari watcher**, bukan hanya `Tests N passed`. Vitest hanya
+menjawab "logikanya benar untuk input yang saya kirim", bukan "berkas ini
+bisa dikompilasi".
+
+### 🔴 Auto-matikan PC tidak melihat sesi TEKNISI (6 Okt)
+
+`checkAutoShutdown()` punya pengaman "ada Session BERJALAN -> lewati". Tapi
+teknisi **sengaja tidak punya baris `Session`**, jadi pengaman itu tidak pernah
+menangkapnya: PC yang sedang dipakai teknisi ikut terhitung idle, dan
+`admin:shutdown` dikirim di tengah pengerjaan.
+
+Terbukti di kartu dashboard: **`SHUTDOWN DALAM 4:32`** padahal orangnya masih
+di depan PC.lksealainnya `matiDalamDetik` juga ikut tidak `null`, jadi operator
+melihat angka yang tidak akan pernah sampai.
+
+Dua perbaikan, keduanya wajib:
+
+```
+Pengaman 3b  ->  this.teknisi?.adaSesiAktifUntukPc(pc.id)  ->  continue
+matiDalamDetik -> null kalau teknisiByPc punya PC itu
+```
+
+Tes: `test/auto-shutdown.spec.ts` (3 kasus baru). **Mutasi sudah dibuktikan** —
+`if (false)` → tepat 3 tes gagal.
+
+### 🔴 Tombol STOP di PC client tidak bekerja untuk teknisi (6 Okt)
+
+`stop_session` dari PC memanggil `unlockPc()`, yang hanya mencari baris
+`Session` BERJALAN. Teknisi tidak punya baris itu, jadi hasilnya `"Tidak ada
+sesi aktif di PC ini"` — **dan tidak ada jalan keluar dari PC itu sendiri**.
+
+⚠️ Perbaikannya di `unlockPc()`, **bukan** di gateway. Satu titik itu menutup
+tiga pemanggil sekaligus: `client:stop_session` (PC client),
+`dashboard:lock_pc`, dan `POST /api/pcs/:id/unlock` (admin). Menaruh
+penanganannya di gateway hanya memperbaiki satu jalur — dan dua jalur lain
+tetap salah tanpa terlihat.
+
+⚠️ Sesi teknisi harus ditutup **sebelum** dikunci, dan `admin:lock` dikirim
+dengan `kunciLayarPc()` — bukan `session:stop`, karena tidak ada `Session` yang
+bisa dihentikan.
+
+Terbukti live dengan agent simulasi: `stop_session` -> `{"success":true,
+message:"Sesi teknisi ditutup"}`, `admin:lock` diterima, `SesiTeknisi.selesaiAt`
+terisi.
+
+⚠️ Tes WebSocket harus memasang listener **sebelum** mengirim perintah. Versi
+pertama memasang `dapat('admin:lock')` sesudah ack, jadi emit-nya terlewat dan
+tes melaporkan bug yang **tidak ada** — padahal produknya benar.
+
+### ⚡ Estimasi biaya listrik di laporan uptime (6 Okt)
+
+```
+Pc.watt            Int @default(150)          migration 20261006092711_watt_pc_listrik
+Setting.harga_per_kwh                          default fallback 1444,70
+src/uptime/listrik.ts                          fungsi PURE (bisa diuji tanpa Prisma)
+PATCH /api/pcs/:id/watt                        ADMIN, kolom watt saja
+```
+
+Baris uptime kini membawa `watt`, `kwh`, `rupiah` per PC, plus
+`listrik.tarifPerKwh/totalKwh/totalRupiah/totalWatt`.
+
+#### 🔴 2.200 VA itu BUKAN 2.200 watt
+
+Ini inti dari semuanya. Meter rumah 2.200 VA adalah **kapasitas
+sambungan** — batas maksimum, bukan pemakaian. Satu PC warnet hanya menarik
+150-300 W.
+
+Kalau angka VA dipakai sebagai watt, kWh jadi **~14,7x lipat** lebih besar
+(150 W x 1 jam = 0,15 kWh, sedangkan 2200 W x 1 jam = 2,2 kWh). Dan tidak ada
+satu pun error: format rupiahnya tetap rapi, angkanya terlihat "meyakinkan".
+Ini yang membuat tariff yang benar harus dikonfirmasi ke user, bukan
+ditebak — tebaknya kelihatan benar.
+
+Tarif 2.200 VA = **Rp 1.444,70/kWh**, sudah diverifikasi ke daftar tarif
+PLN Oktober 2026 (berlaku sejak 1 Juli 2026, tidak naik). Angka itu tetap
+disimpan di `Setting` dan dibaca ulang tiap permintaan, bukan di-cache —
+tarif ditinjau tiap kuartal, jadi cache bisa bertahan berbulan-bulan
+menampilkan biaya yang salah.
+
+#### ⚠️ Tiga jebakan format yang sudah diperbaiki
+
+1. **`formatRupiah()` di `lib/api.ts` tidak membulatkan.** Nilainya jadi
+   `Rp 3.751,535` — bukan format uang. Dipakai `formatRupiahBulat()`.
+2. **`toFixed()` memakai titik desimal** -> "2.60 kWh" bersebelahan dengan
+   "Rp 3.752" yang pakai koma. Dipakai `toLocaleString('id-ID')`.
+3. **Tarif ikut terpotong** -> `Rp 1.444,7`, satu digit dari daftar resmi
+   `Rp 1.444,70`. Tarif adalah RATE, bukan jumlah, jadi dua desimal wajib.
+
+#### ⚠️ Total kWh dijumlahkan dari kWh per PC
+
+Bukan `sum(detik) x satu watt` — itu hanya benar kalau semua PC sama
+dayanya, dan tidak ada jaminan begitu. Pembulatan kWh juga dilakukan di
+AKHIR: membulatkan 0,0117 -> 0,01 untuk 20 PC menghasilkan selisih yang
+jauh lebih besar daripada pembulatan yang dimaksud.
+
+#### ⚠️ Uptime mengukur waktu NYALA, bukan pemakaian nyata
+
+Angkanya sebesar `Pc.lastHeartbeatAt` yang dicatat tiap 60 detik. PC yang
+menyala di layar kunci tetap menarik listrik, jadi ini wajar untuk estimasi
+tagihan — tapi dayanya sendiri tidak diukur, hanya diasumsikan. Menyebutnya
+"pemakaian listrik" akan terdengar lebih yakin dari yang sebenarnya.
+
+Tes: `backend/test/listrik.spec.ts` (23 kasus, termasuk kasus "2200 W = 14,7x lipat 150 W" supaya skala salah harus ketahuan kalau dikembalikan).
+
+### 🔴 "Ikut filter" ≠ angkanya ikut berubah (6 Okt)
+
+Permintaan: "grafik uptime ikut filter halaman laporan". Terbukti sudah benar —
+`load()` memanggil `fetchUptime(dari, sampai)` dan request-nya memang berubah:
+
+```
+halaman dibuka   -> ?dari=2026-09-30&sampai=2026-10-06
+ganti filter     -> ?dari=2026-10-01&sampai=2026-10-06
+```
+
+Jadi permintaan itu **salah**, dan hampir salah karena alasan yang salah juga:
+ketika dicek, angkanya tidak berubah sama sekali, dan itu terlihat seperti bug
+filter. Penyebabnya: baris 5 Okt memang **nol** semua di `UptimePc`
+(sampler baru jalan). Data yang sama, rentang berbeda, hasil identik.
+
+Yang sebenarnya terjadi adalah **`perHari` sudah dikirim backend tapi TIDAK
+dipakai frontend sama sekali** — satu-satunya kemunculannya di `types.ts`.
+Grafik lama memakai `pc.detik`, yaitu total SELURUH rentang, jadi tidak punya
+dimensi tanggal sama sekali. Efek filter memang tidak akan pernah kelihatan,
+apa pun rentangnya.
+
+Perbaikan: grafik **harian** (sumbu X = tanggal dari `perHari`, satu garis per
+PC) ditambahkan DI ATAS grafik per-PC yang dipertahankan. Terukur di browser:
+
+| rentang | titik harian | sumbu X |
+|---|---|---|
+| 6 hari | 30 | 1 Okt .. 6 Okt |
+| 1 hari | 5 | 6 Okt |
+| 3 hari | 15 | 4 Okt .. 6 Okt |
+| 24 hari | 120 | 13 Sep .. 6 Okt |
+
+⚠️ **HATI-HATI dengan selector recharts saat menguji.** `.recharts-xAxis text`
+dan `.recharts-cartesian-axis-tick-value` TIDAK menunjuk hal yang sama,
+dan `.recharts-line circle` kosong padahal garisnya ada titik. Selector yang
+benar: `.recharts-line-dots circle`. Salah selector bikin 5 percobaan
+berturut-turut menyimpulkan "grafik tidak punya titik" — padahal produknya benar.
+Ini persis pelajaran no. 5: periksa outputnya, jangan simpulkan.
+
+### 🔴 PDF punya DUA sistem koordinat — dan saya mengulang bug yang sama (6 Okt)
+
+Teks di PDF laporan uptime: kotak baris tabel muncul **~500pt di bawah**
+teksnya, dan garis pemisah ada di dasar halaman. Halaman tetap 1, `pdfinfo`
+tetap tanpa error, `nest build` bersih. Terlihat benar sampai isinya dibaca.
+
+Penyebabnya **tepat** jebakan yang sudah tercatat di bagian "Cara memverifikasi
+geometri PDF" — cuma di sisi authoring:
+
+| Elemen | y dihitung dari |
+|---|---|
+| `doc.text(x, y)` | **ATAS** |
+| `doc.rect()`, `moveTo()`, `lineTo()` | **BAWAH** |
+
+Jadi satu variabel `y` yang sama untuk teks dan kotak menghasilkan dua tempat
+yang sama sekali berbeda. Perbaikannya fungsi `yPdf()` / `kotakAtas()` di
+`uptime-pdf.service.ts` — konversi di titik terakhir, supaya tidak ada yang
+bisa lupa.
+
+⚠️ **`doc.y` juga tidak bisa dipercaya** setelah `text()` yang memakai opsi
+`width`. Pada versi pertama kursor kembali ke posisi jauh di bawah teks yang
+baru saja digambar, jadi `y = doc.y + 14` menghasilkan selisih ~500pt.
+Sekarang **setiap y dilacak sendiri** dari margin, `doc.y` hanya dipakai untuk
+footer di halaman terakhir.
+
+Tes: `backend/test/pdf-uptime.spec.ts` (11 kasus) membaca PDF hasil build —
+inflate stream dulu, baru cari `Tm` dan `re`. **Mutasi sudah dibuktikan**:
+mengembalikan `kotakAtas()` tanpa pembalikan → tepat **3 tes gagal**.
+
+⚠️ **Isi PDF harus di-INFLATE dulu sebelum dibaca.** Tanpa itu tidak ada satu
+pun teks atau koordinat yang cocok, dan tes geometri "lolos" sambil
+memeriksa file kosong. Tes pertama sudah dijaga: isi ter-inflate wajib tidak
+kecil, dan jumlah `teks` wajib > 10.
+
+⚠️ **`@Res()` harus parameter pertama di controller.** TypeScript menolak
+parameter wajib yang mengikuti parameter opsional (`TS1016`), dan karena
+watcher menunggu compile, satu baris itu menjatuhkan seluruh server.

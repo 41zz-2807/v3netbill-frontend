@@ -1,5 +1,14 @@
-import { useState } from 'react'
-import { patchSetting, setPinBypass, setPinUninstall } from '../../lib/api.ts'
+import { useCallback, useEffect, useState } from 'react'
+import {
+  fetchTeknisi,
+  hapusTeknisi,
+  patchSetting,
+  setAktifTeknisi,
+  setPinBypass,
+  setPinUninstall,
+  simpanTeknisi,
+} from '../../lib/api.ts'
+import type { TeknisiInfo } from '../../lib/api.ts'
 import { SettingsCard } from './SettingsCard'
 import type { SettingsCtx } from './shared'
 
@@ -21,6 +30,68 @@ export default function TabAgent({
   ncPasswordTerisi: boolean
 }) {
   const { busy, run, setErr } = ctx
+
+  // ===== Akses teknisi =====
+  const [akun, setAkun] = useState<TeknisiInfo[]>([])
+  const [tkNama, setTkNama] = useState('')
+  const [tkPin, setTkPin] = useState('')
+  const [tkPesan, setTkPesan] = useState<string | null>(null)
+  const [tkBusy, setBusyAktif] = useState<string | null>(null)
+
+  const muatTeknisi = useCallback(async () => {
+    try {
+      setAkun(await fetchTeknisi())
+    } catch {
+      // Diamkan: kalau gagal, kartu menampilkan daftar kosong. Sengaja TIDAK
+      // memakai pesan error global supaya tidak ketuker dengan pengaturan lain.
+    }
+  }, [])
+
+  useEffect(() => {
+    void muatTeknisi()
+  }, [muatTeknisi])
+
+  async function simpanAkun(): Promise<void> {
+    setBusyAktif('simpan-teknisi')
+    try {
+      setTkPesan(null)
+      await simpanTeknisi(tkNama.trim(), tkPin.trim() || undefined)
+      setTkNama('')
+      // PIN dikosongkan supaya tidak tertinggal di memory browser.
+      setTkPin('')
+      setTkPesan('Akun teknisi tersimpan')
+      await muatTeknisi()
+    } catch (e) {
+      setTkPesan(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusyAktif(null)
+    }
+  }
+
+  async function gantiAktif(username: string, aktif: boolean): Promise<void> {
+    setBusyAktif(`aktif-${username}`)
+    try {
+      setTkPesan(null)
+      const hasil = await setAktifTeknisi(aktif)
+      // ⚠️ `terkunci` 0 padahal ada PC aktif berarti agentnya offline, jadi PC
+      // TIDAK benar-benar terkunci. Operator harus diberi tahu — kalau tidak,
+      // "Matikan akses" terlihat berhasil padahal tidak.
+      const gagalKunci = !aktif && hasil.terkunci === 0
+      setTkPesan(
+        gagalKunci
+          ? 'Akses dimatikan, tetapi TIDAK ada PC yang bisa dikunci sekarang karena agentnya offline. Teknisi masih di dalam sampai PC itu menyala.'
+          : aktif
+            ? 'Akses teknisi dinyalakan'
+            : `Akses dimatikan — ${hasil.terkunci} PC langsung terkunci`,
+      )
+      await muatTeknisi()
+    } catch (e) {
+      setTkPesan(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusyAktif(null)
+    }
+  }
+
   const [pin, setPin] = useState('')
   const [pinMsg, setPinMsg] = useState<string | null>(null)
   const [pinBypass, setPinBypassValue] = useState('')
@@ -147,6 +218,35 @@ export default function TabAgent({
     })
   }
 
+  async function hapusAkunTeknisi(nama: string) {
+    // ⚠️ Konfirmasi wajib menyebut akibat ke sesi yang sedang jalan. Tanpa itu
+    // operator bisa mengira ini sekadar hapus data, padahal PC yang sedang
+    // dipakai teknisi ikut terkunci.
+    const dipakai = akun.find((t) => t.username === nama)?.adaSesi ?? 0
+    const pesan = dipakai
+      ? `Hapus akun "${nama}"? Ada ${dipakai} PC yang sedang dipakai teknisi dan ` +
+        'PC-nya akan langsung terkunci.'
+      : `Hapus akun "${nama}"?`
+    if (!window.confirm(pesan)) return
+    setBusyAktif('hapus-teknisi')
+    setTkPesan(null)
+    try {
+      const hasil = await hapusTeknisi(nama)
+      setTkPesan(
+        hasil.terkunci
+          ? `Akun "${nama}" dihapus, ${hasil.terkunci} PC dikunci.`
+          : `Akun "${nama}" dihapus.`,
+      )
+      setTkNama('')
+      setTkPin('')
+      await muatTeknisi()
+    } catch (e) {
+      setTkPesan(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusyAktif(null)
+    }
+  }
+
   async function saveOtp(matikan: boolean) {
     await run('otp', async () => {
       try {
@@ -189,6 +289,118 @@ export default function TabAgent({
           {busy === 'pin' ? 'Menyimpan...' : 'Simpan PIN'}
         </button>
         {pinMsg && <div className="mt-2 text-sm text-green-700">{pinMsg}</div>}
+      </SettingsCard>
+
+      <SettingsCard
+        title="Akses Teknisi"
+        description="Teknisi bisa membuka layar kunci PC client tanpa waktu dan tanpa penagihan. Login dilakukan dari layar PC, bukan dari halaman ini. Matikan akses ini kalau PIN-nya bocor — PC yang sedang dipakai teknisi langsung terkunci."
+      >
+        <div className="space-y-3">
+          {akun.length === 0 && (
+            <p className="text-sm text-slate-500">
+              Belum ada akun teknisi. Teknisi tidak akan bisa login sampai dibuat di
+              bawah.
+            </p>
+          )}
+            {akun.map((t) => (
+              <div
+                key={t.username}
+                className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 p-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-slate-800">{t.username}</div>
+                  <div className="text-xs text-slate-500">
+                    {t.aktif
+                      ? t.adaSesi > 0
+                        ? `AKTIF — sedang dipakai di ${t.adaSesi} PC`
+                        : 'AKTIF'
+                      : 'DIMATIKAN — login ditolak'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void hapusAkunTeknisi(t.username)}
+                  disabled={tkBusy !== null}
+                  title={`Hapus akun teknisi ${t.username}`}
+                  aria-label={`Hapus akun teknisi ${t.username}`}
+                  className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
+                >
+                  {tkBusy === 'hapus-teknisi' ? '...' : 'Hapus'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void gantiAktif(t.username, !t.aktif)}
+                  disabled={busy !== null}
+                  className={
+                    t.aktif
+                      ? 'rounded-md bg-red-100 px-3 py-1.5 text-sm text-red-800 hover:bg-red-200 disabled:opacity-50'
+                      : 'rounded-md bg-emerald-100 px-3 py-1.5 text-sm text-emerald-800 hover:bg-emerald-200 disabled:opacity-50'
+                  }
+                >
+                  {tkBusy === `aktif-${t.username}`
+                    ? '...'
+                    : t.aktif
+                      ? 'Matikan akses'
+                      : 'Nyalakan akses'}
+                </button>
+              </div>
+            ))}
+
+            {/* ⚠️ PIN tidak pernah dimuat ke form, sama seperti PIN bypass di
+                atas. `GET /api/teknisi` sengaja tidak mengirim hash-nya. */}
+            <div className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
+              <div className="min-w-40 flex-1">
+                <label className="mb-1 block text-xs text-slate-500">Nama teknisi</label>
+                <input
+                  value={tkNama}
+                  onChange={(e) => setTkNama(e.target.value)}
+                  placeholder="teknis"
+                  maxLength={6}
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="min-w-40 flex-1">
+                <label className="mb-1 block text-xs text-slate-500">PIN baru (maks. 4)</label>
+                <input
+                  type="password"
+                  value={tkPin}
+                  onChange={(e) => setTkPin(e.target.value)}
+                  placeholder="Kosong = tidak diubah"
+                  maxLength={4}
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => void simpanAkun()}
+                disabled={tkBusy !== null}
+                className="rounded-md bg-slate-800 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
+              >
+                {tkBusy === 'simpan-teknisi' ? 'Menyimpan...' : 'Simpan'}
+              </button>
+            </div>
+            <p className="text-xs text-slate-500">
+              Nama teknisi tidak boleh sama dengan nama akun pelanggan — server akan
+              menolak. Sesi teknisi tidak masuk laporan pendapatan maupun hitungan
+              login.
+            </p>
+            <p className="text-xs text-amber-700">
+              Batas nama 6 karakter dan PIN 4 karakter bukan pilihan: field login di
+              layar PC memotong ketikan lebih dari itu (MaxLength di overlay), jadi yang
+              lebih panjang tidak akan pernah bisa diketik oleh teknisi.
+            </p>
+          {tkPesan && (
+            <p
+              className={
+                tkPesan.startsWith('Akses dimatikan, tetapi')
+                  ? 'text-sm text-amber-700'
+                  : 'text-sm text-slate-700'
+              }
+            >
+              {tkPesan}
+            </p>
+          )}
+        </div>
       </SettingsCard>
 
       <SettingsCard

@@ -38,6 +38,15 @@ export interface Pc {
    * login, dan mobile — hanya di Halaman PC, supaya bisa dibatalkan lagi.
    */
   rusak: boolean
+  /**
+   * Daya listrik PC dalam watt, dipakai untuk estimasi biaya listrik di
+   * laporan uptime.
+   *
+   * ⚠️ Ini watt, BUKAN VA. Meter rumah 2.200 VA itu kapasitas sambungan;
+   * satu PC warnet biasanya hanya 150-300 W. Memakai angka VA di sini membuat
+   * biaya tampil sekitar 15x lipat lebih besar tanpa error apa pun.
+   */
+  watt: number
   /** Alasan opsional yang diisi operator saat menandai. Null kalau tidak ditandai. */
   alasanRusak: string | null
 }
@@ -82,6 +91,17 @@ export interface DashboardPc {
    * PC tidak pernah mati.
    */
   matiDalamDetik: number | null
+  /**
+   * Teknisi yang sedang memakai PC ini, atau `null`.
+   *
+   * ⚠️ `null` TIDAK berarti PC kosong. PC sedang dipakai teknisi tetap punya
+   * `session: null` (teknisi tidak punya waktu), jadi tanpa field ini operator
+   * tidak bisa membedakan "PC yang sedang dibongkar" dari "PC yang menganggur".
+   */
+  teknisi?: {
+    username: string
+    mulaiAt: string
+  } | null
   session: DashboardSession | null
 }
 
@@ -125,6 +145,8 @@ export interface DashboardLog {
    * tidak ada di daftar — termasuk PC yang sedang otomatis dimatikan.
    */
   pc?: string
+  /** Username teknisi, untuk event `teknisi:login` / `teknisi:logout`. */
+  teknisi?: string
 }
 
 export interface TransactionRef {
@@ -254,7 +276,23 @@ export interface UptimePc {
   namaPc: string
   /** Total detik dalam rentang yang diminta. */
   detik: number
+  /** Daya PC dalam watt. */
+  watt: number
+  /** Estimasi energi listrik, dalam kWh. */
+  kwh: number
+  /** Estimasi biaya listrik, dalam rupiah. */
+  rupiah: number
   perHari: UptimePerHari[]
+}
+
+export interface RingkasanListrik {
+  /** Tarif per kWh, dibaca dari Setting. */
+  tarifPerKwh: number
+  totalDetik: number
+  totalKwh: number
+  totalRupiah: number
+  /** Jumlah watt seluruh PC yang dihitung — pembagi kWh rata-rata. */
+  totalWatt: number
 }
 
 export interface UptimeRingkasan {
@@ -263,4 +301,5 @@ export interface UptimeRingkasan {
   /** Daftar tanggal dalam rentang, termasuk yang nol. */
   tanggal: string[]
   pcs: UptimePc[]
+  listrik: RingkasanListrik
 }

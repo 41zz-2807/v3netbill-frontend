@@ -18,6 +18,9 @@ const navItems = [
     label: 'PC',
     full: 'PC Management',
     icon: 'M4 4h16v12H4zM9 20h6M12 16v4',
+    // ⚠️ ADMIN saja. Halaman ini bisa menambah, menghapus, mengganti nama,
+    // menandai rusak, dan membuka kunci PC — perubahan yang tidak perlu kasir lakukan.
+    adminOnly: true,
   },
   {
     to: '/accounts',
@@ -41,11 +44,23 @@ const navItems = [
     to: '/settings',
     label: 'Setting',
     full: 'Pengaturan',
+    // ⚠️ Wajib diisi. Ketika filter diganti dari daftar path (`i.to !== '/settings'`)
+    // menjadi flag `adminOnly`, item ini tanpa flag jadi `!adminOnly` = true dan
+    // muncul untuk SEMUA orang — termasuk kasir. Itu regresi yang benar-benar
+    // terjadi dan baru ketahuan karena nav dicek lewat href, bukan teks label.
+    adminOnly: true,
     icon: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1A1.7 1.7 0 008 19.4a1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H2a2 2 0 110-4h.1A1.7 1.7 0 004.6 8a1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V2a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H22a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z',
   },
 ]
 
-type NavItem = { to: string; label: string; full: string; icon: string }
+type NavItem = {
+  to: string
+  label: string
+  full: string
+  icon: string
+  /** Hanya ADMIN yang melihat item ini. */
+  adminOnly?: boolean
+}
 
 // Ikon keluar (arrow-right-on-rectangle). Dipisah dari navItems karena bukan
 // tujuan rute, melainkan aksi.
@@ -75,9 +90,11 @@ function Layout() {
   // supaya berlaku di semua halaman, bukan cuma dashboard.
   useIdleLogout(true, () => logout(PESAN_SESI_BERAKHIR))
 
-  const items: NavItem[] = navItems.filter(
-    (i) => i.to !== '/settings' || role === 'ADMIN',
-  )
+  // ⚠️ Disaring lewat flag `adminOnly`, bukan daftar path. Dua item sudah
+  // butuh ADMIN, dan daftar path membuat item ketiga mudah terlewat — menu
+  // hilang tapi halamannya masih bisa dibuka lewat URL.
+  // Halamannya sendiri juga dijaga (PcPage), jadi dua lapis.
+  const items: NavItem[] = navItems.filter((i) => !i.adminOnly || role === 'ADMIN')
 
   return (
     // overflow-x-clip: halaman TIDAK boleh bisa di-scroll ke samping di HP. Card & tabel

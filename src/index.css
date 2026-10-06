@@ -1080,6 +1080,54 @@ html[data-ui-buttons="uiverse"] button:not(.pcc__act):not(.modal-x):not(.pastel-
    content-length, atau prosesnya memang tidak punya ukuran). Geser
    bolak-balik, bukan loop 0->100%, karena di mode ini tidak ada angka
    yang boleh ditampilkan. */
+/* ==========================================================================
+   Indikator teknisi — PC sedang dipakai teknisi, tanpa penagihan.
+   Berdenyut merah supaya tidak tertukar dengan kartu PC biasa.
+   ========================================================================== */
+
+/* Titik ini dulu `position: absolute; top: 10px; right: 12px` — pil
+   merah melayang di pojok kanan atas header, menutupi header dan
+   terlihat seperti peringatan terpisah dari kartunya. Sekarang inline
+   di dalam nilai Status, jadi infonya benar-benar ada di card. */
+.pcc__info-dot {
+
+/* Titik yang ikut berkedip. Membuat denyut tetap terlihat walau animasi dimatikan. */
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  vertical-align: middle;
+  animation: pcc-teknisi-denyt 1s ease-in-out infinite;
+}
+
+@keyframes pcc-teknisi-denyt {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.25;
+    transform: scale(0.7);
+  }
+}
+
+.pcc__info-value--teknisi {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+/* ⚠️ WAJIB ada. Tanpa ini, badge teknisi tetap berkedip untuk operator yang
+   sudah menyalakan pengurangan gerakan di sistemnya — dan
+   denyut berulang adalah pemicu yang nyata untuk orang yang sensitif. */
+@media (prefers-reduced-motion: reduce) {
+  .pcc__info-dot {
+    animation: none;
+  }
+}
+
 .indeterminate {
   animation: geser 1.15s ease-in-out infinite;
 }
