@@ -224,3 +224,25 @@ export interface LogBillingIsi {
   baris: string[]
   jumlahDitemukan: number
 }
+
+export interface UptimePerHari {
+  tanggal: string
+  /** Total heartbeat yang diterima, dalam detik. */
+  detik: number
+}
+
+export interface UptimePc {
+  id: string
+  namaPc: string
+  /** Total detik dalam rentang yang diminta. */
+  detik: number
+  perHari: UptimePerHari[]
+}
+
+export interface UptimeRingkasan {
+  dari: string
+  sampai: string
+  /** Daftar tanggal dalam rentang, termasuk yang nol. */
+  tanggal: string[]
+  pcs: UptimePc[]
+}

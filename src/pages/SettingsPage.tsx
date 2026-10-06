@@ -20,7 +20,7 @@ const TABS: TabNavItem[] & { id: TabId }[] = [
   { id: 'agent', label: 'Agent & Keamanan', hint: 'PIN uninstall, bypass, OTP' },
   { id: 'instalasi', label: 'Instalasi', hint: 'MSI, APK, wallpaper' },
   { id: 'pengguna', label: 'Pengguna', hint: 'Tambah operator, ganti sandi' },
-  { id: 'data', label: 'Data', hint: 'Backup database' },
+  { id: 'data', label: 'Data', hint: 'Backup database, penerima email laporan' },
   { id: 'log', label: 'Log Billing', hint: 'Aktivitas billing harian' },
   { id: 'diagnosa', label: 'Diagnosa Agent', hint: 'Log yang dikirim agent' },
 ]
@@ -36,6 +36,7 @@ export default function SettingsPage() {
   const [harga, setHarga] = useState('')
   const [grace, setGrace] = useState('')
   const [autoMati, setAutoMati] = useState('')
+  const [emailTujuan, setEmailTujuan] = useState('')
   const [otpChatId, setOtpChatId] = useState('')
   const [otpTerisi, setOtpTerisi] = useState(false)
   const [ncUrl, setNcUrl] = useState('')
@@ -56,6 +57,7 @@ export default function SettingsPage() {
       setHarga(s.harga_per_menit ?? '')
       setGrace(s.grace_period_detik ?? '')
       setAutoMati(s.auto_shutdown_menit ?? '5')
+      setEmailTujuan(s.laporan_email_tujuan ?? '')
       setOtpChatId(s.agent_otp_chat_id ?? '')
         setOtpTerisi(Boolean(s.agent_otp_bot_token))
         // ⚠️ nextcloud_password sengaja TIDAK dimuat ke mana pun di frontend.
@@ -190,6 +192,8 @@ export default function SettingsPage() {
           backupInfo={backupInfo}
           setBackupInfo={setBackupInfo}
           reloadBackups={loadBackups}
+          emailTujuan={emailTujuan}
+          setEmailTujuan={setEmailTujuan}
         />
       )}
       {tab === 'log' && <TabLogBilling ctx={ctx} />}

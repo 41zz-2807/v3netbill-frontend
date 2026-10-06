@@ -248,10 +248,10 @@ Logika bisnis yang sudah berjalan:
 ## Catatan migrasi
 
 - Perintah migrasi: `docker compose exec v3netbill-backend npx prisma migrate dev --name <nama>`
-- Migrasi applied (7): `20260922142242_init`, `20260925072311_add_transaction_koreksi`,
+- Migrasi applied (8): `20260922142242_init`, `20260925072311_add_transaction_koreksi`,
   `20260925072645_add_transaction_void`, `20260925163314_add_activity_log`,
   `20260930100153_add_perangkat_notifikasi`, `20261005083648_pc_rusak`,
-  `20261005095854_pc_terakhir_aktif`.
+  `20261005095854_pc_terakhir_aktif`, `20261005161709_uptime_pc`.
 
 ## Referensi API — diverifikasi dari kode
 
@@ -310,6 +310,7 @@ tanpa JWT sama sekali.
 | GET | `/api/reports/today` | — |
 | GET | `/api/reports/daily?dari&sampai` | — |
 | GET | `/api/reports/range?dari&sampai` | — |
+| GET | `/api/reports/uptime?dari&sampai` | — |
 | POST | `/api/laporan/kirim-tutup-hari` | — |
 | POST | `/api/notifikasi/token` | — |
 | DELETE | `/api/notifikasi/token` | — |
@@ -466,6 +467,196 @@ per nilai berbeda, kalau tidak satu baris rusak akan inundated log tiap 10 detik
 Tes: `backend/test/auto-shutdown.spec.ts` (13 kasus). **Tiga pengaman sudah
 dibuktikan menangkap bug** — masing-masing dimatikan sementara di kode, dan
 tesnya gagal tepat di pengaman itu.
+
+### 🔴 Timer auto-matikan bisa jadi `null` dan tidak pernah pulih (6 Okt)
+
+`Pc.terakhirAktifAt` **boleh bernilai `null`**, dan itu bukan hanya kasus "PC
+baru" — semua PC lama juga null begitu migrasi `pc_terakhir_aktif` pertama kali
+dijalankan. Null ini berarti "belum ada bukti pakai", tapi `checkAutoShutdown()`
+dalam bentuk lama **berhentisentuh PC itu sama sekali**: tidak ada timer, tidak ada
+hitung mundur, tidak pernah dimatikan.
+
+Jadi fitur auto-matikan terlihat bekerja di PC yang kebetulan dipakai pelanggan
+setelah migrasi, dan **tidak pernah bekerja sama sekali** di PC yang belum
+dipakai — persis kebalikan dari yang dimasukkan.
+
+Perbaikannya satu metode, dipanggil tiap 10 detik oleh checker yang sama:
+
+```
+senyapkanTimerPCKosong() -> updateManyMany di mana
+  terakhirAktifAt IS NULL
+  AND rusak = false
+  DAN heartbeat segar
+  DAN TIDAK ada Session BERJALAN
+```
+
+Empat syarat itu wajib semua. Kalau satu salah, akibatnya lebih buruk dari
+sebelum: PC dengan sesi berjalan akan ikut dimatikan, atau PC yang ditandai
+rusak akan dinyalakan ulang.
+
+⚠️ **JANGAN pakai `heartbeat()` untuk menyalakan timer.** Sama seperti alasan
+sebelumnya, heartbeat datang tiap 15 detik.
+
+⚠️ **HATI-HATI dengan `sessionByPc.get()` vs `.has()`** — jebakan yang sama
+sudah pernah menewaskan logika status PC. Di sini yang dipakai adalah query
+`Session` langsung, bukan map in-memory, jadi tidak bisa mengulangi kesalahan
+itu.
+
+Terbukti live: PC simulasi dengan `auto_shutdown_menit=1` menerima
+`admin:shutdown` sekitar 67 detik, dan timer kosongnya pulih dalam 14 detik.
+Mutasi tes (menghapus syarat `tidak ada sesi`) **gagal** seperti seharusnya.
+
+### 📊 Grafik uptime PC (6 Okt) ✅
+
+Kolom `Pc.lastHeartbeatAt` sudah ada, tapi itu cuma **heartbeat terakhir** —
+tidak ada jejak history sama sekali. Jadi "grafik uptime" dibangun dari
+`lastHeartbeatAt` yang **disampel** tiap 60 detik, lalu dijumlahkan per hari.
+
+```
+src/uptime/uptime.service.ts       cron 60 dtk + cron bersih 6 jam
+src/uptime/uptime-query.service.ts agregasi rentang tanggal
+prisma/migrations/20261005161709_uptime_pc
+```
+
+Tabel `UptimePc` unik per (`pcId`, `tanggal`) dengan kolom `dihitungSampai`
+sebagai **watermark**. Fungsinya mencegah penghitungan ganda: hanya selisih
+waktu sejak watermark terakhir yang ditambahkan.
+
+| Facts | Nilai |
+|---|---|
+| Frekuensi sampel | 60 detik (bukan 15 — heartbeat terlalu rapat, tabelnya membengkak tanpa manfaat) |
+| Batas atas | 86.400 detik/hari per PC |
+| PC `rusak` | **dilewati**, sama seperti di tiga titik baca lainnya |
+| Penyimpanan | UTC, kolom `tanggal` |
+| Endpoint | `GET /api/reports/uptime?dari&sampai` |
+| Batas rentang | 366 hari, `sampai >= dari` |
+
+⚠️ **Tidak ada data historis.** Baris pertama baru muncul saat service berjalan
+pada 6 Okt — sampai saat itu Halaman Laporan sengaja menampilkan pesan "belum
+ada data", bukan grafik kosong yang terlihat rusak.
+
+⚠️ **Setiap PC diproses dalam `try/catch` sendiri.** Satu PC dengan `lastUsedAt`
+di masa depan atau nilai aneh tidak boleh menghentikan penghitungan PC lain.
+
+### 🔴 Ganti Service dependencies = server bisa gagal START (6 Okt)
+
+Menambah satu parameter constructor di `LaporanService` — `SettingsService` —
+**langsung menjatuhkan seluruh backend**, karena `LaporanModule` belum mengimpor
+`SettingsModule`:
+
+```
+ERROR [ExceptionHandler] UnknownDependenciesException: Nest can't resolve
+dependencies of the LaporanService (ReportsService, ActivityLogService, ?).
+Please make sure that the argument SettingsService at index [2] is available in
+the LaporanModule module.
+```
+
+Dua hal yang membuatnya berbahaya:
+
+1. **Bukan hanya fiturnya yang mati — seluruh server tidak start.** Tidak ada
+   satu PC pun yang bisa billing.
+2. **Baris kompilasi tetap bersih.** `npx nest build` sukses, jadi tidak ada
+   peringatan sama sekali. Yang memunculkan error hanya saat bootstrap runtime.
+
+⚠️ Tanda `?` pada parameter (`private readonly settingsService?:
+SettingsService`) **tidak** membuat Nest menjadikannya opsional — dia tetap
+mencari provider itu dan tetap gagal kalau tidak ada. Tanda itu cuma untuk
+TypeScript.
+
+⚠️ Kalau menambah service ke module **yang sudah ada**, periksa dulu apakah
+module itu sudah mengimpor module pengimbarunya. `SettingsModule` sendiri
+mengimpor `SessionModule`, tapi itu **tidak** berarti import-nya otomatis — dan
+`forwardRef` juga tidak diperlukan karena `SettingsService` di-`exports`.
+
+### 📄 Laporan PDF — satu halaman, tanpa tabel transaksi (6 Okt)
+
+Dulu laporan tutup hari pecah jadi **79 halaman**, hampir semuanya kosong, dan
+halaman pertama penuh tabel rincian transaksi yang tidak pernah dibaca anyone.
+
+Kini: **satu halaman**, isi aslinya 8 kartu ringkasan, dua grafik batang
+(Pendapatan, Aktivitas Akun), dan tabel perbandingan 5 hari.
+
+| Bagian | Nilai |
+|---|---|
+| Transactions | **Dihapus** dari PDF, tidak ada gantinya |
+| Grafik | Batang relatif terhadap nilai terbesar, supaya perbandingannya jujur |
+| Perbandingan | 5 hari terakhir, termasuk hari laporan |
+| Rasio ekstrem | `>= 10x` ditampilkan `x50,5`, bukan `+4950%` |
+| Ukuran | ~55.861 byte, 1 halaman |
+
+Tiga bug yang semuanya lolos `nest build`:
+
+1. **`footer()` menggeser `doc.y`.** Fungsi itu menggambar nomor halaman dengan
+  ursor pdfkit, jadi setelah dipanggil kursor berada di bawah footer. Dipanggil
+   sebelum tabel → seluruh isi tergeser 79 halaman.
+2. **Nilai balik `batangDatar()` diabaikan.** `yG` masih menunjuk ke ATAS batang
+   terakhir, lalu tabel menggambar judulnya di koordinat yang sama → tabel
+   perbandingan **menimpa** grafik Aktivitas Akun. Tidak ada error sama sekali,
+   karena pdfkit tidak pernah memeriksa tabrakan koordinat.
+3. **`tinggiGrafik` tidak pernah dipakai.** Tinggi batang dihitung dari
+   `tinggiBatangBaris` (22), sedangkan tinggi yang dikembalikan closure
+   memakai `jarakBaris` (7) →perkiraan salah 15pt per grafik.
+
+⚠️ **Batas jumlah baris tabel dibuat keras di `buildPdf()`**, bukan di service
+pemanggil. Ini yang benar-benar menjamin satu halaman: `tinggiTabel =
+tinggiJudul + (1 + jumlahBaris) * 16`.
+
+Dulu di situ ada "pemadatan" layout saat ruang kurang, dan **percobaan
+membuktikan itu lebih buruk, bukan lebih baik**:
+
+| Skenario | Kode lama | Versi "pemadatan" |
+|---|---|---|
+| Kekurangan 70pt | 1 halaman | 1 halaman (tidak membuktikan apa pun) |
+| Kekurangan 630pt (40 baris disuntik) | 56 halaman | **133 halaman** |
+
+Dua sebabnya. Pertama, `contentBottom` cuma **ambang**, bukan ruang nyata —
+mengubahnya tidak pernah membuat halaman meluber, jadi tes pertama sama sekali
+tidak membuktikan apa pun. Kedua, memadatkan celah hanya menghemat sekitar 96pt
+sementara kekurangan 630pt, dan menggeser koordinat justru menambah pemecahan
+halaman.
+
+Aturannya: kalau yang perlu dipadatkan adalah **tabel yang tumbuh sendiri**,
+batasi jumlah barisnya. Jangan tambah محاولة kompres selebar-lebarnya.
+
+### 📧 Penerima email laporan bisa diatur (6 Okt)
+
+Key Setting baru: `laporan_email_tujuan`. Kalau kosong, server memakai
+`LAPORAN_EMAIL_TUJUAN` seperti sebelumnya — jadi tidak ada perubahan perilaku
+untuk yang sudah jalan.
+
+Di UI: **Pengaturan → Data**, textarea + tombol "Simpan Penerima" dan
+"Simpan & Kirim Sekarang". Teks untuk SMTP/pengirim tidak pernah ditampilkan.
+
+Parsing menerima koma, titik koma, spasi, dan baris baru, dan **alamat tidak
+valid dilewati, bukan membatalkan pengiriman** ke alamat lain. Alamat juga
+dikirim **satu per satu**, bukan sekali jalan untuk seluruh daftar.
+
+⚠️ **Kirim per penerima itu wajib, dan bukan sekadar formalitas.** Dengan satu
+`sendMail()` berisi daftar, server mail membalas `550 all recipients were
+rejected` begitu **satu** alamat tidak bisa deliver — jadi satu alamat salah
+ketik membuat laporan hilang untuk **semua** penerima, termasuk yang alamatnya
+benar. Terbukti nyata terhadap server sungguhan.
+
+⚠️ **Validasi di frontend harus SEMA LONGGAR dengan `pisahkanEmail()`** di
+server. Kalau lebih ketat, admin melihat "ditolak" untuk alamat yang sebenarnya
+terkirim, dan itu lebih membingungkan daripada tidak memvalidasi sama sekali.
+
+⚠️ **Tombol "Simpan & Kirim" menyimpan DULU baru mengirim.** Kalau kirim dulu
+lalu simpan, emailnya masih memakai daftar lama — jadi admin mengira daftar
+barunya sudah diuji padahal belum.
+
+### 🔧 Simulasi agent (`backend/test/tools/simulasi-agent.mjs`)
+
+Untuk menguji auto-matikan tanpa memakai PC sungguhan:
+
+```bash
+docker compose exec v3netbill-backend node /app/test/tools/simulasi-agent.mjs <pcId> <agentToken>
+```
+
+⚠️ **Wajib** `pcId` + `agentToken` **milik PC uji sendiri**. `registerAgent()`
+memutus socket lama yang punya token sama, jadi memakai PC asli akan saling
+menendang dengan agent asli dan mengakhiri sesi pelanggan sungguhan. Lihat
+bagian "Tes TIDAK BOLEH memakai PC sungguhan".
 
 ### Hitung mundur di dashboard
 

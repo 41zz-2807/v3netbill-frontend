@@ -15,6 +15,7 @@ import type {
   LogBillingRingkas,
   DiagnosaFile,
   LogBillingIsi,
+  UptimeRingkasan,
 } from './types'
 
 const TOKEN_KEY = 'v3netbill_token'
@@ -173,6 +174,24 @@ export async function setPcRusak(
     rusak: boolean
     sesiDihentikan: boolean
   }>(`/pcs/${id}/rusak`, { rusak, alasan })
+  return data
+}
+
+
+/**
+ * Kirim laporan tutup hari SEKARANG, tanpa menunggu cron 23:30.
+ *
+ * ⚠️ Endpoint-nya ADMIN. Dipakai juga sebagai tombol tes di Pengaturan: kalau
+ * daftar penerima salah, SMTP rusak, atau PDF-nya tidak jadi, hasilnya langsung
+ * terlihat — bukan besok malam saat tidak ada yang memantau.
+ */
+export async function kirimLaporanTutupHari(): Promise<{
+  tanggal: string
+  filename: string
+  email: { ok: boolean; info?: string; error?: string }
+  telegram: { ok: boolean; detail?: string; error?: string }
+}> {
+  const { data } = await api.post('/laporan/kirim-tutup-hari')
   return data
 }
 
@@ -424,6 +443,20 @@ export async function fetchDailyReport(dari: string, sampai: string): Promise<Da
 export async function fetchRangeReport(dari: string, sampai: string): Promise<RangeReport> {
   const { data } = await api.get<RangeReport>(
     `/reports/range?dari=${dari}&sampai=${sampai}`,
+  )
+  return data
+}
+
+/**
+ * Berapa lama tiap PC menyala, dihitung dari heartbeat.
+ *
+ * ⚠️ Datanya tidak historis. `Pc.lastHeartbeatAt` hanya menyimpan heartbeat
+ * terakhir (ditimpa tiap 15 detik) dan koneksi tidak pernah ditulis ke
+ * database, jadi angka ini baru ada sejak pencatat dijalankan.
+ */
+export async function fetchUptime(dari: string, sampai: string): Promise<UptimeRingkasan> {
+  const { data } = await api.get<UptimeRingkasan>(
+    `/reports/uptime?dari=${dari}&sampai=${sampai}`,
   )
   return data
 }

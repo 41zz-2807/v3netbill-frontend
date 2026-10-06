@@ -27,3 +27,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Catatan rencana lokal — bukan bagian dari aplikasi.
+# ⚠️ Repo ini PUBLIC, jadi `git add -A` bisa ikut membawa catatan ini ke
+# dunia tanpa sengaja. Isinya tidak rahasia, tapi tidak juga perlu dipublikasikan.
+# Catatan yang memang finalized tetap lewat commit seperti biasa
+# (contoh: migrasi.md).
+pengembangan.md

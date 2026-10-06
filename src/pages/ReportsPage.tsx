@@ -12,10 +12,11 @@ import {
 import {
   fetchTodayReport,
   fetchRangeReport,
+  fetchUptime,
   formatRupiah,
   formatWaktu,
 } from '../lib/api.ts'
-import type { DailyReport, RangeReport } from '../lib/types.ts'
+import type { DailyReport, RangeReport, UptimeRingkasan } from '../lib/types.ts'
 import { Pagination } from '../components/ui/Pagination.tsx'
 import {
   PER_HALAMAN,
@@ -27,6 +28,7 @@ import ProgressBar from '../components/ui/ProgressBar.tsx'
 const WARNA_VOUCHER = '#8b5cf6'
 const WARNA_MEMBER = '#10b981'
 const WARNA_LOGIN = '#f59e0b'
+const WARNA_UPTIME = '#0ea5e9'
 
 function today(): string {
   return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10)
@@ -105,9 +107,52 @@ function ChartCard({
   )
 }
 
+
+/**
+ * Baris untuk grafik uptime: satu baris per PC, satuan MENIT.
+ *
+ * ⚠️ Sumbu X = nama PC, sumbu Y = menit — sesuai yang diminta, dan bukan
+ * "per hari". Jadi kalau rentang di form lebih dari satu hari, angkanya
+ * adalah total menit PC menyala selama rentang itu, bukan rata-rata per hari.
+ * Karena itu tooltip-nya juga menuliskan jamnya, supaya angka menit yang
+ * besar tetap bisa dibaca dengan cepat.
+ */
+function barisUptime(u: UptimeRingkasan | null): Array<{ namaPc: string; menit: number }> {
+  if (!u) return []
+  return u.pcs.map((pc) => ({ namaPc: pc.namaPc, menit: Math.round(pc.detik / 60) }))
+}
+
+/** Durasi ringkas untuk badge: "2j 15m" atau "45m". */
+function formatDurasiPendek(detik: number): string {
+  const total = Math.max(0, Math.floor(detik))
+  const jam = Math.floor(total / 3600)
+  const menit = Math.floor((total % 3600) / 60)
+  if (jam > 0) return `${jam}j ${menit}m`
+  return `${menit}m`
+}
+
+/**
+ * Label sumbu Y — angka mentah dalam MENIT.
+ *
+ * ⚠️ Label "menit" TIDAK dipasang sebagai `label` pada YAxis. Dengan
+ * `position: insideTopLeft`, teksnya menimpa tick teratas dan terbaca
+ * "men6000". Satuannya sudah disebut di subjudul kartu, jadi mengulang di
+ * sumbu hanya menambah tabrakan.
+ *
+ * ⚠️ Sengaja TIDAK diubah jadi jam kalau angka sudah besar. Format yang
+ * berganti-ganti di satu sumbu membuat pembacaan salah: `75j` dan `900m` di
+ * sumbu yang sama terlihat seperti dua satuan berbeda, padahal keduanya
+ * durasi. Menit tetap terbaca sampai ratusan ribu, jadi tidak ada kebutuhan
+ * untuk menyingkat. Jam tersedia di tooltip dan di tabel.
+ */
+function labelMenit(nilai: number): string {
+  return String(Math.round(nilai))
+}
+
 export default function ReportsPage() {
   const [todayReport, setTodayReport] = useState<DailyReport | null>(null)
   const [range, setRange] = useState<RangeReport | null>(null)
+  const [uptime, setUptime] = useState<UptimeRingkasan | null>(null)
   const [dari, setDari] = useState(daysAgo(6))
   const [sampai, setSampai] = useState(today())
   const [loading, setLoading] = useState(true)
@@ -120,12 +165,14 @@ export default function ReportsPage() {
   async function load() {
     try {
       setLoading(true)
-      const [t, r] = await Promise.all([
+      const [t, r, u] = await Promise.all([
         fetchTodayReport(),
         fetchRangeReport(dari, sampai),
+        fetchUptime(dari, sampai),
       ])
       setTodayReport(t)
       setRange(r)
+      setUptime(u)
       setError(null)
     } catch (err: unknown) {
       setError((err as Error).message)
@@ -144,6 +191,12 @@ export default function ReportsPage() {
   const tabelLaporan = useMemo(
     () => (range ? urutkanTerbaru(range.daftar, (d) => d.tanggal) : []),
     [range],
+  )
+
+  const barisUptimePc = useMemo(() => barisUptime(uptime), [uptime])
+  const totalUptimeDetik = useMemo(
+    () => (uptime ? uptime.pcs.reduce((n, pc) => n + pc.detik, 0) : 0),
+    [uptime],
   )
   const {
     data: barisLaporan,
@@ -289,6 +342,101 @@ export default function ReportsPage() {
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
+
+      {/* ⚠️ Lebar penuh (xl:col-span-3), bukan 1/3 kolom seperti yang lain.
+          Sumbu X di sini adalah NAMA PC — bukan tanggal — jadi butuh ruang
+          supaya "PC001" tidak terpotong jadi "PC0…". Kalau ikut 1/3 kolom,
+          setiap nama PC jadi tidak terbaca dan grafiknya jadi tidak berguna. */}
+      {uptime && (
+        <div className="rounded-lg border border-slate-200 bg-white p-4 xl:col-span-3">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">Grafik Uptime PC</h3>
+              <p className="text-xs text-slate-500">
+                Berapa lama tiap PC menyala dalam menit, dihitung dari heartbeat
+              </p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+              Total {formatDurasiPendek(totalUptimeDetik)} dari {uptime.pcs.length} PC
+            </span>
+          </div>
+
+          {barisUptimePc.length > 0 ? (
+            <>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={barisUptimePc} barSize={40}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis
+                      dataKey="namaPc"
+                      tick={{ fontSize: 12, fill: '#475569' }}
+                      interval={0}
+                    />
+                    <YAxis
+                      tickFormatter={labelMenit}
+                      tick={{ fontSize: 11, fill: '#64748b' }}
+                      width={56}
+                      allowDecimals={false}
+                    />
+                    <Tooltip
+                      formatter={(v, nama) => {
+                        const menit = Number(v ?? 0)
+                        return [
+                          `${menit} menit (${(menit / 60).toFixed(1)} jam)`,
+                          String(nama),
+                        ]
+                      }}
+                    />
+                    <Bar dataKey="menit" name="Menit menyala" fill={WARNA_UPTIME} radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* ⚠️ Data ini BUKAN historis. `Pc.lastHeartbeatAt` hanya
+                  menyimpan heartbeat terakhir (ditimpa tiap 15 detik) dan
+                  koneksi tidak pernah ditulis ke database, jadi tidak ada
+                  angka sebelum pencatat ini dijalankan. Tanpa catatan ini,
+                  grafik kosong akan disalahpakai sebagai "PC-nya mati". */}
+              <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Angka mulai terisi sejak pencatat uptime dijalankan — tidak ada
+                data sebelum itu. PC dengan baris kosong berarti belum tercatat
+                menyala, bukan berarti datanya bermasalah.
+              </p>
+
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-max text-left text-sm">
+                  <thead className="bg-slate-50 text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2">PC</th>
+                      <th className="px-3 py-2 text-right">Menit</th>
+                      <th className="px-3 py-2 text-right">Jam</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {[...barisUptimePc]
+                      .sort((a, b) => b.menit - a.menit)
+                      .map((baris) => (
+                        <tr key={baris.namaPc}>
+                          <td className="px-3 py-2 font-medium text-slate-900">{baris.namaPc}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                            {baris.menit}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                            {(baris.menit / 60).toFixed(1)}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (
+            <p className="py-6 text-center text-sm text-slate-400">
+              Belum ada PC yang tercatat pada rentang ini.
+            </p>
+          )}
+        </div>
+      )}
         </div>
       )}
 

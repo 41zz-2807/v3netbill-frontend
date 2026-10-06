@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { createBackup, downloadAuth } from '../../lib/api.ts'
+import { createBackup, downloadAuth, patchSetting, kirimLaporanTutupHari } from '../../lib/api.ts'
 import type { BackupFile, BackupResult } from '../../lib/types.ts'
 import { Pagination } from '../../components/ui/Pagination.tsx'
 import ProgressBar from '../../components/ui/ProgressBar.tsx'
@@ -7,18 +7,59 @@ import { PER_HALAMAN, urutkanTerbaru, usePagination } from '../../hooks/usePagin
 import { SettingsCard } from './SettingsCard'
 import { formatBytes, formatDateIndo, type SettingsCtx } from './shared'
 
+/**
+ * Penanda kasar alamat yang terlihat tidak valid.
+ *
+ * ⚠️ Sengaja dibuat SAMA LONGAR dengan `pisahkanEmail()` di server. Kalau
+ * pemeriksaan di sini lebih ketat, admin akan melihat "ditolak" untuk alamat
+ * yang sebenarnya terkirim — dan itu lebih membingungkan daripada tidak
+ * memeriksa sama sekali. Yang ditanya hanya bentuk yang jelas-jelas salah,
+ * sisanya diserahkan ke server.
+ */
+function PesanAlamatEmail({ mentah }: { mentah: string }) {
+  const kandidat = mentah.split(/[;,\s]+/).map((s) => s.trim()).filter(Boolean)
+  if (kandidat.length === 0) {
+    return (
+      <p className="mt-1 text-[11px] text-slate-400">
+        Kosong — laporan akan dikirim ke alamat bawaan di server.
+      </p>
+    )
+  }
+  const rusak = kandidat.filter((k) => {
+    const at = k.split('@')
+    return !(at.length === 2 && at[0].length > 0 && at[1].includes('.'))
+  })
+  if (rusak.length === 0) {
+    return (
+      <p className="mt-1 text-[11px] text-emerald-700">
+        {kandidat.length} alamat valid.
+      </p>
+    )
+  }
+  return (
+    <p className="mt-1 text-[11px] text-amber-700">
+      {rusak.length} alamat terlihat tidak valid dan akan dilewati:{' '}
+      {rusak.join(', ')}
+    </p>
+  )
+}
+
 export default function TabData({
   ctx,
   backups,
   backupInfo,
   setBackupInfo,
   reloadBackups,
+  emailTujuan,
+  setEmailTujuan,
 }: {
   ctx: SettingsCtx
   backups: BackupFile[]
   backupInfo: BackupResult | null
   setBackupInfo: (v: BackupResult | null) => void
   reloadBackups: () => Promise<void>
+  emailTujuan: string
+  setEmailTujuan: (v: string) => void
 }) {
   const { busy, run, setErr, setMsg } = ctx
   // File yang sedang diunduh, supaya bar kemajuan menempel pada baris yang
@@ -44,6 +85,44 @@ export default function TabData({
         const b = await createBackup()
         setBackupInfo(b)
         setMsg(`Backup database berhasil: ${b.filename}`)
+        await reloadBackups()
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e))
+      }
+    })
+  }
+
+
+  async function saveEmailTujuan(): Promise<void> {
+    await run('email-tujuan', async () => {
+      try {
+        setErr(null)
+        await patchSetting('laporan_email_tujuan', emailTujuan.trim())
+        setMsg('Penerima email laporan tersimpan')
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e))
+      }
+    })
+  }
+
+  async function kirimSekarang(): Promise<void> {
+    await run('kirim-laporan', async () => {
+      try {
+        setErr(null)
+        // ⚠️ Simpan DULUH baru kirim. Kalau kirim dulu lalu simpan, emailnya
+        // masih memakai daftar lama — jadi admin mengira daftar barunya sudah
+        // diuji padahal belum.
+        await patchSetting('laporan_email_tujuan', emailTujuan.trim())
+        const hasil = await kirimLaporanTutupHari()
+        if (!hasil.email.ok) {
+          setErr(`Email gagal: ${hasil.email.error ?? 'tanpa keterangan'}`)
+          return
+        }
+        const ditolak = hasil.email.info?.match(/(\d+) dilewati/)
+        setMsg(
+          `Laporan terkirim ke ${hasil.email.info ?? 'penerima'}` +
+            (ditolak ? ` (${ditolak[1]} alamat dilewati)` : ''),
+        )
         await reloadBackups()
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e))
@@ -104,6 +183,60 @@ export default function TabData({
               Terakhir: {backupInfo.filename} ({formatBytes(backupInfo.sizeBytes)})
             </span>
           )}
+        </div>
+      </SettingsCard>
+
+
+      {/* ===== Penerima Email Laporan =====
+          ⚠️ Nilai ini dibaca ulang tiap kali laporan dikirim, jadi tidak ada
+          restart dan tidak perlu tombol terapkan terpisah. Yang dilakukan di
+          bawah hanya fallback: kalau Setting kosong, server memakai variabel
+          environment `LAPORAN_EMAIL_TUJUAN` seperti sebelumnya. */}
+      <SettingsCard
+        title="Penerima Email Laporan"
+        description="Laporan tutup hari dikirim ke semua alamat di bawah, setiap hari jam 23:30 WIB."
+      >
+        <textarea
+          value={emailTujuan}
+          onChange={(e) => setEmailTujuan(e.target.value)}
+          rows={3}
+          placeholder={'contoh@warnet.id, kedua@warnet.id'}
+          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+        />
+
+        {/* Validasi dibuat sama longgarnya dengan server: kalau di sini
+            lebih ketat, admin akan melihat alamat ditolak padahal server
+            menerimanya — dan itu lebih membingungkan daripada tidak
+            memvalidasi sama sekali. Yang ditampilkan hanya penanda kasar,
+            sisanya biarkan server yang memutuskan. */}
+        <PesanAlamatEmail mentah={emailTujuan} />
+
+        <p className="mt-1 text-[11px] text-slate-500">
+          Pisahkan dengan koma, titik koma, atau baris baru. Alamat yang tidak
+          valid dilewati, bukan membatalkan pengiriman ke alamat lain. Kosongkan
+          untuk memakai pengaturan bawaan di server.
+        </p>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={saveEmailTujuan}
+            disabled={busy !== null}
+            className="rounded-md bg-slate-200 px-4 py-2 text-sm text-slate-800 hover:bg-slate-300 disabled:opacity-50"
+          >
+            {busy === 'email-tujuan' ? 'Menyimpan...' : 'Simpan Penerima'}
+          </button>
+          {/* Kirim sekarang sekaligus jadi TES: kalau alamat salah, SMTP
+              rusak, atau PDF-nya tidak jadi, hasilnya langsung terlihat di
+              sini — bukan besok malam saat tidak ada yang sedang memantau. */}
+          <button
+            type="button"
+            onClick={kirimSekarang}
+            disabled={busy !== null}
+            className="rounded-md bg-slate-800 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
+          >
+            {busy === 'kirim-laporan' ? 'Mengirim...' : 'Simpan & Kirim Sekarang'}
+          </button>
         </div>
       </SettingsCard>
 
