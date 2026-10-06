@@ -682,6 +682,73 @@ memeriksa posisi nyata. **Sudah dibuktikan menangkap bug**: dikembalikan ke
 kode lama → **5 dari 11 tes gagal** tepat di logo menimpa garis dan "Waktu
 Dibuat" yang belum rata kanan.
 
+### 🔴 Sesi tidak dikirim ulang ke agent — layar login padahal server menagih (6 Okt)
+
+`_currentState` di `Agent.Service/Worker.cs:58` diinisialisasi `Locked`, dan
+**TIDAK ADA** permintaan state ke server dari sisi agent — agent hanya mengirim
+`agent:register` + `agent:heartbeat`. Jadi kalau Windows service di PC klien
+restart sementara ada sesi berjalan, layar PC kembali ke form login sementara
+server **masih terus menagih**. Pelanggan bisa melihat layar login di PC yang
+sedang ditagih, atau menekan login lalu ditolak "PC sudah memiliki sesi
+berjalan".
+
+### ✅ Perbaikannya 100% di server — TIDAK perlu install MSI baru (6 Okt)
+
+`SessionGateway.kirimUlangSesiKeAgent()`, dipanggil dari `registerAgent()`
+tepat setelah `registerPc()`. Kalau ada sesi `BERJALAN`, kirim ulang
+`session:start` dengan **sisa waktu saat ini**.
+
+⚠️ **Kenapa ini aman tanpa versi agent baru.** Handler yang menerimanya sudah
+ada di versi yang terpasang (1.0.17.0) dan keduanya **idempoten**:
+
+| Handler | Yang terjadi saat menerima ulang |
+|---|---|
+| `Worker.OnSessionStarted` | hanya menimpa `SessionId`/`DurasiDetik`/`SisaDetik`/`State`, mengunci ulang Task Manager, kirim ulang StateUpdate + label akun |
+| `Overlay.ApplySessionStarted` | hanya menimpa label akun |
+
+Tidak ada penghitung, dialog, atau proses yang di-spawn. Syarat ini wajib,
+karena fungsi ini jalan di **setiap** konek — termasuk kasus biasa server
+restart di tengah pelanggan main. Urutan di Worker juga sudah benar:
+`SendStateUpdateAsync()` (`locked=false`) dikirim **sebelum** identitas akun.
+
+⚠️ **WAJIB kirim sisa waktu SEKARANG, bukan durasi saat sesi dimulai.**
+`OnSessionStarted` menulis `SisaDetik = DurasiDetik`, jadi mengirim durasi awal
+membuat hitung mundur di layar melonjak naik. Terbukti: saldo 1800 dtk yang
+sudah terpakai 305 dtk terkirim sebagai **1495**, bukan 1800.
+
+⚠️ **`try/catch` itu wajib, bukan formalitas.** `kirimUlangSesiKeAgent()` ada
+di DALAM `registerAgent()`, dan pemanggilan itu terjadi **setelah** socket lama
+PC lain diputus. Kalau ia melempar, agent PC tersebut tidak terdaftar sama
+sekali — PC itu berhenti online sampai reconnect berikutnya. Satu query Prisma
+yang gagal tidak boleh dilewati.
+
+Rumus sisa waktu disatukan jadi `sisaWaktuSekarang()` di `session.service.ts`
+(dipakai tick, `getSessionStatus()`, dan `sesiBerjalanUntukAgent()`) supaya tiga
+tempat itu tidak melenceng berbeda.
+
+Tes: `test/kirim-ulang-sesi.spec.ts` (9) + `test/kirim-ulang-ke-agent.spec.ts` (5,
+termasuk dua kasus "tidak melempar"). Mutasi terbukti: buang `try/catch` → 2 tes
+gagal. Terbukti live dengan agent simulasi: menerima `session:start` dengan
+sisa 1495 dtk, dan **tidak** menerima apa pun saat tidak ada sesi.
+
+### ⚠️ TIGA jenis restart punya jawaban BERBEDA (6 Okt)
+
+Jangan menyederhanakan "restart aman" — ketiganya berbeda:
+
+| Yang restart | Sesi pelanggan | Perlu apa |
+|---|---|---|
+| **Server** | Aman — `recoverRunningSessions()` menyalakan tick, waktu dihitung dari DB | Tidak perlu apa pun |
+| **Overlay saja** | Aman — sudah self-heal: ada `PipeMessageType.StateRequest`, overlay yang baru konek **bertanya** state ke service | Tidak perlu apa pun |
+| **Windows service (`Worker.cs`)** | **Tidak aman** — layar jadi login, server tetap menagih | `kirimUlangSesiKeAgent()` (kirim ulang state) |
+
+⚠️ **Skenario yang benar-benar memicu baris ke-3** adalah socket yang putus
+TANPA event `disconnect` sampai server (middlebox/drop flow tanpa FIN/RST) —
+persis kelas bug yang sudah pernah downtime 8 jam di produksi. Kalau soket
+putus **bersih** (mis. proses memang dibunuh), `handleDisconnect()` jalan dan
+sesi langsung berhenti dengan `disconnect_timeout`, jadi tidak ada masalah
+ketidakcocokan. Saat menguji, JANGAN memakai cara "hapus proses lalu tunggu"
+karena itu **tidak** mereproduksi bug yang sebenarnya.
+
 ### 📄 Laporan PDF — satu halaman, tanpa tabel transaksi (6 Okt)
 
 Dulu laporan tutup hari pecah jadi **79 halaman**, hampir semuanya kosong, dan
