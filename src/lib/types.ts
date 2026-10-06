@@ -107,6 +107,24 @@ export interface DashboardLog {
   nama?: string
   kasirId?: string
   by?: string
+  /**
+   * Penjelasan bebas dari backend, untuk `pc_shutdown_auto`.
+   *
+   * ⚠️ Sengaja BUKAN bernama `detail`: pada `ActivityLogItem`, `detail` adalah
+   * JSON mentah yang belum di-parse, jadi memakai nama yang sama untuk dua
+   * hal berbeda di dua tempat akan sangat mudah tertukar.
+   */
+  keterangan?: string
+  /** Setting auto-matikan yang berlaku saat event itu terjadi, dalam menit. */
+  menit?: number
+  /**
+   * Nama PC yang ikut di payload backend.
+   *
+   * ⚠️ Kolom ini BUKAN daftar PC yang tampil di layar. Kalau nama PC
+   * diambil dari situ saja, kolom Detail jadi kosong tepat untuk PC yang
+   * tidak ada di daftar — termasuk PC yang sedang otomatis dimatikan.
+   */
+  pc?: string
 }
 
 export interface TransactionRef {

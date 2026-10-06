@@ -568,6 +568,120 @@ module itu sudah mengimpor module pengimbarunya. `SettingsModule` sendiri
 mengimpor `SessionModule`, tapi itu **tidak** berarti import-nya otomatis — dan
 `forwardRef` juga tidak diperlukan karena `SettingsService` di-`exports`.
 
+### 📄 Header PDF + urutan kartu (6 Okt, permintaan operator)
+
+| Yang | Nilai |
+|---|---|
+| Logo | **Kiri** (`x = 40`, lebar 120pt) |
+| Judul | **Kanan**, teks `Laporan Harian` |
+| "Smart Plus" | **Pindah ke footer kiri**, jadi `{SMTP_FROM_NAME} — smart-plus.id` |
+| "Ringkasan" | **Dihapus** — 8 kartu sudah berlabel jelas |
+| "Batas Tutup" | **Dihapus** — selalu `23:30 WIB`, jadi bukan informasi |
+| "Hari Buku" | Tetap **kiri** |
+| "Waktu Dibuat" | **Pindah ke kanan** (`x = 297.64`) |
+| Kartu | "Voucher Dibuat" → **"Voucher Baru"** |
+
+⚠️ **Logo dan judul sekarang SATU BARIS.** Dulu logo di tengah dengan lebar 150
+dan judul di bawahnya; itu memakan ~113pt tinggi. Logo dikecilkan ke 120pt
+supaya baris header lebih pendek dari tinggi judul 18pt dan
+judul bisa duduk sejajar tanpa terdorong ke bawah.
+
+Urutan kartu (indeks = kolom, `col = i % 4`):
+
+```
+baris 1: Voucher Baru | Voucher Topup | Member Baru | Member Topup
+baris 2: Total Login | Pendapatan Voucher | Pendapatan Member | Total Pendapatan
+```
+
+⚠️ **Menghapus dua elemen header menyisakan ~226pt ruang kosong di bawah.**
+Tinggi batang dinaikkan (15→20) dan `jarakAntarGrafik` (18→22) untuk mengisi
+sebagian; sisa celah sekitar **172pt** dan itu disengaja. Menambahkannya
+lagi berisiko merusak syarat satu halaman, dan `MAKS_BARIS_TABEL` tetap
+satu-satunya penjaga — sudah dibuktikan: 40 baris disuntik pun tetap 1 halaman.
+
+⚠️ **`contentBottom` DIHAPUS** karena tidak lagi dipakai setelah blok
+"pemadatan" dibuang. Kalau suatu saat butuh ambang lagi, hitung ulang dari
+tinggi bagian yang digambar, **dan** tetap jaga `MAKS_BARIS_TABEL` yang
+mengikat bagian yang tumbuh sendiri.
+
+Verifikasi bukan dari membaca kode tapi dari **isi PDF**: stream konten
+di-inflate, lalu operator `Tm` (posisi teks) dan `cm` (penempatan gambar)
+dibaca. Dari situ terbukti: 8/8 label kartu di posisi yang diminta, logo di
+`x=40`, judul di `x=423`, "Batas Tutup" & "Ringkasan" tidak ada.
+
+
+#### 🔴 Logo PDF menimpa garis & teks — tinggi header HARUS `max()` (6 Okt)
+
+Dilaporkan dari PDF yang benar-benar dikirim: logo menutupi garis pembatas dan
+tulisan "Hari Buku" di bawahnya. Kelihatannya jelas, tapi **tidak ada satu pun
+error** — pdfkit tidak pernah memeriksa tabrakan koordinat.
+
+Akar masalahnya satu baris:
+
+```
+tinggi logo (42pt)  >  tinggi teks judul 18pt (±22pt)
+
+lalu  doc.y = headerY + tinggiJudulHeader + 6;   // <- hanya pakai tinggi JUDUL
+```
+
+Jadi `doc.y` berada di **atas** logo, dan garis + baris info digambar menimpanya.
+Komentar versi pertama malah mengklaim "42pt tetap lebih pendek dari tinggi
+judul" — pernyataan itu salah, dan itulah yang membuat bug-nya lolos.
+
+Perbaikannya dua bagian, dan keduanya wajib:
+
+```ts
+tinggiLogo  = Math.round(LEBAR_LOGO * RASIO_LOGO);   // 96 * 144/411 = 34
+tinggiHeader = Math.max(tinggiJudulHeader, tinggiLogo);
+doc.y = headerY + tinggiHeader + 8;
+```
+
+Logo juga dikecilkan 120 → **96pt** (permintaan operator: "logo kebesaran").
+
+⚠️ **Memindahkan kotak ke separuh halaman BUKAN berarti rata kanan.** Versi
+sebelumnya menaruh kotak "Waktu Dibuat" di `M + halfW` (= 297.64) tapi teksnya
+tetap `align` kiri, jadi label dan nilainya berhenti di tengah halaman — dari
+sisi kasir terlihat seperti tidak dipindahkan sama sekali. Perbaikannya
+`align: 'right'` per item, yang membuat tepi kanannya menyentuh `M + W`
+(= 555.28) dan sejajar dengan isi tabel di bawahnya.
+
+### 🔬 Cara memverifikasi geometri PDF — dan dua koordinat yang wajib dibalik
+
+`pdfinfo`/`pdftoppm` **tidak ada** di host maupun di image Playwright, jadi
+cara yang dipakai adalah membaca **isi PDF**: inflate stream
+(`FlateDecode`), lalu cari operator `Tm` (posisi teks) dan `cm` (penempatan
+gambar).
+
+⚠️ **Dua koordinat dalam PDF tidak satu satuan, dan mencampur keduanya
+membuat verifikasi meleset:**
+
+| Elemen | Orientasi | Contoh |
+|---|---|---|
+| Teks (`Tm`) | **dari atas** | "Hari Buku" `y=740.1` |
+| Garis (`m ... l ... S`) | **dari bawah** → harus `841.89 - y` | garis `y=86` → `755.9` |
+| Gambar (`cm`) | **dari bawah** → harus dibalik | logo `f=78` → atas `763.9` |
+
+Setelah dibalik, urutan yang benar dari atas ke bawah (y **kecil** = lebih atas):
+
+```
+Hari Buku  740.1  <  garis 755.9  <  logo 763.9 .. 797.9
+```
+
+Terbukti pada dua file nyata:
+
+| PDF | garis | logo | hasil |
+|---|---|---|---|
+| Yang dikirim (logo 120pt) | 770.5 | 755.9 – 797.9 | garis **di dalam** logo → menimpa |
+| Setelah perbaikan (96pt) | 755.9 | 763.9 – 797.9 | garis **di antara** teks & logo → bersih |
+
+⚠️ **`contentBottom` sudah tidak ada** (dihapus bersama blok pemadatan), jadi
+untuk deciding tinggi baris pakai `max()` — bukan `pageMaxY - 205`.
+
+Tes: `backend/test/pdf-geometri.spec.ts` (11 kasus) membaca PDF hasil build dan
+memeriksa posisi nyata. **Sudah dibuktikan menangkap bug**: dikembalikan ke
+kode lama → **5 dari 11 tes gagal** tepat di logo menimpa garis dan "Waktu
+Dibuat" yang belum rata kanan.
+
 ### 📄 Laporan PDF — satu halaman, tanpa tabel transaksi (6 Okt)
 
 Dulu laporan tutup hari pecah jadi **79 halaman**, hampir semuanya kosong, dan
@@ -657,6 +771,123 @@ docker compose exec v3netbill-backend node /app/test/tools/simulasi-agent.mjs <p
 memutus socket lama yang punya token sama, jadi memakai PC asli akan saling
 menendang dengan agent asli dan mengakhiri sesi pelanggan sungguhan. Lihat
 bagian "Tes TIDAK BOLEH memakai PC sungguhan".
+
+### 🔴 Hitung mundur WAJIB beku di 00:00 untuk PC OFFLINE (6 Okt)
+
+Dilaporkan dari pemakaian nyata: pada PC offline, hitung mundur auto-matikan
+**terus bergerak** di angka `00:01` dan `00:00`, padahal tidak ada yang terjadi.
+
+Penyebabnya bukan satu sumber angka, tapi **dua sumber yang saling
+meniadakan**:
+
+```
+broadcast baru (~10 detik)  ->  matiDalamDetik dihitung ULANG dari
+                                Pc.terakhirAktifAt, jadi nilainya NAIK
+                                seiring waktu berjalan
+penghitung lokal            ->  dikurangi 1 per detik
+```
+
+Keduanya bertemu di `Math.max(0, ...)` yang sudah dibatasi nol, jadi hasilnya
+ber-osilasi di sekitar nol. Terbukti di server nyata: 4 PC offline berubah
+`0:01` -> `0:00` dalam 25 detik, dan `PC-UJI` justru menampilkan `1:55` lalu
+turun ke `0:48`.
+
+Perbaikannya di `DashboardPage.tsx`: `sisaMati` di-pin ke `0` kalau
+`pc.status === 'OFFLINE'`.
+
+⚠️ **Ini bukan sekadar tampilan.** Server **tidak akan pernah** bisa mengirim
+`admin:shutdown` ke PC yang agentnya offline — `checkAutoShutdown()` melewatinya
+dan **sengaja tidak disenapkan timer**, supaya tidak ada perintah kedua yang
+menggantung selamanya. Jadi angka yang turun di kartu offline bukan prognosis,
+cuma angka yang tidak akan pernah sampai.
+
+⚠️ **Teksnya "SHUTDOWN DALAM", bukan "MATI DALAM".** "Mati" terbaca sebagai
+"PC sudah mati" oleh kasir, padahal yang dimaksud "akan dimatikan".
+
+Terbukti setelah perbaikan: 4 PC offline beku di `SHUTDOWN DALAM 0:00` selama
+25 detik (3 siklus broadcast), sementara PC bersesi tetap turun normal.
+Mutasi (mengembalikan ke kode lama) mengulang gejala aslinya persis.
+
+### 🔴 Kolom Detail log aktivitas wajib menyebut siapa & PC mana (6 Okt)
+
+Dua bug yang gejalanya mirip "kolom kosong", tapi sebabnya berbeda:
+
+| Event | Gejala sebelumnya | Akar masalah |
+|---|---|---|
+| `session:stopped` | `Waktu habis, sisa kembali 0j 00:00` — **kalimat yang sama persis untuk sesi mana pun** | Payload backend tidak pernah mengirim `akun` |
+| `pc_shutdown_auto` | Kolom Detail **kosong sama sekali** | `formatLogDetail()` tidak punya `case` untuk event itu, jadi jatuh ke `default: return ''` |
+
+Perbaikan dua sisi, dan **keduanya wajib**:
+
+1. Backend `session:stopped` mengirim `akun: session.account.kodeUnik ?? session.account.nama`
+   — pola yang sama persis dengan `session:started`, jadi satu pasangan log
+   bisa dibaca utuh tanpa menggabungkan dua baris berbeda.
+2. Backend `pc_shutdown_auto` mengirim `pc: pc.namaPc`.
+3. Frontend punya `case` untuk keduanya, dan `pc_shutdown_auto` juga perlu ada
+   di `LOG_EVENT_LABEL` (sudah ada).
+
+⚠️ **Nama PC harus ikut di payload, bukan dicari dari daftar PC yang tampil.**
+Kalau nama diambil dari `pcs.find(...)`, kolomnya kosong tepat untuk PC yang
+tidak ada di daftar — termasuk PC yang sedang dimatikan otomatis.
+
+🔴 **Dan ini jebakan yang baru ketahuan waktu menguji:** dashboard memuat log
+dari `GET /activity-log`, lalu memetakan field **satu per satu** secara manual
+di `DashboardPage.tsx`. Field yang tidak disebut di allow-list itu **HILANG
+diam-diam** — gejalanya `idle - menit`, bukan error. Waktu field `pc` dan
+`detail` ditambahkan di backend, tes visual tetap menampilkan `-` karena
+mapping-nya belum diperluas.
+
+⚠️ **Field frontend itu bernama `keterangan`, bukan `detail`.** Pada
+`ActivityLogItem`, `detail` adalah **JSON mentah yang belum di-parse**, jadi
+memakai nama yang sama untuk dua hal berbeda di dua tempat akan sangat mudah
+tertukar — dan memang sempat tertukar saat pengerjaan ini.
+
+Tes: `test/log-sesi-berakhir.spec.ts` (5) + 2 tes baru di
+`test/auto-shutdown.spec.ts`. Keduanya sudah dibuktikan gagal kalau payload
+dikosongkan.
+
+### 🔴 Recovery sesi setelah restart = jogador nyawa pelanggan (6 Okt)
+
+Restart server **tidak** memutus sesi pelanggan. Waktu yang terpakai dihitung ulang
+dari `Session.waktuMulai` + `Account.sisaWaktuDetik` — keduanya di database —
+jadi `setInterval` di memory hanya pengirim, bukan sumber kebenaran.
+
+`recoverRunningSessions()` menyalakan ulang tick itu, dan **sudah terbukti 21
+kali di log produksi**. Bukti paling kuat di sesi ini: 4 restart berturut-turut,
+saldo pelanggan **tetap persis** (6935 dan 5968), dan `durasiTerpakaiDetik`
+berbeda 1 detik dari `now() - waktuMulai` — itu memang selisih normal tick
+1-detik, bukan detik yang hilang.
+
+⚠️ **Tapi jalur itu tidak punya penjaga, dan itu bisa mematikan SELURUH server.**
+`recoverRunningSessions()` dipanggil dari `afterInit()` yang **tidak `await`**,
+jadi penolakan di dalamnya menjadi **unhandled rejection** — dan Node 20
+menjatuhkan proses kalau itu terjadi saat startup. Satu query Prisma yang gagal
+berarti tidak ada satu PC pun yang bisa billing, sementara `nest build` tetap
+bersih.
+
+Dua lapis penjaga (sudah dipasang):
+
+1. `recoverRunningSessions()` dibungkus `try/catch`, **dan tiap sesi diproses
+   dalam `try/catch` sendiri** — satu baris `Session` yang aneh tidak boleh
+   mencegah sesi pelanggan lain ikut ditick ulang.
+2. `afterInit()` memanggil `.catch()` pada Promise-nya. Ini jaring kedua.
+
+⚠️ **Log recovery wajib menyebut jumlah gagal**, bukan cuma jumlah hidup.
+Tanpa itu, operator melihat "3 sesi dipulihkan" padahal satu tidak, dan tidak
+ada yang mengetahuinya.
+
+⚠️ **Restart server TIDAK menjalankan `handleDisconnect()`**, dan itu justru
+yang menyelamatkan sesi. Aplikasi tidak punya handler `SIGTERM`, jadi proses
+mati tanpa memproses event `disconnecting`. Kalau suatu saat ditambahkan
+`app.enableShutdownHooks()`, baris `@OnGatewayDisconnect` akan ikut jalan dan
+**semua sesi akan langsung mati** — dan sekarang bukan `disconnect_timeout`
+melainkan `manual`, tanpa grace period.
+
+Tes: `test/recovery-sesi.spec.ts` (6). Sebelumnya **nol** tes menyentuh recovery —
+`auto-shutdown.spec.ts` memanggil `setGatewayEvents()` jadi recovery kebetulan
+jalan terhadap mock `[]`, tanpa satu pun assertion. Kalau
+`recoverRunningSessions()` dihapus, semua tes lama tetap hijau. Mutasi sudah
+dibuktikan: 4 dari 6 tes gagal tepat di try/catch yang dihapus.
 
 ### Hitung mundur di dashboard
 

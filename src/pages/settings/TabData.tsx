@@ -165,28 +165,6 @@ export default function TabData({
 
   return (
     <div className="grid gap-5">
-      <SettingsCard
-        title="Backup Database"
-        description="Backup otomatis dijalankan setiap pukul 01:00 dan riwayat lebih dari 30 hari otomatis dihapus."
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void doBackup()}
-            disabled={busy !== null}
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
-          >
-            {busy === 'backup' ? 'Membuat...' : 'Buat Backup Sekarang'}
-          </button>
-          {backupInfo && (
-            <span className="text-sm text-slate-600">
-              Terakhir: {backupInfo.filename} ({formatBytes(backupInfo.sizeBytes)})
-            </span>
-          )}
-        </div>
-      </SettingsCard>
-
-
       {/* ===== Penerima Email Laporan =====
           ⚠️ Nilai ini dibaca ulang tiap kali laporan dikirim, jadi tidak ada
           restart dan tidak perlu tombol terapkan terpisah. Yang dilakukan di
@@ -237,6 +215,27 @@ export default function TabData({
           >
             {busy === 'kirim-laporan' ? 'Mengirim...' : 'Simpan & Kirim Sekarang'}
           </button>
+        </div>
+      </SettingsCard>
+
+      <SettingsCard
+        title="Backup Database"
+        description="Backup otomatis dijalankan setiap pukul 01:00 dan riwayat lebih dari 30 hari otomatis dihapus."
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void doBackup()}
+            disabled={busy !== null}
+            className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
+          >
+            {busy === 'backup' ? 'Membuat...' : 'Buat Backup Sekarang'}
+          </button>
+          {backupInfo && (
+            <span className="text-sm text-slate-600">
+              Terakhir: {backupInfo.filename} ({formatBytes(backupInfo.sizeBytes)})
+            </span>
+          )}
         </div>
       </SettingsCard>
 

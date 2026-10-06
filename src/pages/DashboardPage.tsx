@@ -73,6 +73,13 @@ export default function DashboardPage() {
           // Nama pelaku aksi (kunci/matikan/start). Disimpan backend di dalam
           // `detail` JSON; tanpa baris ini log menampilkan "-".
           by: detail.by as string | undefined,
+          // ⚠️ Tiga field di bawah WAJIB ikut di allow-list ini. Pemetaan dari
+          // `ActivityLogItem` ke `DashboardLog`_memilih field secara manual, jadi
+          // field yang tidak disebut di sini HILANG diam-diam — gejalanya
+          // "idle - menit", bukan error.
+          pc: detail.pc as string | undefined,
+          keterangan: detail.detail as string | undefined,
+          menit: detail.menit as number | undefined,
         }
       })
       setLogs(convertedLogs)
@@ -208,7 +215,7 @@ export default function DashboardPage() {
     )},
     { key: 'detail', header: 'Detail', render: (log: DashboardLog) => (
       <span className="text-slate-600">
-        {formatLogDetail(log, log.pcId ? pcs.find((p) => p.id === log.pcId)?.namaPc : undefined)}
+        {formatLogDetail(log, log.pc ?? (log.pcId ? pcs.find((p) => p.id === log.pcId)?.namaPc : undefined))}
       </span>
     )},
   ]
@@ -280,10 +287,30 @@ export default function DashboardPage() {
             // broadcast baru (~10 detik) mengirim `matiDalamDetik` yang sudah
             // berkurang, jadi kalau penghitung lokal ikut berkurang, keduanya
             // saling meniadakan dan angkanya terlihat macet lalu melompat.
-            const sisaMati =
-              sedangBerjalan || pc.matiDalamDetik === null
-                ? null
-                : Math.max(0, pc.matiDalamDetik - Math.floor((sekarangMs - payloadMs) / 1000))
+            // PC OFFLINE: hitung mundur di-pin ke 0 dan TIDAK dikurangi.
+            //
+            // ⚠️ Server tidak akan pernah bisa mengirim `admin:shutdown` ke PC
+            // yang agentnya offline — `checkAutoShutdown()` melewatinya dan
+            // sengaja tidak disenapkan timer, supaya tidak ada perintah kedua
+            // yang menggantung. Jadi angka yang turun di kartu offline bukan
+            // prognosis, cuma angka yang tidak akan sampai.
+            //
+            // Gejalanya tanpa penjaga ini: tiap broadcast baru (~10 detik)
+            // mengirim `matiDalamDetik` yang dihitung ulang dari
+            // `terakhirAktifAt`, dan nilai itu ikut bertambah karena waktu
+            // terus berjalan, sementara penghitung lokal terus mengurangi.
+            // Dua sumber itu saling meniadakan, jadi angkanya terlihat hidup
+            // (00:01 -> 00:00 -> 00:01) padahal tidak ada yang terjadi.
+            const pcOffline = pc.status === 'OFFLINE'
+            let sisaMati: number | null = null
+            if (!sedangBerjalan && pc.matiDalamDetik !== null) {
+                sisaMati = pcOffline
+                    ? 0
+                    : Math.max(
+                          0,
+                          pc.matiDalamDetik - Math.floor((sekarangMs - payloadMs) / 1000),
+                      )
+            }
 
             const warnaStatus =
               pc.status === 'ACTIVE'
@@ -314,7 +341,7 @@ export default function DashboardPage() {
                           ? // ⚠️ Warna makin mencolok di detik-detik terakhir.
                             // Kalau tetap abu-abu, kasir tidak sempat bereaksi
                             // dan PC mati tepat saat dia melihat.
-                            `MATI DALAM ${formatHitungMundur(sisaMati)}`
+                            `SHUTDOWN DALAM ${formatHitungMundur(sisaMati)}`
                           : 'TIDAK ADA SESI'}
                     </div>
                   </div>
@@ -684,7 +711,15 @@ function formatLogDetail(log: DashboardLog, pcName?: string): string {
       return `${pc} mulai dipakai akun ${log.akun ?? '-'}${log.by ? ` oleh ${log.by}` : ''}`
     case 'session:stopped': {
       const alasan = STOP_REASON[log.alasan ?? ''] ?? log.alasan ?? '-'
-      return `${alasan}, sisa kembali ${formatDuration(log.sisaWaktuKembali ?? 0)}`
+      // ⚠️ `akun` WAJIB ikut di sini. Versi lama hanya menulis alasan dan
+      // sisa waktu, jadi kolom Detail menampilkan "Waktu habis, sisa kembali
+      // 0j 00:00" untuk sesi APAPUN — kasir tidak pernah tahu akun mana yang
+      // barusan berakhir. Payload backend ikut dikasih `akun` di fix yang sama;
+      // kalau hanya sisi frontend yang diubah, kolomnya tetap kosong.
+      return (
+        `${pc} — akun ${log.akun ?? '-'}: ${alasan}, ` +
+        `sisa kembali ${formatDuration(log.sisaWaktuKembali ?? 0)}`
+      )
     }
     case 'transaction:created':
       return `${log.jenis ?? '-'} ${log.kodeUnik ?? log.nama ?? '-'} — Rp ${log.nominal?.toLocaleString('id-ID') ?? '-'}`
@@ -696,6 +731,12 @@ function formatLogDetail(log: DashboardLog, pcName?: string): string {
       return `${pc} dibuka oleh ${log.by ?? '-'}`
     case 'pc_shutdown':
       return `${pc} dimatikan oleh ${log.by ?? '-'}`
+    // ⚠️ Case ini sebelumnya TIDAK ADA sama sekali, jadi event-nya jatuh ke
+    // `default: return ''` — badge menulis "PC Mati Otomatis" tapi kolom
+    // Detail kosong. Peta label sudah ada sejak awal; yang hilang justru
+    // pemetaan detail-nya.
+    case 'pc_shutdown_auto':
+      return `${pc} dimatikan otomatis — ${log.keterangan ?? `idle ${log.menit ?? '-'} menit tanpa aktivitas login`}`
     default:
       return ''
   }
