@@ -486,44 +486,44 @@ function IsiPcPage() {
           <table className="w-full table-fixed text-left text-sm">
             <thead className="bg-slate-50 text-slate-500">
               <tr>
-                <th className="px-3 py-2 w-[15%]" scope="col">Nama</th>
-                <th className="px-3 py-2 w-[15%]" scope="col">
+                <th className="px-3 py-2 w-[16%]" scope="col">Nama</th>
+                <th className="px-3 py-2 w-[14%]" scope="col">
                   <span className="flex items-center gap-1.5" title="IP client, diisi otomatis dari koneksi agent — tidak diisi manual">
                     <IkonMuka />
                     <span className="sr-only">IP client</span>
                   </span>
                 </th>
-                <th className="px-3 py-2 w-[13%]" scope="col">
+                <th className="px-3 py-2 w-[12%]" scope="col">
                   <span className="flex items-center gap-1.5" title="PC ID — dipakai saat memasang ulang MSI">
                     <IkonKartu />
                     <span className="sr-only">PC ID</span>
                   </span>
                 </th>
-                <th className="px-3 py-2 w-[13%]" scope="col">
+                <th className="px-3 py-2 w-[12%]" scope="col">
                   <span className="flex items-center gap-1.5" title="Agent Token — rahasia, jangan dibagikan">
                     <IkonGembok />
                     <span className="sr-only">Agent Token</span>
                   </span>
                 </th>
-                <th className="px-3 py-2 w-[9%]" scope="col">
+                <th className="px-3 py-2 w-[8%]" scope="col">
                   <span className="flex items-center gap-1.5" title="Daya listrik PC (watt) — dasar perkiraan biaya listrik di laporan uptime">
                     <IkonBolt />
                     <span className="sr-only">Daya listrik (watt)</span>
                   </span>
                 </th>
-                <th className="px-3 py-2 w-[13%]" scope="col">
+                <th className="px-3 py-2 w-[12%]" scope="col">
                   <span className="flex items-center gap-1.5" title="Status PC">
                     <IkonDenyut />
                     <span className="sr-only">Status</span>
                   </span>
                 </th>
-                <th className="px-3 py-2 w-[19%]" scope="col">
+                <th className="px-3 py-2 w-[16%]" scope="col">
                   <span className="flex items-center gap-1.5" title="Heartbeat terakhir dari agent">
                     <IkonJam />
                     <span className="sr-only">Last Heartbeat</span>
                   </span>
                 </th>
-                {role === 'ADMIN' && <th className="px-3 py-2 w-[12%]" scope="col"></th>}
+                {role === 'ADMIN' && <th className="px-3 py-2 w-[10%]" scope="col"></th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -634,8 +634,10 @@ function IsiPcPage() {
                   <td className="px-3 py-2 text-slate-600 truncate" title={pc.lastHeartbeatAt ?? ''}>
                     {pc.lastHeartbeatAt
                       ? new Date(pc.lastHeartbeatAt).toLocaleTimeString('id-ID', {
-                          // ⚠️ WAJIB — lihat catatan di `formatWaktu()` pada `src/lib/api.ts`.
                           timeZone: 'Asia/Jakarta',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit',
                         })
                       : '—'}
                   </td>

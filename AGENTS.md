@@ -222,6 +222,31 @@ Logika bisnis yang sudah berjalan:
 - Deps baru: axios, react-router-dom, socket.io-client, tailwindcss + @tailwindcss/vite.
 - Login JWT + AuthContext (**sessionStorage** token/role/username); interceptor 401 → redirect login.
 
+
+
+### 🔧 PC Management — tabel tetap, tombol ikon, layout lebih ringkas (8 Okt 2026)
+
+Halaman `PcPage.tsx` diperbarui untuk mengurangi tombol yang menumpuk dan menjaga
+layout tetap stabil di berbagai lebar layar:
+
+- Tabel memakai `table-fixed` (bukan `min-w-max`) dengan pembagian lebar kolom
+  yang lebih seimbang, sehingga kolom Status dan Last Heartbeat tetap terlihat
+  tanpa harus menggeser horizontal.
+- Tombol aksi (Tandai Rusak, Buka Kunci, Hapus) diubah menjadi **ikon saja** dengan
+  `title`/`aria-label` untuk aksesibilitas. Tombol Hapus dinonaktifkan saat PC
+  ditandai rusak (penolakan juga ditegakkan server).
+- Kolom "Last Heartbeat" ditampilkan dengan format jam:menit:detik (`HH:mm:ss`)
+  dan tetap memakai `timeZone: 'Asia/Jakarta'`.
+- Badge "Ditandai rusak" tetap ditampilkan terpisah di bawah status (tidak mengganti
+  status koneksi), agar operator masih bisa membedakan PC yang nyala tapi ditandai
+  dari PC yang offline.
+- Header tabel memakai ikon SVG untuk menghemat ruang, dengan teks alternatif
+  (`sr-only`) agar tetap terbaca oleh pembaca layar.
+
+Perubahan ini bersifat UI saja, tidak mengubah logika API maupun hak akses
+(ADMIN-only dengan guard di komponen dan di rute).
+
+
 ## Testing (pola yang dipakai)
 
 - REST: `curl` dari host ke `http://localhost:3000` (boleh dari host; tidak ada npm/node).
@@ -532,7 +557,7 @@ waktu sejak watermark terakhir yang ditambahkan.
 | Frekuensi sampel | 60 detik (bukan 15 — heartbeat terlalu rapat, tabelnya membengkak tanpa manfaat) |
 | Batas atas | 86.400 detik/hari per PC |
 | PC `rusak` | **dilewati**, sama seperti di tiga titik baca lainnya |
-| Penyimpanan | UTC, kolom `tanggal` |
+| Penyimpanan | kolom `tanggal` = `T00:00:00.000Z` dari tanggal **WIB** (`tanggalWib()`), bukan tanggal lokal server |
 | Endpoint | `GET /api/reports/uptime?dari&sampai` |
 | Batas rentang | 366 hari, `sampai >= dari` |
 
@@ -1122,20 +1147,46 @@ Dikirim server → klien:
 
 | Nama | Jadwal | Fungsi |
 |---|---|---|
-| `auto-backup` | 01:00 | `pg_dump` + hapus backup > 30 hari |
-| `cleanup-activity-logs` | 02:00 | hapus activity log > 30 hari |
-| `cleanup-log-billing` | 03:00 + saat start | hapus berkas log billing > 30 hari |
-| `cleanup-diagnosa` | 04:00 + saat start | hapus paket diagnosa agent > 14 hari |
+| `auto-backup` | 01:00 WIB | `pg_dump` + hapus backup > 30 hari |
+| `cleanup-activity-logs` | 02:00 WIB | hapus activity log > 30 hari |
+| `cleanup-log-billing` | 03:00 WIB + saat start | hapus berkas log billing > 30 hari |
+| `cleanup-diagnosa` | 04:00 WIB + saat start | hapus paket diagnosa agent > 14 hari |
 | `tutup-hari-laporan` | 23:30 WIB | rekap hari sebelumnya → PDF + email + Telegram |
+
+⚠️ **Empat cron pertama TIDAK punya `timeZone` eksplisit**, jadi jadwalnya mengikuti
+zona container backend. Sebelum 7 Okt container berzona UTC (01:00 UTC = 08:00 WIB);
+sejak 7 Okt container berzona WIB, jadi keempatnya berjalan **tepat pada jam WIB di
+atas** — backup pagi pindah dari 08:00 ke 01:00 WIB. `tutup-hari-laporan` dan
+`etl-per-jam` (BI) memakai `timeZone: 'Asia/Jakarta'` eksplisit, jadi tidak berubah.
 
 Batas hari bisnis = **23:30 WIB** (hari T = [23:30 T-1, 23:30 T)). Rekap nol dihitung
 setelah batas ini.
 
-### 🔴 Zona waktu: server & database UTC, aplikasi menampilkan WIB (4 Okt)
+### 🔴 Zona waktu: host & container aplikasi WIB, database tetap UTC (7 Okt)
 
 Semua yang ada hubungannya dengan **tanggal** di backend harus dihitung eksplisit sebagai WIB.
-Server, container, dan PostgreSQL berjalan di zona **UTC**, jadi tidak ada yang
-otomatis jadi WIB.
+
+Per 7 Okt 2026 zona waktu diatur begini (jangan diubah tanpa membaca alasannya):
+
+| Lapis | Zona | Kenapa |
+|---|---|---|
+| Host (`timedatectl`) | **Asia/Jakarta** | jam mesin & log host |
+| Container aplikasi (v3netbill-backend, frontend, bi-backend) | **Asia/Jakarta** (`TZ=Asia/Jakarta` di compose) | `date`, log, dan cron tanpa `timeZone` eksplisit |
+| **`postgres-15`** | **UTC — JANGAN DIUBAH** | lihat kotak merah di bawah |
+| PHP di container Nextcloud | **UTC** (env `TZ=Asia/Jakarta` hanya untuk `date`/log shell) | timestamp internal Nextcloud ditulis lewat SQL `now()` (session UTC) dan dibaca PHP; keduanya harus satu zona |
+| `tunnel-cloudflared`, `portainer` | tanpa `date` | tidak menampilkan waktu; recreate = downtime percuma |
+
+🔴 **`postgres-15` TIDAK boleh di-set `TZ=Asia/Jakarta`.** Kolom `Session.createdAt`
+bertipe `timestamp(3) without time zone` dengan `DEFAULT CURRENT_TIMESTAMP` — nilai
+default itu dihitung PostgreSQL dari **session TimeZone** (sekarang `Etc/UTC`). Sudah
+dibuktikan: `SET timezone='Asia/Jakarta'; SELECT now()::timestamp;` menghasilkan jam
+**WIB**, sehingga setiap baris baru akan tersimpan bergeser +7 jam dan dibaca Prisma
+sebagai UTC → jendela void, retensi, rekap, dan sesi langsung salah. Session TimeZone
+ikut server, bukan ikut container klien, jadi container aplikasi boleh WIB tanpa
+memengaruhi database.
+
+Konsekuensinya: **logika tanggal tetap harus eksplisit WIB**, helper di bawah tidak
+boleh dilepas. `toISOString()` pun selalu UTC apa pun `TZ` container.
 
 **Helper yang wajib dipakai** — `backend/src/common/wib-date.ts`:
 
@@ -1147,15 +1198,20 @@ otomatis jadi WIB.
 
 ⚠️ **Dua jebakan yang sudah menyebabkan bug nyata, dan keduanya sudah diperbaiki:**
 
-1. **`setHours()` memakai jam LOKAL server.** Server UTC, jadi
+1. **`setHours()` memakai jam LOKAL, dan lokal sekarang WIB (dulu UTC).** Zona lokal
+   ikut `TZ` container, jadi nilainya **bisa berubah diam-diam** kalau `TZ` di compose
+   diubah lagi — dan hasilnya tidak pernah bisa dipertanggungjawabkan sebagai batas hari
+   buku, karena hari buku tutup **23:30**, bukan 23:59. Dulu (container UTC),
    `new Date(tgl).setHours(23,59,59,999)` = 23:59 **UTC** = 06:59 WIB **hari
-   berikutnya**. Filter "sampai 04 Okt" jadi ikut menghitung transaksi 05 Okt
-   jam 00:00–06:59. `new Date(tgl)` untuk batas "dari" punya masalah serupa di
-   ujung lain: 00:00 UTC = 07:00 WIB, jadi 7 jam pertama transaksi hilang.
-2. **`toISOString()` mengembalikan UTC.** `toISOString().slice(0,10)` untuk nama
-   berkas log = tanggal UTC, dan antara 00:00–06:59 WIB tanggal UTC masih
-   milik **hari sebelumnya** — aktivitas jam-jam itu masuk
-   `billing-<kemarin>.log`.
+   berikutnya**: filter "sampai 04 Okt" ikut menghitung transaksi 05 Okt
+   jam 00:00–06:59, dan `new Date(tgl)` untuk batas "dari" kehilangan 7 jam pertama.
+   Sejak container jadi WIB angkanya kebetulan lebih mendekati yang diinginkan, tapi
+   itu **bukan alasan** untuk memakainya lagi — jalurnya tidak diuji dan bergantung
+   pada env.
+2. **`toISOString()` SELALU UTC**, berapa pun `TZ` container. Dipakai untuk nama
+   berkas log versi lama (`toISOString().slice(0,10)` = tanggal UTC), dan antara
+   00:00–06:59 WIB tanggal UTC masih milik **hari sebelumnya** — aktivitas jam-jam
+   itu masuk `billing-<kemarin>.log`. Sekarang nama berkas memakai `tanggalWib()`.
 
 **Yang sudah benar dan tidak boleh diubah** — batas **hari buku 23:30 WIB**
 (16:30 UTC) punya hitungannya sendiri, dan memang berbeda:
@@ -1178,11 +1234,13 @@ disetel UTC atau zona mana pun di belakang UTC akan menampilkan semua waktu
 dan justru itulah yang melindungi dari PC kasir berzona UTC-5 yang akan melihat
 tanggalnya mundur satu hari.
 
-⚠️ **Waktu yang dicetak di terminal selalu UTC.** `date`, `new Date()`, dan
-`toISOString()` di dalam container semuanya UTC. Kalau hasilnya berbeda dengan
-lokasi kasir (WIB), tambahkan 7 jam — jangan langsung menyalahkan aplikasi.
-Data di database benar; yang salah sering kali cuma command yang dipakai untuk
-memeriksanya.
+⚠️ **`date` di container aplikasi sekarang WIB, di `postgres-15` masih UTC.**
+Sejak 7 Okt container aplikasi memakai `TZ=Asia/Jakarta`, jadi `date` di dalamnya
+menunjuk jam yang sama dengan kasir. Tapi `psql`/`postgres-15` tetap UTC (wajib, lihat
+tabel di atas), jadi `SELECT now()` selalu tampak 7 jam di belakang WIB — itu benar,
+bukan data salah. `new Date().toString()` di Node mengikuti `TZ` container (WIB),
+sedangkan `toISOString()` **tetap UTC** berapa pun `TZ`-nya. Sebelum menyimpulkan
+waktu salah, tulis zona apa yang dipakai command-nya.
 
 Tes regresi: `backend/test/wib-date.spec.ts` (9 kasus).
 
@@ -4507,6 +4565,35 @@ terisi.
 ⚠️ Tes WebSocket harus memasang listener **sebelum** mengirim perintah. Versi
 pertama memasang `dapat('admin:lock')` sesudah ack, jadi emit-nya terlewat dan
 tes melaporkan bug yang **tidak ada** — padahal produknya benar.
+
+### 🔴 Satu akun = satu sesi berjalan (7 Okt) ✅
+
+Member `sela` berjalan di PC002 dan PC003 bersamaan. Terjadi 3 kali (5, 6, 7 Okt).
+Semua jalur mulai sesi hanya mengecek "PC ini dipakai?", tidak pernah "akun ini
+dipakai di PC lain?". Dampaknya: hitung mundur tiap sesi dihitung dari saldo akun
+yang sama, jadi begitu satu sesi berhenti, hitung mundur sesi lain melompat turun;
+satu sesi `habis` mereset saldo ke 0 dan mematikan sesi lainnya.
+
+Perbaikan, dua lapis, keduanya wajib:
+
+1. `createSessionAndStart()` menolak akun yang punya sesi `BERJALAN` di PC mana pun
+   ("Akun sedang dipakai di PCxxx").
+2. Indeks unik parsial `Session_accountId_berjalan_key` (migrasi
+   `20261007060000_session_satu_berjalan_per_akun`) menutup balapan: kasus 6 Okt,
+   dua sesi dibuat berselang 5 milidetik, lolos dari pengecekan biasa. `P2002`
+   ditangkap dan dijawab sebagai penolakan, tidak melempar.
+
+⚠️ **`loginRequest()` dulu membuat sesinya sendiri** (salinan blok `createSessionAndStart`),
+padahal komentar di sana menyebut semua jalur lewat satu fungsi. Akibatnya jalur login
+dari layar PC juga **tidak punya pengecekan PC `rusak`**. Sekarang `loginRequest()`
+memanggil `createSessionAndStart()`. Jangan menulis ulang pembuatan sesi di tempat lain.
+
+⚠️ Indeks parsial tidak bisa dinyatakan di `schema.prisma`; ada hanya di migrasi SQL.
+Kalau suatu saat `prisma migrate dev` mengeluh drift, jangan menghapus indeks itu.
+
+Tes: `backend/test/akun-satu-sesi.spec.ts` (7). Mutasi terbukti: matikan penjaga -> 2 tes
+gagal. Cara memutasi **tanpa menjatuhkan produksi**: salin `src/` + `test/` ke `/tmp/mut` di
+dalam container dan ubah di sana, JANGAN ubah `src/` yang sedang dipantau watcher.
 
 ### ⚡ Estimasi biaya listrik di laporan uptime (6 Okt)
 
