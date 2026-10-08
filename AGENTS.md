@@ -229,19 +229,30 @@ Logika bisnis yang sudah berjalan:
 Halaman `PcPage.tsx` diperbarui untuk mengurangi tombol yang menumpuk dan menjaga
 layout tetap stabil di berbagai lebar layar:
 
-- Tabel memakai `table-fixed` (bukan `min-w-max`) dengan pembagian lebar kolom
-  yang lebih seimbang, sehingga kolom Status dan Last Heartbeat tetap terlihat
-  tanpa harus menggeser horizontal.
+- Tabel memakai `table-fixed` (bukan `min-w-max`) dengan pembagian lebar kolom:
+  Nama 16%, IP client 14%, PC ID 12%, Agent Token 12%, Daya 8%, Status 12%,
+  Last Heartbeat 16%, Aksi 10% (hanya ADMIN). Urutan header = urutan sel.
 - Tombol aksi (Tandai Rusak, Buka Kunci, Hapus) diubah menjadi **ikon saja** dengan
   `title`/`aria-label` untuk aksesibilitas. Tombol Hapus dinonaktifkan saat PC
   ditandai rusak (penolakan juga ditegakkan server).
 - Kolom "Last Heartbeat" ditampilkan dengan format jam:menit:detik (`HH:mm:ss`)
   dan tetap memakai `timeZone: 'Asia/Jakarta'`.
-- Badge "Ditandai rusak" tetap ditampilkan terpisah di bawah status (tidak mengganti
-  status koneksi), agar operator masih bisa membedakan PC yang nyala tapi ditandai
-  dari PC yang offline.
+- **Status memakai titik berwarna + label** (bukan badge teks penuh):
+  emerald `animate-pulse` untuk `ACTIVE`, `slate-400` untuk `IDLE`, merah untuk
+  `OFFLINE`. Hanya `ACTIVE` yang berdenyut, supaya "sedang dipakai" terbaca sekali
+  lihat; `prefers-reduced-motion` sudah dimatikan di `index.css`.
+- Badge "Ditandai rusak" tampil sebagai pil kecil bertooltip **di bawah status**
+  (tidak mengganti status koneksi), agar operator masih bisa membedakan PC yang
+  nyala tapi ditandai dari PC yang offline.
 - Header tabel memakai ikon SVG untuk menghemat ruang, dengan teks alternatif
   (`sr-only`) agar tetap terbaca oleh pembaca layar.
+
+🔴 **Bug urutan kolom yang ikut diperbaiki (8 Okt):** urutan **sel** versi lama adalah
+`... Token → Status → Watt → Heartbeat`, sedangkan **header** `... Token → Watt →
+Status → Heartbeat`. Jadi input watt muncul di bawah judul "Status" dan sebaliknya —
+tidak ada error, hanya informasi yang salah kolom. Sekarang urutan sel disamakan
+dengan header (Watt lalu Status). Diverifikasi lewat DOM: 8 `th` = 8 `td`, sel ke-5
+berisi `<input type=number>` (Daya) dan sel ke-6 berisi titik status (Status).
 
 Perubahan ini bersifat UI saja, tidak mengubah logika API maupun hak akses
 (ADMIN-only dengan guard di komponen dan di rute).
