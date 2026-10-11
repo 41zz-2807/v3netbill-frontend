@@ -531,20 +531,20 @@ function IsiPcPage() {
           <table className="w-full table-fixed text-left text-sm">
             <thead className="bg-slate-50 text-slate-500">
               <tr>
-                <th className="px-3 py-2 w-[16%]" scope="col">Nama</th>
-                <th className="px-3 py-2 w-[14%]" scope="col">
+                <th className="px-3 py-2 w-[15%]" scope="col">Nama</th>
+                <th className="px-3 py-2 w-[13%]" scope="col">
                   <span className="flex items-center gap-1.5" title="IP client, diisi otomatis dari koneksi agent — tidak diisi manual">
                     <IkonMuka />
                     <span className="sr-only">IP client</span>
                   </span>
                 </th>
-                <th className="px-3 py-2 w-[12%]" scope="col">
+                <th className="px-3 py-2 w-[11%]" scope="col">
                   <span className="flex items-center gap-1.5" title="PC ID — dipakai saat memasang ulang MSI">
                     <IkonKartu />
                     <span className="sr-only">PC ID</span>
                   </span>
                 </th>
-                <th className="px-3 py-2 w-[12%]" scope="col">
+                <th className="px-3 py-2 w-[11%]" scope="col">
                   <span className="flex items-center gap-1.5" title="Agent Token — rahasia, jangan dibagikan">
                     <IkonGembok />
                     <span className="sr-only">Agent Token</span>
@@ -556,13 +556,19 @@ function IsiPcPage() {
                     <span className="sr-only">Daya listrik (watt)</span>
                   </span>
                 </th>
-                <th className="px-3 py-2 w-[12%]" scope="col">
+                <th className="px-3 py-2 w-[11%]" scope="col">
                   <span className="flex items-center gap-1.5" title="Status PC">
                     <IkonDenyut />
                     <span className="sr-only">Status</span>
                   </span>
                 </th>
-                <th className="px-3 py-2 w-[16%]" scope="col">
+                <th className="px-3 py-2 w-[8%]" scope="col">
+                  <span className="flex items-center gap-1.5" title="Versi agent yang terpasang di PC ini — dilaporkan sendiri oleh agent, bukan diisi manual">
+                    <IkonVersi />
+                    <span className="sr-only">Versi agent</span>
+                  </span>
+                </th>
+                <th className="px-3 py-2 w-[13%]" scope="col">
                   <span className="flex items-center gap-1.5" title="Heartbeat terakhir dari agent">
                     <IkonJam />
                     <span className="sr-only">Last Heartbeat</span>
@@ -681,6 +687,24 @@ function IsiPcPage() {
                         <IkonPalu />
                         Rusak
                       </span>
+                    )}
+                  </td>
+                  {/* ⚠️ "—" BUKAN tanda agent rusak. PC ini hanya belum pernah
+                      melaporkan versi: agent versi lama tidak mengirim field itu.
+                      Menandai merah akan membuat operator terburu-buru memperbarui
+                      PC yang justru sudah paling baru. */}
+                  <td
+                    className="px-3 py-2"
+                    title={
+                      pc.versiAgent
+                        ? `Versi agent: ${pc.versiAgent}`
+                        : 'Agent belum melaporkan versi — normal untuk agent versi lama'
+                    }
+                  >
+                    {pc.versiAgent ? (
+                      <span className="font-mono text-xs font-medium text-slate-700">{pc.versiAgent}</span>
+                    ) : (
+                      <span className="text-xs text-slate-400">—</span>
                     )}
                   </td>
                   <td className="px-3 py-2 text-slate-600 truncate" title={pc.lastHeartbeatAt ?? ''}>
@@ -852,6 +876,15 @@ function IkonJam() {
   return (
     <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
+/** Kolom versi agent — Reports/paket upload icon. */
+function IkonVersi() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1zM14 3v5h5" />
     </svg>
   )
 }

@@ -31,6 +31,11 @@ export interface Pc {
   agentToken: string
   status: PcStatus
   lastHeartbeatAt: string | null
+  /**
+   * Versi agent yang terpasang di PC ini. Dikirim server apa adanya dari
+   * `Pc.versiAgent`; `null` = agent belum pernah melapor versinya.
+   */
+  versiAgent?: string | null
   createdAt: string
   /**
    * Flag operasional "PC sedang diservis / dikosongkan", BUKAN arti PC ini
@@ -82,6 +87,14 @@ export interface DashboardPc {
   ipClient: string
   status: PcStatus
   lastHeartbeatAt: string | null
+  /**
+   * Versi agent yang terpasang di PC ini, dilaporkan agent sendiri lewat
+   * `agent:register`. `null` = belum pernah melapor (agent versi lama).
+   *
+   * ⚠️ Jangan perlakukan `null` sebagai "terlama" — PC itu bisa jadi justru
+   * yang paling baru, hanya belum pernah konek sejak kolom ini ada.
+   */
+  versiAgent?: string | null
   /**
    * Sisa detik sebelum PC dimatikan otomatis. `null` = tidak akan dimatikan
    * (sedang ada sesi, ditandai rusak, atau fiturnya dimatikan di Pengaturan).
