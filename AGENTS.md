@@ -34,26 +34,63 @@ dalam satu folder project** di `/home/warnet/docker/v3netbill/`. Lihat bagian
 Selain repo, ada dua skrip pembantu di root project: `dk` (dart) dan `fl` (flutter),
 keduanya menjalankan perintah di dalam container Flutter SDK.
 
+### 🔴 Path project: HANYA satu, dan itu `/home/warnet/docker/v3netbill`
+
+Tidak ada environment development terpisah. Produksi **adalah** folder itu sendiri, dan
+semua perintah dijalankan dari sana.
+
+| | |
+|---|---|
+| Folder kerja | `/home/warnet/docker/v3netbill` |
+| Port backend | `3000` |
+| Port frontend | `5173` |
+| Postgres | container `postgres-15`, compose sendiri di `/home/warnet/docker/war-nt-web/` |
+
+⚠️ **Jebakan yang sudah pernah kejadian (11 Okt 2026):** `/home/docker/v3netbill`
+dan `/home/development/3netbill-dev/` KEDUA-DNYA bukan project. Yang pertama tidak
+pernah berisi apa-apa — hanya folder kosong yang tercipta sendiri oleh
+`docker run -v /home/docker/v3netbill/frontend/node_modules:/w` saat `-v` menunjuk
+folder yang tidak ada. Yang kedua pernah dibuat 11 Okt pagi sebagai salinan
+(`rsync`) untuk mencoba development terpisah, lalu dibatalkan.
+
+Konsekuensinya nyata: karena `-v` dan `cd` **tidak gagal diam-diam**, perintah yang
+menunjuk path salah tetap "berhasil" dan muncul seolah-olah normal, sementara tidak
+menyentuh file sama sekali. Gejalanya persis seperti data hilang padahal tidak ada
+yang hilang. **Selalu cek `pwd` dulu sebelum `cd` ke path project.**
+
+Kalau butuh menguji tanpa menyentuh produksi, jangan membuat folder project baru —
+pakai `docker compose` yang sudah ada dan build di dalam container.
+
 ## Aturan mutlak (harus selalu dipatuhi)
 
-1. Semua perintah npm / npx / node dijalankan lewat:
+1. 🔴 **JANGAN PERNAH menghapus, memindahkan, atau men-trash apa pun di bawah
+   `/home/warnet/docker/`.** Folder itu isi seluruh server produksi: source, `.env`,
+   `ds.msi`, `data/`, dan project lain (`monitoring`, `nextcloud`, `yearly-book`,
+   `grade6-kas`, `ikannya-baba-backend`, `war-nt-web`, `pgadmin`, `vps-tunnel`).
+   Berisi DB produksi dan billing yang sedang jalan. **Berlaku untuk `rm`, `mv`,
+   `rsync --delete`, `git clean -xdf`, `docker compose down -v`, dan Apa pun yang
+   setara** — termasuk yang kelihatan "hanya artefak" atau "folder kosong".
+   Kalau ragu apakah sebuah path aman dihapus: **jangan dihapus, tanya user dulu.**
+   Menghapus `/home/warnet/docker/war-nt-web` khususnya berarti kehilangan satu-satunya
+   salinan DB `v3netbill`, `dashboard`, dan `yearlybook_db`.
+2. Semua perintah npm / npx / node dijalankan lewat:
    `docker compose exec v3netbill-backend <cmd>`
    (berlaku juga untuk create-migration, prisma generate, build, test, seed).
-2. Install package HANYA di dalam container (via `docker compose exec ... npm i ...`),
+3. Install package HANYA di dalam container (via `docker compose exec ... npm i ...`),
    JANGAN install di host lalu menyalin file. package.json di-sinkronkan lewat bind mount
    `./backend:/app`.
-3. Setelah setiap langkah, verifikasi log:
+4. Setelah setiap langkah, verifikasi log:
    `docker compose logs v3netbill-backend`
-4. Build image ulang setelah menambah dependency / prisma generate berubah:
+5. Build image ulang setelah menambah dependency / prisma generate berubah:
    `docker compose build v3netbill-backend && docker compose up -d --force-recreate v3netbill-backend`
-5. STOP & lapor hasil setelah tiap fase. Jangan lompat ke fase berikut tanpa konfirmasi.
-6. Jangan commit ke git kecuali diminta user (repo ini TIDAK ber-git).
-7. Semua relasi antar file backend WAJIB import dengan ekstensi `.js` (contoh: `'./x.service.js'`)
+6. STOP & lapor hasil setelah tiap fase. Jangan lompat ke fase berikut tanpa konfirmasi.
+7. Jangan commit ke git kecuali diminta user (repo ini TIDAK ber-git).
+8. Semua relasi antar file backend WAJIB import dengan ekstensi `.js` (contoh: `'./x.service.js'`)
    karena project ini `"type": "module"` + `moduleResolution: nodenext`. JANGAN ubah ke Node16/CommonJS.
-8. Prisma WAJIB dipin ke versi 5.22.x (`@prisma/client` dan `prisma`). JANGAN upgrade ke 7.x —
+9. Prisma WAJIB dipin ke versi 5.22.x (`@prisma/client` dan `prisma`). JANGAN upgrade ke 7.x —
    format schema-nya tidak kompatibel.
-9. Jangan tulis komentar berlebihan di kode; ikuti gaya file yang sudah ada.
-10. Setiap AMBIGUITY (fitur, scope fase) → tanya user dulu, jangan menebak.
+10. Jangan tulis komentar berlebihan di kode; ikuti gaya file yang sudah ada.
+11. Setiap AMBIGUITY (fitur, scope fase) → tanya user dulu, jangan menebak.
 
 ## Stack & struktur
 
@@ -1487,7 +1524,7 @@ permintaan, 0 crash.
   **GitHub Actions variable** bernama `SERVER_URL` (bukan secret). Di `Product.wxs` hanya ada
   fallback yang akan ditimpa itu — jangan andalkan isinya. Detail jebakannya:
   bagian "Build MSI & WiX" di bawah.
-- **WAJIB isi `ServerUrl` dengan skema lengkap** (`http://192.168.1.59:3000`), karena
+- **WAJIB isi `ServerUrl` dengan skema lengkap** (`http://192.168.1.71:3000`), karena
   `Agent.Core/ServerConnection.cs:91` memanggil `new Uri($"{serverBaseUrl.TrimEnd('/')}/session")` —
   string tanpa skema gagal. ⚠️ `ServerUrl` berisi **base URL saja**, tanpa `/session`;
   `ServerConnection` yang menambahkannya.
@@ -4232,12 +4269,22 @@ IP LAN host, port `3000` terbuka langsung di LAN, nama container `postgres-15`, 
 Cloudflare Tunnel. Tidak berbahaya pada jaringan privat, tapi sangat berguna
 untuk attacker yang menyisir.
 
-⚠️ **IP LAN host per 3 Okt 2026 = `192.168.1.59`** (interface `enp2s0`). Semula
-`192.168.1.65` — nilai itu sudah muncul di beberapa dokumen tapi **salah**, dan
-`docs/DEPLOYMENT.md:45` masih memuatnya. Kalau IP berganti lagi (DHCP), tiga
-dokumen itu harus diperbarui bersama: `AGENTS.md`, `docs/DEPLOYMENT.md`,
-`docs/DETEKSI-IP.md`, plus `v3NetbillAgent/HANDOFF.md`. Cara memastikan cepat:
-`hostname -I | cut -d' ' -f1`.
+⚠️ **IP LAN host per 10 Okt 2026 = `192.168.1.71`** (interface `enp2s0`). Semula
+`192.168.1.65`, lalu `192.168.1.59` — keduanya sudah muncul di beberapa dokumen
+tapi **salah**. Kalau IP berganti lagi (DHCP), dokumen-dokumen itu harus
+diperbarui bersama: `AGENTS.md`, `docs/DEPLOYMENT.md`, `docs/DETEKSI-IP.md`,
+plus `v3NetbillAgent/HANDOFF.md` (dan salinannya di `frontend/docs/`).
+Cara memastikan cepat: `hostname -I | cut -d' ' -f1`.
+
+🔴 **Clipboard hanya jalan di HTTPS/localhost — bukan di IP LAN.** Halaman PC
+Management menyalin PC ID & Agent Token lewat `navigator.clipboard.writeText()`,
+dan API itu **tidak ada** di konteks non-secure. Kasir yang membuka
+`http://192.168.1.71:3000` (HTTP biasa) mendapat
+`navigator.clipboard === undefined`, jadi pemanggilannya melempar `TypeError`
+dan selalu berakhir "Gagal menyalin ke clipboard". Terbukti di 10 Okt lewat
+Playwright. Karena itu `PcPage.copyToClipboard()` wajib punya fallback
+`document.execCommand('copy')` — dan fallback itu harus jalan **tanpa `await`
+lebih dulu**, karena `execCommand` hanya sah di dalam user gesture klik.
 
 ### Pending (per 28 Sep, sesi terakhir)
 
@@ -4405,7 +4452,7 @@ berturut-turut, 30 Sep):
 - `node_modules` harus di-mount ke `/w/node_modules`, bukan `/pw`. ESM mencari paket
   relatif terhadap letak file skrip (`/w/cap.mjs`), jadi `/pw/node_modules` tidak
   ditemukan.
-- Butuh `--network host` **dan** URL pakai IP LAN (`http://192.168.1.59:5173`), bukan
+- Butuh `--network host` **dan** URL pakai IP LAN (`http://192.168.1.71:5173`), bukan
   `localhost`. Tanpa itu: `ERR_CONNECTION_REFUSED`. Conversely, kalau memakai nama
   service compose (`v3netbill-frontend:5173`), Vite membalas **403** karena
   `allowedHosts` tidak memuatnya.
