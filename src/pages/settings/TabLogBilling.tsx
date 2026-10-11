@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { downloadAuth, fetchLogBilling, fetchLogBillingList } from '../../lib/api.ts'
 import type { LogBillingIsi, LogBillingRingkas } from '../../lib/types.ts'
 import { SettingsCard } from './SettingsCard'
+import LogAktivitasCard from './LogAktivitasCard'
 import { formatBytes, type SettingsCtx } from './shared'
 
 /** Tanggal hari ini di format yang sama dengan nama berkas di server. */
@@ -67,11 +68,13 @@ export default function TabLogBilling({ ctx }: { ctx: SettingsCtx }) {
 
   return (
     <div className="grid gap-5">
-      {/* Dua kartu ini satu baris: kontrol tanggal di kiri, daftar hari yang
-          tersedia di kanan. `items-start` supaya tiap kartu memakai tinggi
-          alaminya sendiri — kalau tidak, kartu yang lebih pendek ikut
-          diregangkan mengikuti yang lebih tinggi (pelajaran no. 16). */}
-      <div className="grid items-start gap-5 sm:grid-cols-2">
+      {/* Dua kartu ini satu baris dan DIPAKSA SETINGGI: `items-stretch`
+          (default grid) membuat kedua kartu mengikuti tinggi kartu tertinggi
+          di baris yang sama, persis seperti yang diminta operator. Daftar
+          tanggal ikut memanjang (`flex-1`) supaya ruang kosongnya tidak
+          menggantung di bawah daftar, dan tetap bisa digulir
+          (`max-h-96`) kalau tanggalnya banyak. */}
+      <div className="grid gap-5 sm:grid-cols-2">
       <SettingsCard
         title="Log Billing Harian"
         description="Setiap aktivitas billing — pembuatan akun, topup, sesi berjalan dan berakhir, kunci PC, sampai operator yang menekan — ditulis sebagai berkas teks satu hari satu berkas. Berkas lebih dari 30 hari otomatis dihapus."
@@ -125,9 +128,18 @@ export default function TabLogBilling({ ctx }: { ctx: SettingsCtx }) {
         </p>
       </SettingsCard>
 
-      <SettingsCard title="Daftar Tanggal" description="Klik salah satu tanggal untuk membuka isinya.">
+      <SettingsCard
+        title="Daftar Tanggal"
+        description="Berkas log tersedia, urut dari yang paling baru. Daftar panjang bisa digulir ke bawah. Klik salah satu tanggal untuk membuka isinya."
+      >
+        {/* ⚠️ JANGAN tambah class `flex` pada <ul> di bawah. `flex` adalah
+            utility `display: flex`, bukan bagian dari `flex-1` — dan itu
+            membuat <li> tersusun MENYAMPING (row), bukan bertumpuk.
+            Gejalanya: daftar tanggal bisa digulir ke samping (scrollWidth
+            2060px di kotak 389px) dan tiap tombol tanggal tinggal ~160px.
+            Yang dibutuhkan hanya `flex-1` (memanjang mengisi tinggi kartu). */}
         {daftar.length > 0 ? (
-          <ul className="divide-y divide-slate-100">
+          <ul className="min-h-0 max-h-96 flex-1 divide-y divide-slate-100 overflow-y-auto">
             {daftar.map((d) => (
               <li key={d.tanggal}>
                 <button
@@ -170,6 +182,11 @@ export default function TabLogBilling({ ctx }: { ctx: SettingsCtx }) {
           </p>
         )}
       </SettingsCard>
+
+      {/* Log Aktivitas dipindahkan dari Dashboard ke sini, supaya dashboard
+          tetap fokus pada kartu PC dan kasir tidak perlu menggulir jauh untuk
+          melihat jejak aktivitas. */}
+      <LogAktivitasCard />
     </div>
   )
 }

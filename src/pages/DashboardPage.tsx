@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { io, type Socket } from 'socket.io-client'
-import type { DashboardPc, DashboardLog, Account } from '../lib/types.ts'
-import { formatDuration, formatWaktu, formatRupiah, getToken, getRole, fetchActivityLogs, fetchAccounts, topup, koreksi, createVoucher, createMember, type ActivityLogItem } from '../lib/api.ts'
-import { Card, CardBody, Badge, StatusBadge, Table, Pagination, Modal } from '../components/ui'
-import { PER_HALAMAN } from '../hooks/usePagination.ts'
+import type { DashboardPc, Account } from '../lib/types.ts'
+import { formatDuration, formatWaktu, formatRupiah, getToken, getRole, fetchAccounts, topup, koreksi, createVoucher, createMember } from '../lib/api.ts'
+import { StatusBadge, Modal } from '../components/ui'
 
 const WS_URL = window.location.origin
 
@@ -16,7 +15,6 @@ export default function DashboardPage() {
   const [payloadMs, setPayloadMs] = useState(() => Date.now())
   /** Jam lokal, satu tick per detik untuk seluruh halaman. */
   const [sekarangMs, setSekarangMs] = useState(() => Date.now())
-  const [logs, setLogs] = useState<DashboardLog[]>([])
   const [connected, setConnected] = useState(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const [actionResult, setActionResult] = useState<string | null>(null)
@@ -371,70 +369,6 @@ export default function DashboardPage() {
     }
   }
 
-  // Logs pagination
-  const [logPage, setLogPage] = useState(1)
-  const [logTotalPages, setLogTotalPages] = useState(1)
-  const [logTotal, setLogTotal] = useState(0)
-  const [logLoading, setLogLoading] = useState(false)
-  const logPageRef = useRef(1)
-
-  useEffect(() => {
-    logPageRef.current = logPage
-  }, [logPage])
-
-  // Load initial logs from API
-  useEffect(() => {
-    loadLogs()
-  }, [logPage])
-
-  async function loadLogs() {
-    setLogLoading(true)
-    try {
-      const res = await fetchActivityLogs(logPage, PER_HALAMAN)
-      const convertedLogs: DashboardLog[] = res.data.map((item: ActivityLogItem) => {
-        let detail: Record<string, unknown> = {}
-        try {
-          detail = item.detail ? JSON.parse(item.detail) : {}
-        } catch {
-          detail = {}
-        }
-        return {
-          event: item.event,
-          at: item.createdAt,
-          sessionId: detail.sessionId as string | undefined,
-          pcId: item.pcId as string | undefined,
-          accountId: item.accountId as string | undefined,
-          kasirId: item.kasirId as string | undefined,
-          alasan: detail.alasan as string | undefined,
-          sisaWaktuKembali: detail.sisaWaktuKembali as number | undefined,
-          akun: detail.akun as string | undefined,
-          durasiDetik: detail.durasiDetik as number | undefined,
-          durasiMenit: detail.durasiMenit as number | undefined,
-          nominal: detail.nominal as number | undefined,
-          jenis: detail.jenis as string | undefined,
-          kodeUnik: detail.kodeUnik as string | undefined,
-          nama: detail.nama as string | undefined,
-          // Nama pelaku aksi (kunci/matikan/start). Disimpan backend di dalam
-          // `detail` JSON; tanpa baris ini log menampilkan "-".
-          by: detail.by as string | undefined,
-          // ⚠️ Tiga field di bawah WAJIB ikut di allow-list ini. Pemetaan dari
-          // `ActivityLogItem` ke `DashboardLog`_memilih field secara manual, jadi
-          // field yang tidak disebut di sini HILANG diam-diam — gejalanya
-          // "idle - menit", bukan error.
-          pc: detail.pc as string | undefined,
-          keterangan: detail.detail as string | undefined,
-          menit: detail.menit as number | undefined,
-        }
-      })
-      setLogs(convertedLogs)
-      setLogTotalPages(res.totalPages)
-      setLogTotal(res.total)
-    } catch (err) {
-      console.error('Failed to load logs:', err)
-    } finally {
-      setLogLoading(false)
-    }
-  }
 
   useEffect(() => {
     const socket = io(`${WS_URL}/session`, {
@@ -472,14 +406,6 @@ export default function DashboardPage() {
       // server pada saat payload dikirim, jadi untuk melanjutkan hitungannya
       // lokal kita harus tahu payload itu berumur berapa detik.
       setPayloadMs(Date.parse(data.at ?? '') || Date.now())
-    })
-
-    socket.on('dashboard:log', () => {
-      if (logPageRef.current === 1) {
-        void loadLogs()
-      } else {
-        setLogTotal((t) => t + 1)
-      }
     })
 
     return () => {
@@ -544,20 +470,6 @@ export default function DashboardPage() {
       window.setTimeout(() => setActionResult(null), 5000)
     })
   }
-
-  const logColumns = [
-    { key: 'at', header: 'Waktu', render: (log: DashboardLog) => formatWaktu(log.at) },
-    { key: 'event', header: 'Event', render: (log: DashboardLog) => (
-      <Badge variant={logEventVariant(log.event)} size="sm">
-        {logEventLabel(log.event)}
-      </Badge>
-    )},
-    { key: 'detail', header: 'Detail', render: (log: DashboardLog) => (
-      <span className="text-slate-600">
-        {formatLogDetail(log, log.pc ?? (log.pcId ? pcs.find((p) => p.id === log.pcId)?.namaPc : undefined))}
-      </span>
-    )},
-  ]
 
   return (
     <React.Fragment>
@@ -1224,84 +1136,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <Card className="mt-6">
-          <CardBody className="p-0">
-            <div className="p-4 border-b border-neutral-200">
-              <h2 className="text-lg font-semibold text-slate-900">Log Aktivitas</h2>
-            </div>
-            <div className="p-4">
-              {logLoading ? (
-                <div className="flex justify-center p-4">Memuat log...</div>
-              ) : logs.length === 0 ? (
-                <div className="p-4 text-center text-sm text-slate-400">Belum ada aktivitas.</div>
-              ) : (
-                <React.Fragment>
-                  {/* ⚠️ Di bawah `sm` tabel DIJADIkan kartu bertumpuk.
-                      Table memakai `w-full` + `overflow-x-auto`, dan di 390px
-                      isinya melebar jadi 688px: kolom Waktu 116 + Event 144
-                      mengisi layar, sementara kolom Detail 428px mulai di x=260
-                      — jadi kolom yang berisi "PC002 dimatikan otomatis" itu
-                      seluruhnya DI LUAR LAYAR tanpa ada petunjuk bisa digeser.
-                      Gejalanya Persis seperti "kolom kosong": event-nya terbaca,
-                      keterangannya tidak.
-
-                      Pola ini sama dengan tabel riwayat backup di tab Data
-                      Pengaturan, yang sudah dipakai dan terbukti bekerja.
-
-                      ⚠️ Breakept-nya `lg`, bukan `sm`. Terukur: tabel butuh
-                      wrapper minimal 688px ( Waktu 116 + Event 144 + Detail
-                      428 ), dan wrapper baru cukup di viewport ~790px. Dengan
-                      `sm` (640px) tabel masih meluap sampai lebar 768px --
-                      di 768 wrapper hanya 668px tapi tabel tetap 688px. Jadi
-                      kartu dipakai sampai 1024px, bukan hanya sampai 640px. */}
-                  <ul className="space-y-2 lg:hidden">
-                    {logs.map((log) => (
-                      <li
-                        key={`${log.at}-${log.event}`}
-                        className="rounded-md border border-slate-200 p-3"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <Badge variant={logEventVariant(log.event)} size="sm">
-                            {logEventLabel(log.event)}
-                          </Badge>
-                          <span className="whitespace-nowrap text-xs text-slate-500">
-                            {formatWaktu(log.at)}
-                          </span>
-                        </div>
-                        <div className="mt-1 text-sm text-slate-600">
-                          {formatLogDetail(
-                            log,
-                            log.pc ??
-                              (log.pcId ? pcs.find((p) => p.id === log.pcId)?.namaPc : undefined),
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="hidden lg:block">
-                    <Table
-                      columns={logColumns}
-                      data={logs}
-                      keyExtractor={(log) => `${log.at}-${log.event}`}
-                      striped
-                      hoverable
-                    />
-                  </div>
-                  {logTotalPages > 1 && (
-                    <Pagination
-                      currentPage={logPage}
-                      totalPages={logTotalPages}
-                      onPageChange={setLogPage}
-                      showTotal={true}
-                      totalItems={logTotal}
-                      itemsPerPage={PER_HALAMAN}
-                    />
-                  )}
-                </React.Fragment>
-              )}
-            </div>
-          </CardBody>
-        </Card>
       </div>
 
       {startPc && (
@@ -1729,98 +1563,4 @@ function formatJamWib(waktu: string): string {
     minute: '2-digit',
     timeZone: 'Asia/Jakarta',
   })
-}
-
-const LOG_EVENT_LABEL: Record<string, string> = {
-  'session:started_dashboard': 'Sesi Berjalan',
-  'session:started': 'Sesi Berjalan',
-  'session:stopped': 'Sesi Berakhir',
-  'transaction:created': 'Transaksi',
-  'voucher:created_dashboard': 'Voucher Dibuat',
-  'voucher:created': 'Voucher Dibuat',
-  'account:revoked': 'Akun Dinonaktifkan',
-  'account:password_changed': 'Password Diubah',
-  pc_lock: 'PC Dikunci',
-  pc_locked: 'PC Dikunci',
-  pc_unlock: 'PC Dibuka',
-  pc_unlocked: 'PC Dibuka',
-  pc_shutdown: 'PC Dimatikan',
-  pc_shutdown_auto: 'PC Mati Otomatis',
-  'teknisi:login': 'Teknisi Login',
-  'teknisi:logout': 'Teknisi Keluar',
-}
-
-const LOG_EVENT_VARIANT: Record<string, 'default' | 'success' | 'warning' | 'danger' | 'info'> = {
-  'session:started_dashboard': 'success',
-  'session:started': 'success',
-  'session:stopped': 'warning',
-  'transaction:created': 'info',
-  'voucher:created_dashboard': 'success',
-  'voucher:created': 'success',
-  'account:revoked': 'danger',
-  'account:password_changed': 'warning',
-  pc_lock: 'warning',
-  pc_locked: 'warning',
-  pc_unlock: 'info',
-  pc_unlocked: 'info',
-  pc_shutdown: 'danger',
-}
-
-/** Alasan berhenti sesi, dari kode internal ke bahasa yang dimengerti kasir. */
-const STOP_REASON: Record<string, string> = {
-  habis: 'Waktu habis',
-  manual: 'Dihentikan manual',
-  disconnect_timeout: 'Koneksi terputus',
-  akun_nonaktif: 'Akun dinonaktifkan',
-}
-
-function logEventLabel(event: string): string {
-  return LOG_EVENT_LABEL[event] ?? event
-}
-
-function logEventVariant(event: string): 'default' | 'success' | 'warning' | 'danger' | 'info' {
-  return LOG_EVENT_VARIANT[event] ?? 'default'
-}
-
-function formatLogDetail(log: DashboardLog, pcName?: string): string {
-  const pc = pcName ?? 'PC'
-  switch (log.event) {
-    case 'session:started_dashboard':
-    case 'session:started':
-      return `${pc} mulai dipakai akun ${log.akun ?? '-'}${log.by ? ` oleh ${log.by}` : ''}`
-    case 'session:stopped': {
-      const alasan = STOP_REASON[log.alasan ?? ''] ?? log.alasan ?? '-'
-      // ⚠️ `akun` WAJIB ikut di sini. Versi lama hanya menulis alasan dan
-      // sisa waktu, jadi kolom Detail menampilkan "Waktu habis, sisa kembali
-      // 0j 00:00" untuk sesi APAPUN — kasir tidak pernah tahu akun mana yang
-      // barusan berakhir. Payload backend ikut dikasih `akun` di fix yang sama;
-      // kalau hanya sisi frontend yang diubah, kolomnya tetap kosong.
-      return (
-        `${pc} — akun ${log.akun ?? '-'}: ${alasan}, ` +
-        `sisa kembali ${formatDuration(log.sisaWaktuKembali ?? 0)}`
-      )
-    }
-    case 'transaction:created':
-      return `${log.jenis ?? '-'} ${log.kodeUnik ?? log.nama ?? '-'} — Rp ${log.nominal?.toLocaleString('id-ID') ?? '-'}`
-    case 'pc_lock':
-    case 'pc_locked':
-      return `${pc} dikunci oleh ${log.by ?? '-'}`
-    case 'pc_unlock':
-    case 'pc_unlocked':
-      return `${pc} dibuka oleh ${log.by ?? '-'}`
-    case 'pc_shutdown':
-      return `${pc} dimatikan oleh ${log.by ?? '-'}`
-    // ⚠️ Case ini sebelumnya TIDAK ADA sama sekali, jadi event-nya jatuh ke
-    // `default: return ''` — badge menulis "PC Mati Otomatis" tapi kolom
-    // Detail kosong. Peta label sudah ada sejak awal; yang hilang justru
-    // pemetaan detail-nya.
-    case 'pc_shutdown_auto':
-      return `${pc} dimatikan otomatis — ${log.keterangan ?? `idle ${log.menit ?? '-'} menit tanpa aktivitas login`}`
-    case 'teknisi:login':
-      return `${pc} dibuka oleh teknisi ${log.teknisi ?? '-'} — tanpa penagihan`
-    case 'teknisi:logout':
-      return `${pc} dikunci — akses teknisi dimatikan${log.teknisi ? ` (${log.teknisi})` : ''}`
-    default:
-      return ''
-  }
 }

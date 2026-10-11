@@ -1461,9 +1461,15 @@ src/pages/settings/TabNav.tsx           Sidebar (desktop) / pemicu yang menutup 
 ```
 
 ⚠️ **Kartu "Log Billing Harian" dan "Daftar Tanggal" sengaja satu baris**
-(`sm:grid-cols-2` + `items-start`), bukan dua kartu terpisah. `items-start`
-supaya tiap kartu memakai tinggi alaminya — kalau tidak, yang lebih pendek ikut
-diregangkan dan muncul ruang kosong (pelajaran no. 16).
+(`sm:grid-cols-2`), bukan dua kartu terpisah.
+
+Tingginya **disamakan** (permintaan operator 11 Okt): `items-start` sengaja
+**dibuang** supaya grid meregangkan kedua kartu ke tinggi kartu tertinggi di
+baris yang sama. Daftar tanggal ikut `flex-1 min-h-0` supaya ruang kosong
+tidak menggantung di bawah daftar, dengan `max-h-96` + `overflow-y-auto`
+sebagai batas gulir kalau tanggalnya banyak. Pelajaran no. 16 (jangan
+diregangkan) sengaja **dikeluarkan** di sini karena yang diminta justru
+kartu yang sama tinggi — keduanya beda kebutuhan, jangan tercampur.
 
 `SettingsCtx` (`busy`, `setBusy`, `run`, `setErr`, `setMsg`) dinaikkan ke
 induk lalu dioper ke setiap tab, jadi satu proses mengunci tombol di semua tab
