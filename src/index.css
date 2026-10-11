@@ -517,6 +517,17 @@ body {
   letter-spacing: 0.5px;
 }
 
+/* Di HP angka ini dikecilkan. Alasannya bukan selera: kolom "Sisa Waktu" ikut
+   memakai `table-fixed`, dan pada 390px isi "SHUTDOWN 4:32" di 20px membuat
+   seluruh tabel melebar ke 374px di layar 358px — kolom AKSI ikut terpotong
+   dan operator tidak bisa menekan MATI. 16px masih terbaca jelas, dan
+   `tabular-nums` tetap dipakai supaya angka tidak "bergoyang" tiap detik. */
+@media (max-width: 1023px) {
+  .pcc__time--teks {
+    font-size: 16px;
+  }
+}
+
 /* Sisa waktu <= 5 menit → merah, penanda waktu mau habis. */
 .pcc__time--warn {
   color: #dc2626;
@@ -527,6 +538,16 @@ body {
   color: #64748b;
   letter-spacing: 0.5px;
   margin-top: 2px;
+}
+
+/* Label "SHUTDOWN DALAM" butuh 69px sementara kolom di 390px hanya dapat 67px.
+   Huruf kecil 9px + jarak huruf 0 supaya label itu tidak terpotong jadi
+   "SHUTDOWN DAL…" tepat di layar tempat tabel ini paling sempit. */
+@media (max-width: 1023px) {
+  .pcc__time-label {
+    font-size: 9px;
+    letter-spacing: 0;
+  }
 }
 
 /* ---------- Tombol aksi ---------- */
@@ -750,7 +771,7 @@ body {
        + teks putih). Tanpa pengecualian ini, background-image uiverse menimpa
        gradient-nya sehingga teks putih jadi tidak terlihat saat tidak di-hover.
    ============================================================ */
-html[data-ui-buttons="uiverse"] button:not(.pcc__act):not(.modal-x):not(.pastel-card button):not(.login-button):not(.navmenu__exit) {
+html[data-ui-buttons="uiverse"] button:not(.pcc__act):not(.modal-x):not(.pastel-card button):not(.login-button):not(.navmenu__exit):not(.qbtn) {
   position: relative;
   line-height: 1;
   border-radius: 1.5rem !important;
@@ -770,12 +791,12 @@ html[data-ui-buttons="uiverse"] button:not(.pcc__act):not(.modal-x):not(.pastel-
   transition: background-position 0.3s ease, color 0.2s ease;
 }
 
-html[data-ui-buttons="uiverse"] button:not(.pcc__act):not(.modal-x):not(.pastel-card button):not(.login-button):not(.navmenu__exit):hover {
+html[data-ui-buttons="uiverse"] button:not(.pcc__act):not(.modal-x):not(.pastel-card button):not(.login-button):not(.navmenu__exit):not(.qbtn):hover {
   background-position: 0 0;
   color: #ffffff !important;
 }
 
-html[data-ui-buttons="uiverse"] button:not(.pcc__act):not(.modal-x):not(.pastel-card button):not(.login-button):not(.navmenu__exit):disabled {
+html[data-ui-buttons="uiverse"] button:not(.pcc__act):not(.modal-x):not(.pastel-card button):not(.login-button):not(.navmenu__exit):not(.qbtn):disabled {
   background-position: 100% 0;
 }
 
