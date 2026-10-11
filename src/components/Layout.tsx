@@ -88,7 +88,15 @@ function Layout() {
 
   // Sesi terkunci sendiri setelah 5 menit tanpa aktivitas. Ditaruh di Layout
   // supaya berlaku di semua halaman, bukan cuma dashboard.
-  useIdleLogout(true, () => logout(PESAN_SESI_BERAKHIR))
+  //
+  // ⚠️ HANYA ADMIN. Kasir tidak dikunci otomatis — dia masih menunggu pelanggan,
+  // dan mengunci di tengah shift membuat kasir harus login ulang berulang kali
+  // (repot untuk kasir Transformer juga berarti pelanggan antre). Sesi kasir
+  // tetap berakhir dengan cara yang wajar: menutup tab (token disimpan di
+  // `sessionStorage`) atau JWT-nya kedaluwarsa setelah 24 jam.
+  //
+  // ADMIN tetap dikunci karena di komputer itu orang lain bisa masuk.
+  useIdleLogout(role === 'ADMIN', () => logout(PESAN_SESI_BERAKHIR))
 
   // ⚠️ Disaring lewat flag `adminOnly`, bukan daftar path. Dua item sudah
   // butuh ADMIN, dan daftar path membuat item ketiga mudah terlewat — menu
