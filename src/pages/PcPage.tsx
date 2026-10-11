@@ -227,13 +227,58 @@ function IsiPcPage() {
     }
   }
 
+  /**
+   * Salin teks ke clipboard.
+   *
+   * ⚠️ `navigator.clipboard` HANYA ADA di secure context (HTTPS atau localhost).
+   * Aplikasi ini juga dibuka lewat IP LAN sebagai HTTP biasa
+   * (`http://192.168.1.71:3000`), dan di sana `navigator.clipboard` adalah
+   * `undefined` — pemanggilan `navigator.clipboard.writeText(...)` langsung
+   * melempar `TypeError` dan berakhir "Gagal menyalin ke clipboard" meskipun
+   * tombolnya sehat. Terbukti lewat Playwright (10 Okt 2026).
+   *
+   * Karena itu ada fallback ke `document.execCommand('copy')` + `<textarea>`,
+   * yang tetap jalan di konteks non-secure.
+   *
+   * ⚠️ Fallback-nya HARUS dipanggil tanpa `await` lebih dulu. Kalau
+   * `execCommand` baru dipanggil setelah menunggu Promise lain, *user
+   * activation*-nya sudah habis dan browser akan menolaknya — persis seperti
+   * kasus yang dicatat di AGENTS.md.
+   */
   async function copyToClipboard(text: string, label: string) {
-    try {
-      await navigator.clipboard.writeText(text)
-      alert(`${label} berhasil disalin: ${text}`)
-    } catch (err) {
-      alert('Gagal menyalin ke clipboard')
+    // Secure context (HTTPS / localhost): pakai Clipboard API modern.
+    if (typeof navigator !== 'undefined' && typeof navigator.clipboard?.writeText === 'function') {
+      try {
+        await navigator.clipboard.writeText(text)
+        alert(`${label} berhasil disalin: ${text}`)
+        return
+      } catch {
+        // API ada tapi menolak (mis. dokumen tidak fokus) — lanjut ke fallback.
+      }
     }
+
+    // Fallback untuk HTTP / browser tanpa Clipboard API.
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.setAttribute('readonly', '')
+    textarea.style.position = 'fixed'
+    textarea.style.top = '-1000px'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    textarea.setSelectionRange(0, text.length)
+    let ok = false
+    try {
+      ok = document.execCommand('copy')
+    } catch {
+      ok = false
+    }
+    document.body.removeChild(textarea)
+    alert(
+      ok
+        ? `${label} berhasil disalin: ${text}`
+        : 'Gagal menyalin ke clipboard. Salin manual: tekan Ctrl+C / Cmd+C di kolom teks.',
+    )
   }
 
   function formatShortId(id: string): string {
