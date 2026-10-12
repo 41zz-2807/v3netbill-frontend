@@ -1535,6 +1535,170 @@ permintaan, 0 crash.
   string tanpa skema gagal. ⚠️ `ServerUrl` berisi **base URL saja**, tanpa `/session`;
   `ServerConnection` yang menambahkannya.
 
+### 📦 Cara membuat MSI — panduan lengkap (12 Okt 2026)
+
+Bagian ini ditulis supaya sesi berikutnya bisa membuat MSI **tanpa wasting satu
+siklus CI pun**. Semua perintah di bawah sudah benar-benar dijalankan; yang
+tidak bisa dilakukan di Linux ditandai jelas.
+
+#### 0. Yang berubah setiap kali (cek ini DULU)
+
+| Yang | Tempat | Aturan |
+|---|---|---|
+| Nomor versi | `Installer/Product.wxs` → `Product/@Version` | ⚠️ WAJIB naik setiap ada perubahan. Guard CI akan menolak kalau tidak lebih baru dari versi di server |
+| RustDesk versi + sha256 | `.github/workflows/build-agent.yml` → `env` | Mengganti versi berarti mengganti **kedua** nilainya |
+| `SERVER_URL` | GitHub Actions **variable** (bukan secret) |_repo_ Settings → Secrets and variables → Actions → Variables |
+| Gambar banner | `Installer/Bitmaps/Banner.bmp` | 493×58, 24-bit BMP |
+
+#### 1. Build penuh di CI (jalur yang benar)
+
+Cukup `git push` ke `main`. Workflow `build-agent.yml``:
+
+```
+publish Agent.Service + Agent.Overlay   (self-contained win-x64)
+unduh RustDesk 1.4.9 + verifikasi sha256 + cek header MZ
+install wix 4.0.5 + extension WixToolset.UI.wixext
+generate SvcDepFiles.wxs + OverlayDepFiles.wxs
+wix build  -> artifact "v3NetbillAgentSetup"
+verify MSI: isi file, SERVER_URL, ProductVersion, RustDesk ada, versi > server
+```
+
+Lalu `sinkron-agent-msi` di host menariknya tiap 20 menit dan mengunggah ke
+`http://127.0.0.1:3000`. Detail: bagian "Sinkronisasi MSI Agent".
+
+⚠️ **Ukuran MSI sekarang ~89 MB** (RustDesk 24 MB ikut di dalamnya), jadi unduhan
+artifact bisa memakan 16 menit sementara cronnya tiap 20 menit. Karena itu
+`flock` WAJIB ada di `sinkron-agent-msi` — tanpa itu dua proses bertumpuk menulis
+berkas unduhan yang sama.
+
+#### 2. Validasi lokal (cepat, ~2 menit, TANPA CI)
+
+Wajib untuk menangkap error **sebelum** satu siklus CI terbuang. Yang bisa dan
+tidak bisa dilakukan di Linux:
+
+```bash
+# a) Publish kedua project. ⚠️ Agent.Overlay BUTUH flag tambahan di Linux.
+docker run --rm -v "$PWD/v3NetbillAgent:/w" -w /w mcr.microsoft.com/dotnet/sdk:8.0 bash -c '
+dotnet publish Agent.Service/Agent.Service.csproj -c Release -r win-x64 \
+  --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false \
+  -o /w/artifacts/Agent.Service
+dotnet publish Agent.Overlay/Agent.Overlay.csproj -c Release -r win-x64 \
+  --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false \
+  -p:EnableWindowsTargeting=true -o /w/artifacts/Agent.Overlay'
+```
+
+⚠️ **`EnableWindowsTargeting=true` wajib di Linux** untuk `Agent.Overlay`
+(`net8.0-windows` + `UseWPF`), tanpa itu build gagal `NETSDK1100`. Di CI
+(runner Windows) flag itu tidak diperlukan.
+
+```bash
+# b) Pisahkan file "spesial" ke folder .Special (exe + deps + runtimeconfig)
+#    supaya generator fragment tidak mendaftarkannya dua kali.
+#    Lihat step "Prepare special files (exe/config)" di build-agent.yml.
+
+# c) Generate dua fragment dependensi. Script-nya (New-DepFragment) ada di
+#    step "Generate dependency fragments" — jalankan ulang persis sama,
+#    hasilnya Installer/SvcDepFiles.wxs + OverlayDepFiles.wxs (keduanya gitignore).
+
+# d) wix build
+docker run --rm -v "$PWD/v3NetbillAgent:/w" -w /w mcr.microsoft.com/dotnet/sdk:8.0 bash -c '
+export PATH="$PATH:/root/.dotnet/tools"
+dotnet tool install --global wix --version 4.0.5
+wix extension add --global WixToolset.UI.wixext/4.0.5
+ws=/w
+wix build "$ws/Installer/Product.wxs" "$ws/Installer/SvcDepFiles.wxs" \
+  "$ws/Installer/OverlayDepFiles.wxs" -arch x64 \
+  -d SvcPublishDir="$ws/artifacts/Agent.Service.Special/" \
+  -d SvcDepDir="$ws/artifacts/Agent.Service/" \
+  -d OverlayPublishDir="$ws/artifacts/Agent.Overlay.Special/" \
+  -d OverlayDepDir="$ws/artifacts/Agent.Overlay/" \
+  -d licenseRtf="$ws/Installer/license.rtf" \
+  -d RustDeskInstaller="$ws/Installer/RustDesk/rustdesk-1.4.9-x86_64.exe" \
+  -d SERVER_URL="http://192.168.1.71:3000" \
+  -b WixUIBannerBmp="$ws/Installer/Bitmaps" \
+  -ext WixToolset.UI.wixext -o "$ws/artifacts/test.msi" 2>&1 |
+grep -E "WIX0005|WIX0103|WIX0150|WIX1006|WIX0280|WIX0004|WIX0044" || echo "bersih"'
+```
+
+⚠️ **Di Linux build ini SELALU berhenti di `WIX0389`** ("Directory/@Name is not a
+relative path") — itu **false positive** yang sudah didokumentasikan, karena WiX
+benar-benar hanya mendukung Windows ("all behavior after this point is
+undefined"). Yang **harus kosong** hanya kode struktural di atas.
+
+| Kode | Arti | Tindakan |
+|---|---|---|
+| `WIX0005` | Elemen tak dikenal | Perbaiki `.wxs` |
+| `WIX0103` | Berkas sumber tidak ketemu | Perbaiki path `Source`/`SourceFile` |
+| `WIX0150` | Preprocessor variable undefined | Lupa mengoper `-d NAME=...` |
+| `WIX1006` | `<Property>` diabaikan | Perlu `Value` + Admin/Secure/Hidden |
+| `WIX0280` | `-b` dapat berkas, bukan direktori | Ganti ke direktori |
+| `WIX0004`/`WIX0044` | Atribut salah | WiX v4 pakai `BinaryRef`, bukan `BinaryKey` |
+| `WIX0389`, `WIX0000` | **False positive Linux** | **Abaikan** |
+
+⚠️ **Validasi lokal TIDAK bisa membuat MSI.** Jadi tidak bisa membuktikan banner
+tampil, RustDesk benar-benar ter-extract, atau custom action jalan. Itu hanya
+bisa dibuktikan di CI Windows / PC sungguhan.
+
+#### 3. Mengubah dialog installer
+
+Dialog `ServerConfigDialog` ada di `Product.wxs`, ukuran **370×370**, dengan
+field: Server URL, PC ID, Agent Token, Password RustDesk, dan checkbox
+maintenance. Menambah field baru wajib menggeser **semua** control di bawahnya
+dan menaikkan tinggi dialog + `BottomLine` + posisi tombol.-control yang
+tertinggal di posisi lama membuat mereka menimpa `BottomLine` — dan MSI **tidak
+pernah melaporkan tabrakan koordinat**, jadi hasilnya hanya terlihat di layar
+install.
+
+#### 4. Menambah file baru ke MSI
+
+`SvcDepFiles.wxs` / `OverlayDepFiles.wxs` di-generate otomatis, jadi file baru
+di `Agent.Service/`/`Agent.Overlay/` ikut terbawa tanpa diedit manual. Untuk file
+di luar keduanya (mis. installer RustDesk), deklarasikan sendiri:
+
+```xml
+<Directory Id="RUSTDESKINSTALLERDIR" Name="RustDeskInstaller" />
+<Component Id="RustDeskInstallerExe" Directory="RUSTDESKINSTALLERDIR" Guid="{...}">
+  <File Id="RustDeskInstallerExeFile" Source="$(var.RustDeskInstaller)" KeyPath="yes" />
+  <CreateFolder />
+</Component>
+```
+
+lalu `<ComponentGroupRef Id="RustDeskComponents" />` di dalam `<Feature>`. File
+di luar folder MSI **tidak akan ikut terhapus** saat uninstall kalau tidak ada
+`RemoveFile`-nya.
+
+⚠️ **Binary besar (>= 10 MB) jangan di-commit.** `Installer/RustDesk/` ada di
+`.gitignore` dan CI mengunduhnya sendiri. Kalau ikut ter-commit, repo public
+jadi besar dan langkah unduhnya jadi mubazir.
+
+#### 5. Menjalankan custom action
+
+```xml
+<!-- target file milik MSI (sudah di-install) -->
+<CustomAction Id="ContohAction" FileRef="AgentOverlayExeFile"
+              ExeCommand="--argumen" Execute="deferred"
+              Impersonate="no" Return="ignore" />
+
+<!-- target file DI LUAR MSI -> butuh WixQuietExec + SetProperty -->
+<SetProperty Id="ContohLuarAction" Value="&quot;[EXE]&quot; --argumen"
+             Before="ContohLuarAction" Sequence="execute" />
+<CustomAction Id="ContohLuarAction" BinaryRef="WixCA" DllEntry="WixQuietExec64"
+              Execute="deferred" Impersonate="no" Return="ignore" />
+```
+
+Aturan yang tidak bisa dilewati:
+
+- `Execute="deferred"` + `Impersonate="no"` = jalan sebagai SYSTEM. Wajib untuk
+  registry HKLM dan service.
+- `Return="ignore"` untuk apa pun yang **tidak boleh menggagalkan instalasi**.
+  PC harus tetap bisa billing walaufitur Tambahan gagal.
+- Urutan pakai `After=`/`Before=`, bukan nomor urut. Dan kalau dua custom action
+  saling bergantung, yang kedua **harus** `After` yang pertama — bukan hanya
+  `After="InstallFiles"` yang keduanya identik.
+- Jangan lupa didaftarkan di `<InstallExecuteSequence>` dengan `Condition`.
+
+---
+
 ### Build MSI & WiX — jebakan yang sudah dilewati
 
 ⚠️ **`-d NAME=Value` TIDAK menimpa atribut `Property`. Dia hanya membuat
