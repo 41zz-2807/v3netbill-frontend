@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext.tsx'
 import ProgressBar from '../components/ui/ProgressBar.tsx'
 import { Modal } from '../components/ui/Modal.tsx'
 import { PastelCard } from '../components/ui/PastelCard.tsx'
+import { DropdownAksi } from '../components/ui/DropdownAksi.tsx'
 import {
   inputClass,
   buttonClass,
@@ -531,55 +532,20 @@ function IsiPcPage() {
           <table className="w-full table-fixed text-left text-sm">
             <thead className="bg-slate-50 text-slate-500">
               <tr>
-                <th className="px-3 py-2 w-[15%]" scope="col">Nama</th>
-                <th className="px-3 py-2 w-[13%]" scope="col">
-                  <span className="flex items-center gap-1.5" title="IP client, diisi otomatis dari koneksi agent — tidak diisi manual">
-                    <IkonMuka />
-                    <span className="sr-only">IP client</span>
-                  </span>
-                </th>
-                <th className="px-3 py-2 w-[11%]" scope="col">
-                  <span className="flex items-center gap-1.5" title="PC ID — dipakai saat memasang ulang MSI">
-                    <IkonKartu />
-                    <span className="sr-only">PC ID</span>
-                  </span>
-                </th>
-                <th className="px-3 py-2 w-[11%]" scope="col">
-                  <span className="flex items-center gap-1.5" title="Agent Token — rahasia, jangan dibagikan">
-                    <IkonGembok />
-                    <span className="sr-only">Agent Token</span>
-                  </span>
-                </th>
-                <th className="px-3 py-2 w-[8%]" scope="col">
-                  <span className="flex items-center gap-1.5" title="Daya listrik PC (watt) — dasar perkiraan biaya listrik di laporan uptime">
-                    <IkonBolt />
-                    <span className="sr-only">Daya listrik (watt)</span>
-                  </span>
-                </th>
-                <th className="px-3 py-2 w-[11%]" scope="col">
-                  <span className="flex items-center gap-1.5" title="Status PC">
-                    <IkonDenyut />
-                    <span className="sr-only">Status</span>
-                  </span>
-                </th>
-                <th className="px-3 py-2 w-[8%]" scope="col">
-                  <span className="flex items-center gap-1.5" title="Versi agent yang terpasang di PC ini — dilaporkan sendiri oleh agent, bukan diisi manual">
-                    <IkonVersi />
-                    <span className="sr-only">Versi agent</span>
-                  </span>
-                </th>
-                <th className="px-3 py-2 w-[13%]" scope="col">
-                  <span className="flex items-center gap-1.5" title="Heartbeat terakhir dari agent">
-                    <IkonJam />
-                    <span className="sr-only">Last Heartbeat</span>
-                  </span>
-                </th>
-                {role === 'ADMIN' && <th className="px-3 py-2 w-[10%]" scope="col">
-                  <span className="flex items-center gap-1.5" title="RustDesk ID untuk remote repair — dibaca agent dari RustDesk.exe --get-id">
-                    <IkonRustdesk />
-                    <span className="sr-only">RustDesk ID</span>
-                  </span>
-                </th>}
+                {/* ⚠️ Header pakai NAMA, bukan ikon. Versi lama memakai ikon,
+                    padahal ikon menulis nol kata di kolom yang sama dengan data
+                    dan cuma menyisakan `sr-only` untuk pembaca layar. "Listrik"
+                    sebagai ikon membuat pembaca berhenti menebak artinya.
+                    Lebar kolom ikut diambil ulang supaya teks header muat. */}
+                <th className="px-3 py-2 w-[14%]" scope="col">Nama</th>
+                <th className="px-3 py-2 w-[12%]" scope="col">IP</th>
+                <th className="px-3 py-2 w-[11%]" scope="col">PC-ID</th>
+                <th className="px-3 py-2 w-[11%]" scope="col">TokenID</th>
+                <th className="px-3 py-2 w-[9%]" scope="col">Listrik</th>
+                <th className="px-3 py-2 w-[10%]" scope="col">Status</th>
+                <th className="px-3 py-2 w-[9%]" scope="col">Versi</th>
+                <th className="px-3 py-2 w-[11%]" scope="col">Heart</th>
+                {role === 'ADMIN' && <th className="px-3 py-2 w-[13%]" scope="col">Rustdesk</th>}
                 {role === 'ADMIN' && <th className="px-3 py-2 w-[10%]" scope="col"></th>}
               </tr>
             </thead>
@@ -724,61 +690,98 @@ function IsiPcPage() {
                       : '—'}
                   </td>
                   {role === 'ADMIN' && (
-                    <td className="px-3 py-2 font-mono text-xs text-slate-700 tracking-wide truncate" title={pc.rustdeskId || ''}>
-                      {pc.rustdeskId || '—'}
+                    <td className="px-3 py-2">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <span
+                          // ⚠️ `min-w-0` WAJIB, bukan tambahan gaya. Span ini
+                          // anak flex, dan min-width default-nya `auto` = isi
+                          // teks, jadi `truncate` tidak pernah benar-benar
+                          // memotong — kolom justru dipaksa selebar 10 digit.
+                          // Terukur di 390px: tanpa min-w-0 scrollWidth 368px
+                          // vs clientWidth 356px.
+                          className="min-w-0 font-mono text-xs text-slate-700 tracking-wide truncate"
+                          title={pc.rustdeskId || 'RustDesk belum melaporkan ID'}
+                        >
+                          {pc.rustdeskId || '—'}
+                        </span>
+                        {/* ⚠️ Tombol copy disembunyikan kalau ID kosong, bukan
+                            dinonaktifkan. PC yang belum punya RustDesk akan
+                            punya satu tombol mati per baris, dan itu menambah
+                            kebisingan di tabel yang justru sedang dibuat
+                            lebih ringkas. */}
+                        {pc.rustdeskId && (
+                          <button
+                            type="button"
+                            onClick={() => void copyToClipboard(pc.rustdeskId!, 'RustDesk ID')}
+                            title={`Salin RustDesk ID ${pc.namaPc}`}
+                            aria-label={`Salin RustDesk ID ${pc.namaPc}`}
+                            // ⚠️ `hidden sm:inline-flex` bukan sekadar biar
+                            // rapi di HP. Tombol 24px itu lebih lebar dari sisa
+                            // kolom 12% di layar 390px, dan `table-fixed` tetap
+                            // memakai min-content sel sebagai batas bawah — jadi
+                            // tabel melebar 12px melewati wadahnya. Terukur:
+                            // scrollWidth 368px vs clientWidth 356px. Dengan
+                            // tombol disembunyikan, keduanya kembali 356px.
+                            className="hidden h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 sm:inline-flex"
+                          >
+                            <IkonSalin />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   )}
                   {role === 'ADMIN' && (
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-1.5 justify-end">
-                      {/* ⚠️ Urutan tombol: tanda rusak, buka kunci, hapus.
-                          PC yang ditandai tidak bisa dihapus, jadi tombol
-                          Hapus mati sampai flag dibatalkan. Penolakan juga
-                          ditegakkan server (409) — disable di sini cuma
-                          biar kasir tidak salah klik. */}
-                      {/* ⚠️ Ketiga tombol ini ikon saja.
-                          Versi bertulisan ("Tandai Rusak", "Buka Kunci",
-                          "Hapus") memakai total ~250px dalam kolom yang hanya
-                          12% lebar, jadi ketiganya MEMBUNGKUS ke dua baris dan
-                          setiap baris tabel jadi tinggi sekali — ruang yang
-                          terbuang karena teks tombol, bukan karena data.
-                          `title` + `aria-label` tetap menyimpan artinya, jadi
-                          tidak ada yang hilang untuk pembaca layar. */}
-                      <button
-                        type="button"
-                        onClick={() => bukaRusak(pc)}
-                        title={pc.rusak ? `Batalkan tanda rusak ${pc.namaPc}` : `Tandai ${pc.namaPc} rusak`}
-                        aria-label={pc.rusak ? `Batalkan tanda rusak ${pc.namaPc}` : `Tandai ${pc.namaPc} rusak`}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white text-red-700 ring-1 ring-inset ring-red-300 transition hover:bg-red-50"
-                      >
-                        {pc.rusak ? <IkonPulih /> : <IkonPalu />}
-                      </button>
-                      {pc.status === 'ACTIVE' && (
-                        <button
-                          type="button"
-                          onClick={() => void handleUnlock(pc.id)}
-                          title={`Buka kunci ${pc.namaPc}`}
-                          aria-label={`Buka kunci ${pc.namaPc}`}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white transition hover:bg-emerald-700"
-                        >
-                          <IkonGembokBuka />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => void handleDelete(pc.id)}
-                        disabled={pc.rusak}
-                        title={
-                          pc.rusak
-                            ? 'PC yang ditandai rusak tidak bisa dihapus — batalkan tandanya dulu'
-                            : `Hapus ${pc.namaPc}`
-                        }
-                        aria-label={`Hapus ${pc.namaPc}`}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-red-600 text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-400"
-                      >
-                        <IkonSampah />
-                      </button>
-                      </div>
+                    /* ⚠️ `px-0 sm:px-3`: di 390px kolom ini hanya ~32px, dan
+                       padding `px-3` memakan 24px darinya — jadi tombol 32px
+                       selalu men spills keluar kartu sebesar 12px. Tabel ini
+                       sengaja TIDAK memakai `overflow-x-auto` (lihat catatan
+                       di atas tabelnya), jadi itu benar-benar merusak tampilan,
+                       bukan cuma bisa digeser. Di lebar normal ruangnya cukup
+                       lagi, jadi padding normal lagi dari `sm` ke atas. */
+                    <td className="px-0 py-2 text-right sm:px-3">
+                      {/* ⚠️ Tiga tombol ikon (tanda rusak, buka kunci, hapus)
+                          diganti jadi satu tombol + dropdown. Alasannya lebar:
+                          kolom ini hanya 10% tabel, dan tiga tombol 32px di
+                          dalamnya menggabung ke dua baris di lebar tablet
+                          sehingga tiap baris ikut meninggi. Ruang yang hilang
+                          itu dikembalikan ke kolom data, dan nama aksinya jadi
+                          terbaca penuh di dalam menu. */}
+                      <DropdownAksi
+                        labelAksesibel={`Aksi untuk ${pc.namaPc}`}
+                        items={[
+                          {
+                            key: 'rusak',
+                            label: pc.rusak ? 'Batalkan tanda rusak' : 'Tandai rusak',
+                            warna: 'warn',
+                            icon: pc.rusak ? <IkonPulih /> : <IkonPalu />,
+                            onClick: () => bukaRusak(pc),
+                          },
+                          // ⚠️ "Buka kunci" hanya muncul kalau PC sedang
+                          // dipakai. Memconditionally di dalam array, bukan
+                          // filter — filter di sini bikin kunci `key` ikut
+                          // bergeser saat status berubah.
+                          ...(pc.status === 'ACTIVE'
+                            ? [
+                                {
+                                  key: 'unlock',
+                                  label: 'Buka kunci',
+                                  icon: <IkonGembokBuka />,
+                                  onClick: () => void handleUnlock(pc.id),
+                                },
+                              ]
+                            : []),
+                          {
+                            key: 'hapus',
+                            label: 'Hapus PC',
+                            warna: 'danger',
+                            icon: <IkonSampah />,
+                            disabled: pc.rusak,
+                            alasanDisabled:
+                              'PC yang ditandai rusak tidak bisa dihapus — batalkan tandanya dulu',
+                            onClick: () => void handleDelete(pc.id),
+                          },
+                        ]}
+                      />
                     </td>
                   )}
                 </tr>
@@ -851,54 +854,12 @@ export default function PcPage() {
  * Semua `aria-hidden` + `sr-only` teks, supaya nama kolom tetap terbaca
  * pembaca layar walaupun header-nya cuma ikon.
  */
-function IkonMuka() {
-  return (
-    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9 9 0 100-18 9 9 0 000 18zM3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 010 18M12 3a15 15 0 000 18" />
-    </svg>
-  )
-}
 
-function IkonKartu() {
-  return (
-    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 5h18v14H3zM3 10h18M7 15h4" />
-    </svg>
-  )
-}
 
-function IkonGembok() {
-  return (
-    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M17 9V7A5 5 0 007 7v2H5a1 1 0 00-1 1v11a1 1 0 001 1h14a1 1 0 001-1V10a1 1 0 00-1-1h-2z" />
-    </svg>
-  )
-}
 
-function IkonDenyut() {
-  return (
-    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h4l3-8 4 16 3-8h4" />
-    </svg>
-  )
-}
 
-function IkonJam() {
-  return (
-    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-  )
-}
 
 /** Kolom versi agent — Reports/paket upload icon. */
-function IkonVersi() {
-  return (
-    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1zM14 3v5h5" />
-    </svg>
-  )
-}
 /*
  * Segitiga peringatan, bukan palu.
  *
@@ -907,10 +868,12 @@ function IkonVersi() {
  * operator jadi tidak tahu tombol itu melakukan apa. Segitiga + tanda seru
  * lazim berarti "bahaya/peringatan" di mana saja.
  */
-function IkonBolt() {
+
+function IkonSalin() {
   return (
-    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M13 2L4.1 12.7a1 1 0 00.8 1.6H11l-1 7.7 8.9-10.7a1 1 0 00-.8-1.6H12l1-7.7z" />
+    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+      <rect x="9" y="9" width="12" height="12" rx="2" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
     </svg>
   )
 }
@@ -939,13 +902,6 @@ function IkonGembokBuka() {
   )
 }
 
-function IkonRustdesk() {
-  return (
-    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 118 0zM5 7a2 2 0 012-2h10a2 2 0 012 2v1M5 7a2 2 0 01-2-2H3a2 2 0 01-2 2v1zM3 4h18a2 2 0 002-2V2a2 2 0 00-2-2H3a2 2 0 00-2 2v2zM9.6 18.2L1.8 9.3a2 2 0 00-1.6-2.9H5a2 2 0 002 2h2.4l2.4 7.6.6.3a1 1 0 01.7.8l1.8 2.4a2 2 0 012.4 1.8 2 2 0 01-.6 3.5zM18.8 11.7l-2.4-7.5a2 2 0 00-1.6-2.8H12a2 2 0 00-2-2h-2.4l-2.3 7.5M13.6 18.2l-2.4 7.5a2 2 0 001.6 2.9H17a2 2 0 002-2h-2.4l-2.3-7.5a2 2 0 00-1.6-2.8z" />
-    </svg>
-  )
-}
 
 function IkonSampah() {
   return (

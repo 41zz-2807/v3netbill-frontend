@@ -1428,19 +1428,23 @@ function PanelInputCepat({
             pilih jenis berarti akun yang terbuang. Satu klik = satu jenis.
             assinado: tombol ini TIDAK butuh kode/akun terpilih, jadi tetap aktif
             walau kolom pencarian kosong. */}
+        {/* ⚠️ Teksnya "VOUCHER BARU" / "MEMBER BARU", bukan "VOUCHER" /
+            "MEMBER". Kasir sudah tidak punya menu Voucher di navbar, jadi
+            tombol ini satu-satunya jalan membuat akun — dan label lama
+            terdengar seperti membuka daftar, bukan membuat yang baru. */}
         <button
           type="button"
           onClick={() => onBuat('voucher')}
           className="qbtn h-16 cursor-pointer rounded-xl bg-[#1b233d] text-lg font-semibold text-white transition hover:bg-slate-800"
         >
-          VOUCHER
+          VOUCHER BARU
         </button>
         <button
           type="button"
           onClick={() => onBuat('member')}
           className="qbtn h-16 cursor-pointer rounded-xl bg-sky-700 text-lg font-semibold text-white transition hover:bg-sky-800"
         >
-          MEMBER
+          MEMBER BARU
         </button>
       </div>
 

@@ -26,18 +26,23 @@ const navItems = [
     to: '/accounts',
     label: 'Voucher',
     full: 'Voucher & Member',
+    // ⚠️ ADMIN saja. Kasir tetap bisa membuat voucher dari tombol cepat di
+    // Dashboard, jadi menghapus menu ini tidak mematikan pekerjaannya.
+    adminOnly: true,
     icon: 'M3 7h18v10H3zM3 11h18M7 15h4',
   },
   {
     to: '/transactions',
     label: 'Transaksi',
     full: 'Transaksi',
+    adminOnly: true,
     icon: 'M4 7h13l-3-3M20 17H7l3 3',
   },
   {
     to: '/reports',
     label: 'Laporan',
     full: 'Laporan',
+    adminOnly: true,
     icon: 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7',
   },
   {
@@ -98,10 +103,17 @@ function Layout() {
   // ADMIN tetap dikunci karena di komputer itu orang lain bisa masuk.
   useIdleLogout(role === 'ADMIN', () => logout(PESAN_SESI_BERAKHIR))
 
-  // ⚠️ Disaring lewat flag `adminOnly`, bukan daftar path. Dua item sudah
-  // butuh ADMIN, dan daftar path membuat item ketiga mudah terlewat — menu
-  // hilang tapi halamannya masih bisa dibuka lewat URL.
-  // Halamannya sendiri juga dijaga (PcPage), jadi dua lapis.
+  // ⚠️ Disaring lewat flag `adminOnly`, bukan daftar path. Daftar path
+  // membuat item berikutnya mudah terlewat — menu hilang tapi halamannya
+  // masih bisa dibuka lewat URL, jadi hanya half dari masalah.
+  //
+  // Sekarang LIMA item butuh ADMIN: PC Management, Voucher, Transaksi,
+  // Laporan, dan Setting. Kasir hanya melihat Dashboard + Keluar.
+  //
+  // ⚠️ Menu disembunyikan BUKAN route-nya dihapus. `/accounts` dan
+  // `/transactions` masih bisa dibuka lewat bookmark atau tautan lama.
+  // Ini disengaja: kasir tetap perlu akses, dan menghapusnya hanya mengubah
+  // "sulit diakses" jadi "tidak bisa sama sekali".
   const items: NavItem[] = navItems.filter((i) => !i.adminOnly || role === 'ADMIN')
 
   return (
