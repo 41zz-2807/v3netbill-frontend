@@ -327,6 +327,11 @@ Perubahan ini bersifat UI saja, tidak mengubah logika API maupun hak akses
   `20261005095854_pc_terakhir_aktif`, `20261005161709_uptime_pc`,
   `20261006063414_teknisi`.
 
+⚠️ **Setting baru TIDAK butuh migrasi.** `agent_prevent_sleep` (dan semua
+setting lain) cuma satu baris di tabel `Setting` — dibuat otomatis oleh
+`upsert` saat pertama kali disimpan. Jangan jalankan `migrate dev` untuk
+menambah key setting.
+
 ## Referensi API — diverifikasi dari kode
 
 Dihasilkan dengan membaca decorator di `backend/src/**/*.controller.ts` (28 Sep 2026).
@@ -1188,6 +1193,7 @@ Dikirim server → klien:
 | `admin:shutdown` | agent | `{ pcId }` |
 | `agent:otp_config` | agent | `{ botToken, chatId }` — dorongan saat register & saat admin simpan |
 | `agent:bypass_config` | agent | `{ hash }` — hash bcrypt PIN bypass |
+| `agent:power_config` | agent | `{ preventSleep }` — dorongan saat register & saat admin ubah sakelar; default `true` |
 | `dashboard:pc_update` | room `dashboard` | `{ pcs: [...] }` — array detail PC + sesi aktif + sisa detik |
 | `dashboard:log` | room `dashboard` | jejak aktivitas |
 
@@ -1554,9 +1560,10 @@ tidak bisa dilakukan di Linux ditandai jelas.
 | `SERVER_URL` | GitHub Actions **variable** (bukan secret) |_repo_ Settings → Secrets and variables → Actions → Variables |
 | Gambar banner | `Installer/Bitmaps/Banner.bmp` | 493×58, 24-bit BMP |
 
-Versi MSI terakhir yang **sampai ke server**: `1.0.24.0`. Kalau kamu mulai dari
-sini, naikkan ke `1.0.25.0` — bukan `1.0.24.0`, karena guard versi akan menolak
-MSI yang versinya sama dengan yang sudah terpasang.
+Versi MSI terakhir yang **sampai ke server**: `1.0.25.0` (12 Okt 2026:
+clear field login + sakelar daya PC). Kalau kamu mulai dari sini, naikkan
+ke `1.0.26.0` — **bukan** `1.0.25.0`, karena guard versi akan menolak MSI
+yang versinya sama dengan yang sudah terpasang.
 
 #### 1. Build penuh di CI (jalur yang benar)
 
@@ -3251,6 +3258,272 @@ guard-nya setelah semua hook. Di sini komponen dipecah: `PcPage` (pemeriksa role
 
 ⚠️ **Mematikan menu tidak boleh mematikan kasir dari bekerja.** Dashboard tetap
 menampilkan 5 kartu PC dengan 10 tombol Start/Matikan — terverifikasi.
+
+## 🔴 Kredensial server & token GitHub (12 Okt 2026)
+
+Dua hal ini **sudah membuang waktu** dan gejalanya menyesatkan, jadi cek dulu.
+
+### Login backend: username-nya `opencode`, BUKAN `aziz`
+
+`data/.backend-pass` (8 byte, **trim whitespace**) hanya sah untuk akun
+**`opencode`**. Mencobanya dengan `aziz` menjawab `401` dan tampak seperti
+password rusak, padahal akunnya yang salah.
+
+```bash
+PW="$(tr -d '\n\r ' < data/.backend-pass)"
+TOKEN=$(curl -s -X POST http://localhost:3000/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d "{\"username\":\"opencode\",\"password\":\"$PW\"}" \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+```
+
+User yang ada: `aziz` (ADMIN), `opencode` (ADMIN), `bi` (ADMIN), `kasir` (KASIR).
+
+### Token GitHub: `github-token.txt` di repo mobile sudah kedaluwarsa
+
+Berkas itu menjawab `401 Bad credentials`, sementara push via **SSH tetap
+berhasil**. Kalau script API GitHub tiba-tiba "tidak menemukan run CI",
+itu penyebabnya — bukan CI-nya yang gagal. Yang masih valid:
+
+```
+/home/warnet/.gh-token
+/home/warnet/docker/.gh-token
+```
+
+Uji dulu sebelum dipakai: `curl -H "Authorization: Bearer $TOKEN" https://api.github.com/user`
+harus balas `200`. Pola yang sama seperti jebakan token di catatan
+`sinkron-agent-msi`: satu token basi, gejalanya menunjuk ke tempat lain.
+
+## 🔴 Field login PC client tidak pernah dikosongkan (12 Okt 2026)
+
+Dilaporkan dari pemakaian: setelah pelanggan klik STOP / waktu habis, layar
+kembali ke form login **dengan username dan password lama masih terisi** di
+kolom inputnya.
+
+Akar masalahnya dibuktikan dengan grep, bukan dengan membaca kode:
+
+```
+grep -nE "KodeTextBox\.Text\s*=|PasswordBox\.Password\s*=" \
+  Agent.Overlay/MainWindow.xaml.cs
+# -> nol hasil
+```
+
+Jadi **tidak ada satu baris pun** yang mengosongkan kedua field itu. Bukan
+layout, bukan binding — cuma memang belum pernah ditulis.
+
+### ⚠️ Ini soal uang, bukan tampilan
+
+Pelanggan berikutnya yang duduk di PC itu melihat username terisi (plain
+teks) dan tinggal tekan **MASUK** → langsung masuk ke **sesi berbayar milik
+orang sebelumnya**. Tagihan tetap jalan, saldo pelanggan pertama ikut
+terkuras. Di warnet yang PC-nya dipakai bergantian tanpa diawasi, ini
+kebocoran pendapatan nyata.
+
+### Lokasi fix
+
+`OnStatePropertyChanged`, cabang `_stateProxy.Locked == true` — **persis
+tempat yang sudah menutup `_dialogGantiPassword`**:
+
+```csharp
+if (_stateProxy.Locked)
+{
+    _dialogGantiPassword?.Close();
+    _dialogGantiPassword = null;
+    _autoSembunyiMini = false;
+    _terakhirLocked = true;
+
+    // WAJIB: kosongkan kredensial pelanggan sebelumnya
+    KodeTextBox.Text = "";
+    PasswordBox.Password = "";
+    ErrorText.Visibility = Visibility.Collapsed;
+}
+```
+
+### 🔴 Patch ini TIDAK bisa didorong dari server
+
+Ini pertanyaan yang wajar muncul setiap kali ada bug overlay, jadi
+jawabannya dicatat permanen di sini. Sudah diverifikasi:
+
+1. **Tidak ada mekanisme self-update di agent.** `grep -rniE "auto.?update|selfupdate"`
+   → nol hasil.
+2. **Satu-satunya kanal push server → agent adalah config**, bukan kode:
+   `agent:otp_config`, `agent:nextcloud_config`, `agent:bypass_config`,
+   `agent:power_config`. Semuanya **data konfigurasi**.
+3. Agent adalah Windows Service + overlay yang berjalan dari Program Files;
+   server tidak punya kanal untuk menjalankan kode di dalamnya.
+
+Jadi perbaikan kode **wajib MSI baru**, dan itu berarti install ulang di
+tiap PC. Lihat bagian "Cara membuat MSI" di atas.
+
+## ⚡ Sakelar daya PC: cegah sleep / layar mati / screensaver (12 Okt 2026)
+
+Permintaan operator: PC tidak boleh tidur, layar tidak boleh mati sendiri,
+dan screensaver tidak boleh muncul. Sebabnya nyata — ketiganya membuat
+pelanggan berhenti billing tanpa ada yang tahu.
+
+### Bentuk setting
+
+Satu key, satu boolean, default **`true`**:
+
+| Yang | Nilai |
+|---|---|
+| Key | `agent_prevent_sleep` |
+| Nilai | `"true"` / `"false"` (semua nilai Setting adalah string) |
+| Default | **`true`** — kalau setting belum pernah disimpan |
+| UI | Pengaturan → tab **Akses Agent** → kartu **Daya PC** |
+| Event push | `agent:power_config` → `{ preventSleep }` |
+
+Backend: `src/settings/power-keys.ts`, `SettingsService.pushPowerConfigToAgents()`,
+`SessionGateway.pushPowerConfig()` + `sendPowerConfigTo()`.
+Agent: `PowerConfigPayload`, `ServerConnection` handler, `Worker.OnPowerConfigReceived`
+→ `ApplyPowerSettings()`.
+
+### ⚠️ Default `true` bukan gaya penulisan
+
+Kalau default jatuh ke `false`, PC yang belum pernah disentuh bisa tertidur
+di tengah sesi pelanggan dan billing berhenti tanpa ada tanda. Tes
+`test/power-config.spec.ts` menjaga ini, dan **mutasi sudah dibuktikan
+gagal**: mengubah default jadi `'false'` → tepat 1 tes gagal.
+
+### 🔴 Screensaver ditulis ke HKEY_USERS, BUKAN Registry.CurrentUser
+
+`ApplyPowerSettings()` dan `SetScreensaver()` jalan di dalam Agent.Service,
+yang berjalan sebagai **LocalSystem**. `Registry.CurrentUser` di sana
+menunjuk `HKEY_USERS\S-1-5-18` — profil SYSTEM — sehingga nilainya tidak
+pernah sampai ke akun pelanggan yang sedang login. Ini jebakan yang **persis
+sama** seperti bug `DisableTaskMgr` yang sudah pernah mengakibatkan Task
+Manager "tidak pernah terblokir" selama berminggu-minggu. Pola yang dipakai
+adalah yang sama dengan `SetTaskManagerBlocked()`: iterasi
+`Registry.Users`, lewati `_Classes` dan key yang diawali titik, lalu
+`BroadcastPolicyChange()` supaya tidak baru berlaku setelah reboot.
+
+### Yang dikerjakan saat `preventSleep = true`
+
+```
+powercfg /change standby-timeout-ac 0
+powercfg /change standby-timeout-dc 0
+powercfg /change monitor-timeout-ac 0
+powercfg /change monitor-timeout-dc 0
+ScreenSaveActive=0, ScreenSaverIsSecure=0, ScreenSaveTimeOut=0  (semua profil)
+```
+
+⚠️ **Nilai asli disimpan dulu** ke `PowerOriginalStandbyAc/Dc` dan
+`PowerOriginalMonitorAc/Dc`, dan baru dihapus setelah berhasil dipulihkan.
+Kalau memaksa `0` tanpa menyimpan aslinya, mematikan sakelar akan
+meninggalkan PC di angka 0 selamanya.
+
+⚠️ **`powercfg` mengubah skema daya aktif untuk semua pengguna** — ini
+perubahan sistem-wide, bukan per-user. Kalau PC dipakai di luar warnet,
+akibatnya akan terasa.
+
+### `sendPowerConfigTo()` wajib aman dari penolakan
+
+Method itu dipanggil dari `handleConnection`, **tepat setelah socket lama PC
+lain diputus**. Kalau ia melempar, agent PC tersebut **tidak terdaftar sama
+sekali** — PC berhenti online sampai reconnect berikutnya. Ini aturan yang
+sama seperti `kirimUlangSesiKeAgent()`. Mutasi sudah dibuktikan: melempar
+ulang dari `catch` → tepat 1 tes gagal.
+
+## 📱 Login HP tidak lagi terputus tiap 24 jam (12 Okt 2026)
+
+Token JWT backend berumur **24 jam**. Sebelumnya, saat server membalas
+`401`, `ApiClient._guard()` langsung menghapus seluruh sesi — jadi kasir
+harus mengetik username dan password lagi **setiap hari**, walaupun HP-nya
+tidak pernah disentuh dan tidak ada yang logout.
+
+### Alur sekarang
+
+```
+401 + request membawa token
+  → _loginUlangOtomatis()  (pakai kredensial tersimpan)
+      berhasil  → ulang request ASLINYA tepat SEKALI
+      gagal     → clear + onUnauthorized() seperti semula
+```
+
+Tiga penjaga yang wajib ada:
+
+1. **`_loginUlangOtomatis()` memakai `_dio.post` langsung, BUKAN `post()`.**
+   Lewat `post()` berarti lewat `_guard()` lagi → 401 dari endpoint login
+   ikut memicu login ulang lagi, **tanpa akhir**.
+2. **Flag `sudahCobaLoginUlang`** menandai request yang sudah pernah
+   diulang, supaya tidak jadi loop.
+3. **`_sedangLoginUlang`** mencegah puluhan request login ulang berbarengan
+   kalau password ternyata sudah tidak berlaku.
+
+### ⚠️ Menyimpan password mentah — trade-off yang sengaja dipilih
+
+`SecureStore` menambah `_kPassword`, dan logout **wajib** menghapusnya.
+Meninggalkannya berarti siapa pun yang memakai HP itu setelah kasir logout
+masih punya kredensial untuk login ulang otomatis — persis yang harus hilang
+saat logout.
+
+Risiko-nya nyata dan sudah disampaikan ke user: password tersimpan apa
+adanya (hanya dilindungi EncryptedSharedPreferences), dan password itu
+**sah untuk login dari mana pun**, bukan cuma token yang bisa dicabut.
+Alternatif yang lebih aman — misalnya perpanjang umur JWT di backend —
+ditawarkan tapi user memilih opsi ini.
+
+Login page mengisi **username saja**, tidak pernah password supaya
+kredensial tidak terlihat di layar.
+
+### ⚠️ Override SecureStore di test harus ikut diperbarui
+
+Menambah satu named parameter opsional (`String? password`) pada
+`saveSession()` membuat **semua fake yang meng-override method itu gagal
+compile** — bukan gagal assertion. Tiga fake di tiga file test perlu
+diperbarui sekaligus. Ini pelajaran yang sama seperti menambah parameter
+constructor di NestJS.
+
+Another lesson: tes pertama salah meletakkan assert di `ApiClient.post()`
+padahal penyimpanan sesi itu tugas `AuthRepository`. Meletakkan assert di
+lapisan yang salah membuat tes hijau sementara fiturnya tidak ada.
+
+Tes: `test/login_ulang_otomatis_test.dart` (6 kasus, termasuk "login gagal
+tidak mengulang request tanpa batas"). Mutasi sudah dibuktikan: blok login
+ulang dihapus → tepat 2 tes gagal.
+
+## ⚠️ Tombol Update APK tidak muncul — cuma sekali cek per sesi aplikasi
+
+Gejalanya: APK baru sudah ada di server (`versionCode` 1024, terunggah
+12:43), HP terakhir check-in **setelah** itu (12:50), tapi tombol tidak
+muncul di Home.
+
+Penyebabnya bukan server dan bukan perbandingan versi:
+`UpdateProvider.cek()` punya penjaga
+
+```dart
+if (_sudahCek && !paksa) return;
+_sudahCek = true;
+```
+
+Jadi **pengecekan hanya jalan sekali per sesi aplikasi**. Kalau aplikasi
+sudah terbuka sejak sebelum APK diunggah, ia menemukan versi lama
+(1023 == 1023) → "tidak ada pembaruan" → tidak pernah dicek lagi. Flag itu
+cuma di-reset setelah pemasangan berhasil.
+
+**Fix:** tutup aplikasi sepenuhnya (swipe dari recent) lalu buka lagi.
+
+Masalah desain yang belum diperbaiki: selama aplikasi tetap terbuka,
+pengguna **tidak akan pernah** melihat pembaruan walau server sudah punya
+versi baru. Yang bisa ditambahkan nanti: re-check berkala atau
+pull-to-refresh di Home.
+
+## 📌 Versi MSI & status repo per 12 Okt 2026
+
+| Repo | Commit terakhir |
+|---|---|
+| agent | `b090787` — clear field login + sakelar daya PC (versi `1.0.25.0`) |
+| backend | `88f1d87` — setting `agent_prevent_sleep` + push + 8 test |
+| frontend | `210eb6e` — sakelar Daya PC di tab Akses Agent |
+| mobile | `7efa6cc` — login HP tidak terputus tiap 24 jam |
+
+APK aktif di server per 12 Okt: `versionCode 1024`, `1.0.1024`,
+`v3netbill-1791808999672.apk`, 55.527.893 byte,
+sha256 `f452b3d4622dbf8458f2a2e15a03ecacb30b2bafcf5af7d26f54510ecee3d0d7`.
+
+⚠️ Unggah APK/MSI ke backend **wajib lewat `localhost:3000`** dan memakai
+akun `opencode` (lihat bagian kredensial di atas). Lewat domain, Cloudflare
+memotong di ~18 MB dan berkas 55 MB selalu gagal.
 
 ## Pelajaran proses (penting untuk sesi berikutnya)
 
