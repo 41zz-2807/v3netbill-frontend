@@ -574,6 +574,12 @@ function IsiPcPage() {
                     <span className="sr-only">Last Heartbeat</span>
                   </span>
                 </th>
+                {role === 'ADMIN' && <th className="px-3 py-2 w-[10%]" scope="col">
+                  <span className="flex items-center gap-1.5" title="RustDesk ID untuk remote repair — dibaca agent dari RustDesk.exe --get-id">
+                    <IkonRustdesk />
+                    <span className="sr-only">RustDesk ID</span>
+                  </span>
+                </th>}
                 {role === 'ADMIN' && <th className="px-3 py-2 w-[10%]" scope="col"></th>}
               </tr>
             </thead>
@@ -717,6 +723,11 @@ function IsiPcPage() {
                         })
                       : '—'}
                   </td>
+                  {role === 'ADMIN' && (
+                    <td className="px-3 py-2 font-mono text-xs text-slate-700 tracking-wide truncate" title={pc.rustdeskId || ''}>
+                      {pc.rustdeskId || '—'}
+                    </td>
+                  )}
                   {role === 'ADMIN' && (
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-1.5 justify-end">
@@ -924,6 +935,14 @@ function IkonGembokBuka() {
   return (
     <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
       <path strokeLinecap="round" strokeLinejoin="round" d="M17 9V7A5 5 0 007 7v2H5a1 1 0 00-1 1v11a1 1 0 001 1h14a1 1 0 001-1V10a1 1 0 00-1-1h-2M8 9h8a4 4 0 010 8H8" />
+    </svg>
+  )
+}
+
+function IkonRustdesk() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 118 0zM5 7a2 2 0 012-2h10a2 2 0 012 2v1M5 7a2 2 0 01-2-2H3a2 2 0 01-2 2v1zM3 4h18a2 2 0 002-2V2a2 2 0 00-2-2H3a2 2 0 00-2 2v2zM9.6 18.2L1.8 9.3a2 2 0 00-1.6-2.9H5a2 2 0 002 2h2.4l2.4 7.6.6.3a1 1 0 01.7.8l1.8 2.4a2 2 0 012.4 1.8 2 2 0 01-.6 3.5zM18.8 11.7l-2.4-7.5a2 2 0 00-1.6-2.8H12a2 2 0 00-2-2h-2.4l-2.3 7.5M13.6 18.2l-2.4 7.5a2 2 0 001.6 2.9H17a2 2 0 002-2h-2.4l-2.3-7.5a2 2 0 00-1.6-2.8z" />
     </svg>
   )
 }

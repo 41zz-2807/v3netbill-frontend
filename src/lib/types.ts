@@ -54,6 +54,11 @@ export interface Pc {
   watt: number
   /** Alasan opsional yang diisi operator saat menandai. Null kalau tidak ditandai. */
   alasanRusak: string | null
+  /**
+   * ID RustDesk untuk remote repair, dibaca agent dari `RustDesk.exe --get-id`
+   * lalu dilaporkan saat register. Kosong = RustDesk belum memberi ID.
+   */
+  rustdeskId?: string | null
 }
 
 /**

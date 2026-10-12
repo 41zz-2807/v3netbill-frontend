@@ -3692,8 +3692,22 @@ reg query "HKLM\SOFTWARE\v3Netbill\Agent" /v AgentVersion
 reg query "HKLM\SOFTWARE\v3Netbill\Agent" /v InstalledBuildUtc
 ```
 
-Step "Verify MSI contents" membaca `ProductVersion` dari MSI dan **GAGAL** kalau
-masih `1.0.9.0` **atau kosong**. Lupa menaikkan tidak bisa lagi lolos ke artifact.
+Step "Verify MSI contents" membandingkan `ProductVersion` dari MSI dengan versi
+yang **sedang terpasang di backend** (`GET /api/settings/installer/info`), dan
+**GAGAL kalau tidak lebih baru** — atau kalau tidak terbaca sama sekali.
+
+🔴 **Dulu check ini cuma `if ($versi -eq '1.0.9.0')`, yaitu satu konstanta.**
+Efeknya: versi naik sampai `1.0.19.0` lalu **berhenti**, dan MSI berikutnya
+yang isinya BERUBAH tetap lolos karena `1.0.19.0` bukan `1.0.9.0`. Terbukti
+di server: `tanggalUpload`, `ukuranBytes`, dan `sha256` berubah, tapi
+`versionName` di Pengaturan tetap `1.0.19.0` — jadi mustahil membuktikan MSI
+yang terpasang benar-benar yang terbaru.
+
+⚠️ Guard ini butuh secret `V3NETBILL_BACKEND_URL` / `V3NETBILL_ADMIN_USER` /
+`V3NETBILL_ADMIN_PASSWORD` (sudah diisi 12 Okt 2026). Tanpa ketiganya guard
+**tidak menjalankan apa pun** dan hanya mencetak `GUARD VERSI MATI`. Itu
+disengaja — "hijau" tanpa penyPDT itu berarti "tidak diperiksa", bukan
+"berhasil diperiksa", dan selama itu tidak boleh terlihat sama seperti sukses.
 
 ⚠️ **Tiga jebakan yang sudah dilewati di sini — semuanya lolos build lokal.**
 
