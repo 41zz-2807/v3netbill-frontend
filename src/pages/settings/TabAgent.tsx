@@ -20,6 +20,7 @@ export default function TabAgent({
   ncUserAwal,
   ncFolderAwal,
   ncPasswordTerisi,
+  preventSleepAwal,
 }: {
   ctx: SettingsCtx
   otpChatIdAwal: string
@@ -28,6 +29,7 @@ export default function TabAgent({
   ncUserAwal: string
   ncFolderAwal: string
   ncPasswordTerisi: boolean
+  preventSleepAwal: boolean
 }) {
   const { busy, run, setErr } = ctx
 
@@ -111,6 +113,19 @@ export default function TabAgent({
   const [ncFolder, setNcFolder] = useState(ncFolderAwal)
   const [ncTerisi, setNcTerisi] = useState(ncPasswordTerisi)
   const [ncMsg, setNcMsg] = useState<string | null>(null)
+  const [preventSleep, setPreventSleep] = useState(preventSleepAwal)
+
+  async function simpanPreventSleep(aktif: boolean): Promise<void> {
+    await run('power', async () => {
+      try {
+        setErr(null)
+        await patchSetting('agent_prevent_sleep', aktif ? 'true' : 'false')
+        setPreventSleep(aktif)
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e))
+      }
+    })
+  }
 
   async function submitPin() {
     await run('pin', async () => {
@@ -574,6 +589,29 @@ export default function TabAgent({
             : 'Status: tidak aktif. Agent memakai PIN emergency bawaan (123456).'}
         </p>
         {otpMsg && <div className="mt-2 text-sm text-green-700">{otpMsg}</div>}
+      </SettingsCard>
+
+      <SettingsCard
+        title="Daya PC"
+        description="PC tidak tidur, layar tidak mati sendiri, dan screensaver tidak muncul. Diterapkan ke semua PC yang terhubung."
+      >
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            checked={preventSleep}
+            onChange={(e) => void simpanPreventSleep(e.target.checked)}
+            disabled={busy !== null}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300"
+          />
+          <span className="text-sm text-slate-700">
+            Cegah PC tidur & layar mati
+            <span className="block text-xs text-slate-500">
+              {preventSleep
+                ? 'Aktif: sleep OFF, screen off OFF, screensaver OFF di semua PC.'
+                : 'Nonaktif: PC memakai pengaturan daya Windows normal.'}
+            </span>
+          </span>
+        </label>
       </SettingsCard>
     </div>
   )

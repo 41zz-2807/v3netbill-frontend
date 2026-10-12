@@ -43,6 +43,7 @@ export default function SettingsPage() {
   const [ncUser, setNcUser] = useState('')
   const [ncFolder, setNcFolder] = useState('log-pc-warnet')
   const [ncPasswordTerisi, setNcPasswordTerisi] = useState(false)
+  const [preventSleep, setPreventSleep] = useState(true)
   const [installed, setInstalled] = useState<InstallerMeta | null>(null)
   const [apk, setApk] = useState<InstallerMeta | null>(null)
   const [wallFname, setWallFname] = useState<string | null>(null)
@@ -68,6 +69,7 @@ export default function SettingsPage() {
         setNcUser(s.nextcloud_user ?? '')
         setNcFolder(s.nextcloud_folder || 'log-pc-warnet')
         setNcPasswordTerisi(Boolean(s.nextcloud_password))
+        setPreventSleep(s.agent_prevent_sleep !== 'false')
       setInstalled(parseMeta<InstallerMeta>(s.installer_meta))
       setApk(parseMeta<InstallerMeta>(s.apk_meta))
       setWallFname(s.wallpaper_lockscreen_path ?? null)
@@ -171,6 +173,7 @@ export default function SettingsPage() {
           ncUserAwal={ncUser}
           ncFolderAwal={ncFolder}
           ncPasswordTerisi={ncPasswordTerisi}
+          preventSleepAwal={preventSleep}
         />
       )}
       {tab === 'instalasi' && (
