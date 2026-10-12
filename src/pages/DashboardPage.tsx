@@ -893,13 +893,26 @@ export default function DashboardPage() {
             <table className="w-full table-fixed text-left text-xs lg:text-sm">
               <thead className="bg-slate-50 text-slate-500">
                 <tr>
-                  <th scope="col" className="w-[15%] px-1.5 py-2.5 font-medium lg:px-3">PC</th>
-                  <th scope="col" className="w-[15%] px-1.5 py-2.5 font-medium lg:px-3">Status</th>
-                  {/* ⚠️ Kolom Sisa Waktu diberi lebar ekstra karena isinya angka
-                      besar — "SHUTDOWN 4:32" di 15% ikut terpotong jadi
-                      "SHUTDOWN…", padahal justru bagian itu yang paling penting
-                      dibaca kasir. */}
-                  <th scope="col" className="w-[22%] px-1.5 py-2.5 font-medium lg:px-3">Sisa Waktu</th>
+                  {/* ⚠️ LEBAR DI BAWAH = HP (empat kolom), `lg:` = LEBAR (delapan
+                      kolom). Keduanya harus jumlah tepat 100%.
+
+                      Versi lama jumlah `lg`-nya 15+15+22+12+10+8+9+19 = **110%**,
+                      dan_itulah_akar masalahnya: browser membagi proporsional
+                      sehingga SETIAP kolom dapat lebih kecil dari yang
+                      diminta. Kolom IP declarado 10% tapi hanya dapat 102px,
+                      padahal isinya butuh 106px — hasilnya "192.168.1…" dan
+                      kasir praktis tidak pernah melihat IP.
+
+                      Sisa Waktu ikut terEffects: 22% dari 110% hanya jadi
+                      224px nyata, bukan 246px seperti yang terlihat di
+                      Tailwind. Sekarang 16% dari 100% = 179px, dan lebar itu
+                      dikembalikan ke kolom IP (12%) yang memang terpotong.
+
+                      Sisa Waktu tetap jauh lebih lebar dari PC/Status karena
+                      isinya angka besar — lihat catatan truncation di bawah. */}
+                  <th scope="col" className="w-[15%] px-1.5 py-2.5 font-medium lg:w-[13%] lg:px-3">PC</th>
+                  <th scope="col" className="w-[15%] px-1.5 py-2.5 font-medium lg:w-[12%] lg:px-3">Status</th>
+                  <th scope="col" className="w-[22%] px-1.5 py-2.5 font-medium lg:w-[16%] lg:px-3">Sisa Waktu</th>
                   {/* ⚠️ Pelanggan disembunyikan di bawah `lg`. Di 390px lima kolom
                       tidak mungkin muat: tiga tombol KUNCI/TOPUP/MATI saja sudah
                       butuh 143px, sedangkan "PC001" butuh 37px tapi hanya mendapat
@@ -908,7 +921,7 @@ export default function DashboardPage() {
                       dari empat kolom yang terbaca. Nama pelanggan tetap terlihat
                       di modal TOPUP. */}
                   <th scope="col" className="hidden w-[12%] px-1.5 py-2.5 font-medium lg:px-3 lg:table-cell">Pelanggan</th>
-                  <th scope="col" className="hidden w-[10%] px-1.5 py-2.5 font-medium lg:px-3 lg:table-cell">IP</th>
+                  <th scope="col" className="hidden w-[12%] px-1.5 py-2.5 font-medium lg:px-3 lg:table-cell">IP</th>
                   <th scope="col" className="hidden w-[8%] px-1.5 py-2.5 font-medium lg:px-3 lg:table-cell">Mulai</th>
                   <th scope="col" className="hidden w-[9%] px-1.5 py-2.5 font-medium lg:px-3 lg:table-cell">Koneksi</th>
                   {/* ⚠️ Lebarnya BERBEDA per ukuran layar, dan itu disengaja:
@@ -917,7 +930,7 @@ export default function DashboardPage() {
                       yang tampil. Kalau dipaksa 19% juga di HP, isinya jadi
                       374px di layar 358px — kolom AKSI terpotong dan operator
                       tidak bisa menekan MATI. */}
-                  <th scope="col" className="w-[48%] px-1.5 py-2.5 font-medium lg:px-3 lg:w-[19%]">Aksi</th>
+                  <th scope="col" className="w-[48%] px-1.5 py-2.5 font-medium lg:px-3 lg:w-[18%]">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
