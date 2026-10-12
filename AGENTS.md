@@ -1530,6 +1530,10 @@ permintaan, 0 crash.
   **GitHub Actions variable** bernama `SERVER_URL` (bukan secret). Di `Product.wxs` hanya ada
   fallback yang akan ditimpa itu — jangan andalkan isinya. Detail jebakannya:
   bagian "Build MSI & WiX" di bawah.
+- Wizard installer **sekarang juga** meminta **Password RustDesk** (boleh kosong) —
+  field ketiga di dialog setelah Agent Token. Password-nya diteruskan ke
+  `RustDesk.exe --password`, TIDAK pernah menyentuh server. Kolom RustDesk ID di
+  halaman PC diisi agent otomatis dari `RustDesk.exe --get-id`.
 - **WAJIB isi `ServerUrl` dengan skema lengkap** (`http://192.168.1.71:3000`), karena
   `Agent.Core/ServerConnection.cs:91` memanggil `new Uri($"{serverBaseUrl.TrimEnd('/')}/session")` —
   string tanpa skema gagal. ⚠️ `ServerUrl` berisi **base URL saja**, tanpa `/session`;
@@ -1550,9 +1554,17 @@ tidak bisa dilakukan di Linux ditandai jelas.
 | `SERVER_URL` | GitHub Actions **variable** (bukan secret) |_repo_ Settings → Secrets and variables → Actions → Variables |
 | Gambar banner | `Installer/Bitmaps/Banner.bmp` | 493×58, 24-bit BMP |
 
+Versi MSI terakhir yang **sampai ke server**: `1.0.24.0`. Kalau kamu mulai dari
+sini, naikkan ke `1.0.25.0` — bukan `1.0.24.0`, karena guard versi akan menolak
+MSI yang versinya sama dengan yang sudah terpasang.
+
 #### 1. Build penuh di CI (jalur yang benar)
 
-Cukup `git push` ke `main`. Workflow `build-agent.yml``:
+Cukup `git push` ke `main`. Sekali push = satu siklus CI ~2 menit. Kalau gagal,
+**perbaiki hanya SATU hal per push** — lihat bagian 6 soal kenapa menggabungkan
+perubahan justru membuat kegagalan tidak jelas.
+
+Workflow `build-agent.yml`:
 
 ```
 publish Agent.Service + Agent.Overlay   (self-contained win-x64)
@@ -1674,28 +1686,77 @@ jadi besar dan langkah unduhnya jadi mubazir.
 #### 5. Menjalankan custom action
 
 ```xml
-<!-- target file milik MSI (sudah di-install) -->
+<!-- (a) Target file milik MSI (sudah ter-install) — paling sering dipakai.
+         FileRef menuliskan path-nya sendiri, jadi tidak perlu SetProperty. -->
 <CustomAction Id="ContohAction" FileRef="AgentOverlayExeFile"
               ExeCommand="--argumen" Execute="deferred"
               Impersonate="no" Return="ignore" />
 
-<!-- target file DI LUAR MSI -> butuh WixQuietExec + SetProperty -->
-<SetProperty Id="ContohLuarAction" Value="&quot;[EXE]&quot; --argumen"
-             Before="ContohLuarAction" Sequence="execute" />
-<CustomAction Id="ContohLuarAction" BinaryRef="WixCA" DllEntry="WixQuietExec64"
+<!-- (b) Target file DI LUAR MSI (dilewati installer lain).
+         WAJIB pola Tipe 34: SetProperty immediate menyimpan path, lalu action
+         deferred menjalankan path itu dengan ExeCommand berisi argumen. -->
+<SetProperty Id="CONTOH_EXE"
+             Value="[ProgramFiles64Folder]Contoh\Contoh.exe"
+             Before="ContohJalankan" Sequence="execute" />
+<CustomAction Id="ContohJalankan" Property="CONTOH_EXE"
+              ExeCommand="--argumen"
               Execute="deferred" Impersonate="no" Return="ignore" />
 ```
+
+🔴 **Tiga error yang SETIAP kali muncul kalau pola (b) ditulis dengan cara
+lazim, dan semuanya hanya ketahuan di CI Windows** — bukan di build Linux:
+
+| Yang ditulis | Error di CI | Akar |
+|---|---|---|
+| `BinaryRef="WixCA"` + `DllEntry="WixQuietExec64"` | `WIX0094: Binary:WixCA could not be found` | `WixCA` ada di extension `WixToolset.Util`, yang **tidak ikut terpasang** hanya karena `WixToolset.UI` terpasang |
+| `Property=` + `Value=` dalam **satu** CustomAction | `WIX0233: sets a property but its Execute is not 'immediate'` | Custom action yang mengisi properti hanya boleh `immediate` |
+| `Property=` **tanpa** `ExeCommand` | `WIX0044: DllEntry, Error, ExeCommand, ... not found` | Sugar WiX v4 butuh `ExeCommand` |
+
+Ketiganya sudahreally terjadi berurutan pada 12 Okt, jadi build gagal **tiga
+siklus CI berturut-turut**. Pola (b) di atas Solving ketiganya tanpa
+`WixCA` sama sekali, jadi tidak perlu extension tambahan.
+
+⚠️ **`WixCA`/`WixToolset.Util` TIDAK bisa diverifikasi di Linux.**
+`wix extension add` diam-diam tidak melakukan apa-apa di Linux, dan tidak ada
+berkas `.wixext` di image SDK. Jadi jangan pernah mengandalkan extension itu
+tanpa bukti dari CI.
+
+⚠️ **Path berformat TIDAK boleh ditulis di elemen `<Property>`.** Nilai seperti
+`Value="[ProgramFiles64Folder]RustDesk\RustDesk.exe"` memicu
+`WIX1077: contains '[ProgramFiles64Folder]' which is an illegal reference to
+another property`. Tetap boleh di `<SetProperty>` — di situ memang Polytechnic
+formatted value yang diminta.
 
 Aturan yang tidak bisa dilewati:
 
 - `Execute="deferred"` + `Impersonate="no"` = jalan sebagai SYSTEM. Wajib untuk
   registry HKLM dan service.
 - `Return="ignore"` untuk apa pun yang **tidak boleh menggagalkan instalasi**.
-  PC harus tetap bisa billing walaufitur Tambahan gagal.
+  PC harus tetap bisa billing walaupun fitur Tambahan gagal.
 - Urutan pakai `After=`/`Before=`, bukan nomor urut. Dan kalau dua custom action
   saling bergantung, yang kedua **harus** `After` yang pertama — bukan hanya
   `After="InstallFiles"` yang keduanya identik.
 - Jangan lupa didaftarkan di `<InstallExecuteSequence>` dengan `Condition`.
+
+#### 6. 🔴 Validasi lokal TIDAK menangkap error tahap LINK
+
+Ini yang membuang tiga siklus CI. Build Linux **selalu** berhenti di `WIX0389`
+sebelum masuk tahap link, dan error yang paling sering (±) justru muncul di
+tahap link:
+
+| Kode | Muncul di tahap | Terlihat di Linux? |
+|---|---|---|
+| `WIX0005`, `WIX0103`, `WIX0150` | sebelum link | ✅ ya |
+| `WIX0094`, `WIX0233`, `WIX0044`, `WIX1006` | **link** | ❌ **tidak pernah** |
+| `WIX0389`, `WIX0000` | noise Linux | ✅ ya (abaikan) |
+
+Artinya: **grep `WIX0094` di build lokal selalu kosong, apa pun isi `.wxs`.**
+Untuk custom action, satu-satunya pembuktian adalah CI Windows. Jalankan build
+lokal untuk menangkap kesalahan struktur dan preprocessor variable saja, dan
+anggap custom action belum terverifikasi sampai CI hijau.
+
+Aturan turunannya: **ubah satu hal per siklus CI.** Kalau tiga custom action
+diubah sekaligus, kegagalan keempat tidak jelas milik perubahan yang mana.
 
 ---
 
