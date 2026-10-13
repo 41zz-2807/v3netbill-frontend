@@ -3669,6 +3669,71 @@ menghilangkan risiko. **PC uji wajib.** Dari 8 PC di warnet ini, `testeer`
 yang dipakai — PC itu tidak punya pelanggan, dan PC006/PC007 justru sedang
 ada sesi berjalan.
 
+### 📍 STATUS PER TAHAP (13 Okt 2026) — baca ini duluan
+
+⚠️ Bagian di atas menjelaskan **desainnya**. Bagian ini menjelaskan **sudah
+sampai mana**, dan itu yang hilang kalau hanya membaca desain.
+
+| Tahap | Isi | Status | Commit |
+|---|---|---|---|
+| 1 | Flag per-PC, endpoint, penjaga | ✅ **selesai** | backend `32ef2b8`, `a16c0ab`, `dc43667` |
+| 2 | Multi-select + dialog + polling | ✅ **selesai** | frontend `1e40b90`, `f082b62` |
+| 3 | ForceReboot, timer, registry, batas 2x, progres | ✅ **selesai** | agent `762928f` |
+| 4 | **Overlay**: peringatan, timeline, tombol batal, countdown | ⬜ **belum** | — |
+| 5 | MSI `1.0.27.0` + uji end-to-end | ⬜ **belum** | — |
+
+**Test**: backend 232 lulus · `AutoUpdaterTest` 21 kasus · 0 error di Agent.Core dan
+Agent.Service.
+
+### 🔴 Status produksi saat ini — jangan diubah tanpa alasan
+
+Semua 8 PC terverifikasi `Pc.autoUpdate = false`:
+
+```
+PC001..PC007  autoUpdate=f  versiAgent=1.0.24.0
+testeer       autoUpdate=f  versiAgent=1.0.26.0
+```
+
+`testeer` pernah diberi flag **sementara** untuk menguji polling, lalu
+dikembalikan `false`. Itu satu-satunya PC yang boleh disentuh, dan hanya
+sampai Tahap 5.
+
+### ⚠️ Yang diketahui belum jadi (bukan sekadar belum dikerjakan)
+
+Tiga hal ini sudah dikerjakan tapi masih menggantung. Model baru akan
+salah mengira kalau tidak tahu:
+
+1. **Pesan `UpdateProgress` sudah dikirim tapi belum ada yang menerima.**
+   Service sudah mengirim progres ke overlay lewat pipe, tapi overlay belum
+   menangani pesannya. Akibatnya **saat update berjalan, layar PC masih
+   menampilkan form login biasa** — dan orang bisa mengira PC-nya macet lalu
+   menekan tombol matikan. Ini yang dikerjakan Tahap 4.
+2. **`AutoUpdater.HitungMundurRestartDetik` baru konstanta + tes**, belum
+   dipakai. Countdown 10 detik sebelum restart belum ada.
+3. **`.verify/` di-gitignore**, jadi harness tes agent tidak ikut repo.
+   Konvensi proyek yang sudah berjalan, tapi berarti tes itu hilang kalau
+   repo di-clone ulang.
+
+### ⚠️ Dua bug yang sudah ditemukan dan sudah diperbaiki
+
+Dicatat karena keduanya lolos build dan `nest build`:
+
+1. **Endpoint menolak semua request.** `@IsString()` tanpa `@IsOptional()`
+   menolak `undefined`, jadi `alasan` yang tidak dikirim menghasilkan
+   `400 "Alasan maksimal 200 karakter"` — padahal tidak ada yang diukur.
+   Unit test memanggil service langsung, jadi tidak pernah melewati
+   `ValidationPipe`. Sekarang ada tes yang memanggil DTO lewat `validate()`.
+2. **Progres diterima dari PC yang tidak ditandai.** Handler
+   `agent:auto_update_progress` memeriksa token tapi tidak memeriksa flag.
+
+### Bug lama yang ditemukan dan BELUM diperbaiki
+
+Tabel PC di Halaman PC **sudah rusak di lebar HP** — header saling tumpuk
+(`TokenID Listrik Status Versi Heart Rustdesk`) karena total lebar kolom
+110%. Dibuktikan pre-existing lewat `git stash`, bukan dari perubahan
+auto-update. Pola perbaikannya sudah ada di tabel Log Aktivitas: jadi kartu
+bertumpuk di bawah `lg`. Belum dikerjakan karena di luar scope Tahap 2.
+
 ### Urutan rollout
 
 ```
