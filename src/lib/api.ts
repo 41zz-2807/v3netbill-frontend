@@ -121,6 +121,36 @@ export async function fetchPcs(termasukRusak = false): Promise<Pc[]> {
 }
 
 /**
+ * Hasil nyata dari satu PC di dalam permintaan multi-select.
+ *
+ * ⚠️ `ditolak` diisi kalau PC itu gagal, dan itu NORMAL. Versi agent yang
+ * terlalu lama ditolak, dan satu PC gagal tidak boleh membuat operator
+ * mengira seluruh permintaan gagal.
+ */
+export interface HasilAutoUpdate {
+  id: string
+  namaPc: string
+  autoUpdate: boolean
+  terkirim: boolean
+  versiAgent: string | null
+  ditolak?: string
+}
+
+/**
+ * Nyalakan / matikan pembaruan otomatis untuk beberapa PC sekaligus.
+ *
+ * ⚠️ Hanya PC di `ids` yang tersentuh. Tidak ada jalan untuk menyalakan
+ * seluruh warnet sekaligus — itu justru alasan desainnya.
+ */
+export async function setAutoUpdatePc(
+  ids: string[],
+  aktif: boolean,
+): Promise<{ diminta: number; berhasil: number; ditolak: number; hasil: HasilAutoUpdate[] }> {
+  const { data } = await api.patch('/pcs/auto-update', { ids, aktif })
+  return data
+}
+
+/**
  * Ringkasan PC untuk halaman login. Endpoint publik — tidak butuh token.
  *
  * ⚠️ Jangan pakai `fetchPcs()` di sini: yang itu mengembalikan `agentToken`,

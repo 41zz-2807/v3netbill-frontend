@@ -59,6 +59,25 @@ export interface Pc {
    * lalu dilaporkan saat register. Kosong = RustDesk belum memberi ID.
    */
   rustdeskId?: string | null
+
+  /**
+   * PC ini sedang disiapkan untuk pembaruan otomatis.
+   *
+   * ⚠️ Flag PER-PC, bukan sakelar global. Sakelar global dibatalkan karena
+   * menyalakannya akan menggerakkan semua agent sekaligus — termasuk PC yang
+   * sedang dipakai pelanggan.
+   *
+   * Selama flag ini nyala, PC menolak sesi BARU, sesi yang sedang berjalan
+   * dibiarkan (update menunggu), dan auto-shutdown dilewati supaya PC tetap
+   * menyala selama mengunduh. PC tetap terlihat di dashboard supaya kasir
+   * tahu kenapa tidak bisa dilogin.
+   */
+  autoUpdate?: boolean
+  /** Pesan hasil percobaan update terakhir; sumber untuk timeline progres. */
+  autoUpdatePesan?: string | null
+  /** Progres 0..100, null kalau belum ada laporan. */
+  autoUpdatePercen?: number | null
+  autoUpdateWaktu?: string | null
 }
 
 /**

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchPcs, createPc, deletePc, unlockPc, gantiNamaPc, setPcRusak, setWattPc } from '../lib/api.ts'
 import type { Pc } from '../lib/types.ts'
 import { useAuth } from '../context/AuthContext.tsx'
@@ -15,6 +15,7 @@ import {
   hintClass,
 } from '../components/ui'
 import { Pagination } from '../components/ui/Pagination.tsx'
+import { BadgeUpdate, PanelUpdateAuto, usePollingAutoUpdate } from './pc/PanelUpdateAuto.tsx'
 import {
   PER_HALAMAN,
   usePagination,
@@ -31,6 +32,9 @@ function IsiPcPage() {
   const [created, setCreated] = useState<Pc | null>(null)
   const [creating, setCreating] = useState(false)
   const [modal, setModal] = useState(false)
+  /** PC yang dicentang untuk pembaruan otomatis. Kumpulan, bukan satu nilai:
+   *  daftar kosong = tidak ada yang akan tersentuh sama sekali. */
+  const [terpilih, setTerpilih] = useState<Set<string>>(new Set())
 
   const terurut = useMemo(() => urutkanTerbaru(pcs, (pc) => pc.createdAt), [pcs])
   const {
@@ -41,9 +45,27 @@ function IsiPcPage() {
     setHalaman,
   } = usePagination(terurut)
 
-  async function load() {
+  /**
+   * ⚠️ `sepi` membedakan muat pertama dari pemutakhiran latar.
+   *
+   * Tanpa itu, polling tiap 5 detik akan mem-flash baris "Memuat PC" dan
+   * menggantinya dengan tabel kosong setiap putaran — dan karena polling hanya
+   * jalan saat ada PC yang berflag, layar akan berkedip tepat ketika operator
+   * sedang memperhatikannya.
+   */
+  /**
+   * ⚠️ `load` harus `useCallback`, bukan fungsi biasa.
+   *
+   * Polling progres memanggilnya lewat `usePollingAutoUpdate`, dan fungsi
+   * yang dibuat ulang tiap render membuat `useEffect` di dalamnya ikut
+   * di-restart — timer 5 detik tidak pernah sampai ia dibakar, dan gejalanya
+   * "progress tidak pernah bergerak" padahal server sudah mengirim angka baru.
+   *Versi pertama membungkusnya di `useCallback` tapi tetap tidak stabil karena
+   * `load` sendiri di luar daftar dependensi — sudah diperbaiki di sini.
+   */
+  const load = useCallback(async (sepi = false) => {
     try {
-      setLoading(true)
+      if (!sepi) setLoading(true)
       // ⚠️ `termasukRusak` hanya berlaku untuk ADMIN. Kalau kasir yang membuka
       // halaman ini, PC yang ditandai memang tidak akan terlihat — dan itu
       // benar, karena hanya ADMIN yang boleh mengubah flag itu.
@@ -52,13 +74,29 @@ function IsiPcPage() {
     } catch (err: unknown) {
       setError((err as Error).message)
     } finally {
-      setLoading(false)
+      if (!sepi) setLoading(false)
     }
-  }
+  }, [role])
+
+  /**
+   * ⚠️ `load` TIDAK boleh dipasang langsung ke hook.
+   *
+   * `load` punya parameter `sepi`, jadi kalau dipasang apa adanya, `jalankan()`
+   * memanggilnya tanpa argumen dan `sepi` jatuh ke `false` — polling memuat
+   * penuh setiap 5 detik, dan layar berkedip menampilkan "Memuat PC" tepat
+   * ketika operator sedang memantau progres. Pembungkus ini yang memanggilnya
+   * dengan `true`.
+   */
+  const pollSepi = useCallback(() => {
+    void load(true)
+  }, [load])
+
+  const adaYangDiperbarui = useMemo(() => pcs.some((p) => p.autoUpdate), [pcs])
+  usePollingAutoUpdate(adaYangDiperbarui, pollSepi)
 
   useEffect(() => {
     void load()
-  }, [])
+  }, [load])
 
   function bukaModal() {
     setError(null)
@@ -518,6 +556,15 @@ function IsiPcPage() {
         </Modal>
       )}
 
+      {role === 'ADMIN' && !loading && (
+        <PanelUpdateAuto
+          pcs={baris}
+          dipilih={terpilih}
+          setDipilih={setTerpilih}
+          onSelesai={() => void load(true)}
+        />
+      )}
+
       <div className="rounded-lg border border-slate-200 bg-white">
         {loading ? (
           <div className="p-4"><ProgressBar label="Memuat PC" value={null} /></div>
@@ -554,7 +601,27 @@ function IsiPcPage() {
                 <tr key={pc.id} className="hover:bg-slate-50">
                   <td className="px-3 py-2 font-medium text-slate-900 truncate" title={pc.namaPc}>
                     <span className="flex items-center gap-2">
-                      {pc.namaPc}
+                      {role === 'ADMIN' && (
+                        <input
+                          type="checkbox"
+                          checked={terpilih.has(pc.id)}
+                          disabled={pc.autoUpdate}
+                          onChange={() => {
+                            const next = new Set(terpilih)
+                            if (next.has(pc.id)) next.delete(pc.id)
+                            else next.add(pc.id)
+                            setTerpilih(next)
+                          }}
+                          aria-label={`Pilih ${pc.namaPc} untuk pembaruan otomatis`}
+                          title={
+                            pc.autoUpdate
+                              ? `${pc.namaPc} sedang ditandai untuk pembaruan`
+                              : `Pilih ${pc.namaPc}`
+                          }
+                          className="h-4 w-4 shrink-0 rounded border-slate-300 disabled:opacity-40"
+                        />
+                      )}
+                      <span className="truncate">{pc.namaPc}</span>
                       {role === 'ADMIN' && (
                         <button
                           type="button"
@@ -678,6 +745,13 @@ function IsiPcPage() {
                     ) : (
                       <span className="text-xs text-slate-400">—</span>
                     )}
+                    {/* ⚠️ Badge progress TUMPAT di bawah versi, bukan
+                        menggantikannya. Angka versi masih dibutuhkan operator
+                        untuk deciding PC ini perlu update atau belum — dan saat
+                        update berjalan, itulah justru yang sedang diukur. */}
+                    <div className="block">
+                      <BadgeUpdate pc={pc} />
+                    </div>
                   </td>
                   <td className="px-3 py-2 text-slate-600 truncate" title={pc.lastHeartbeatAt ?? ''}>
                     {pc.lastHeartbeatAt
