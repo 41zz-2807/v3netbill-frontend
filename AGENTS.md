@@ -1563,9 +1563,9 @@ tidak bisa dilakukan di Linux ditandai jelas.
 | `SERVER_URL` | GitHub Actions **variable** (bukan secret) |_repo_ Settings → Secrets and variables → Actions → Variables |
 | Gambar banner | `Installer/Bitmaps/Banner.bmp` | 493×58, 24-bit BMP |
 
-Versi MSI terakhir yang **sampai ke server**: `1.0.35.0` (13 Okt 2026:
+Versi MSI terakhir yang **sampai ke server**: `1.0.36.0` (13 Okt 2026:
 pembaruan otomatis agent). Kalau kamu mulai dari sini, naikkan ke
-`1.0.36.0` — **bukan** `1.0.26.0`, karena guard versi akan menolak MSI
+`1.0.37.0` — **bukan** `1.0.26.0`, karena guard versi akan menolak MSI
 yang versinya sama dengan yang sudah terpasang.
 
 #### 1. Build penuh di CI (jalur yang benar)
@@ -3700,8 +3700,8 @@ sampai mana**, dan itu yang hilang kalau hanya membaca desain.
 | 5 | MSI naik ke server otomatis | ✅ **selesai** | CI + `sinkron-agent-msi` |
 | 5b | Uji end-to-end di `testeer` | ✅ **selesai** | 5 siklus penuh lolos |
 
-Versi agent yang sudah dibuktikan jalan di `testeer`: **1.0.35.0**.
-MSI terbaru di server: **1.0.35.0** (memperbaiki overlay tertinggal versi + loop watchdog).
+Versi agent yang sudah dibuktikan jalan di `testeer`: **1.0.36.0**.
+MSI terbaru di server: **1.0.36.0** (memperbaiki overlay tertinggal versi + loop watchdog).
 
 **Test**: backend 240 lulus · `AutoUpdaterTest` 27 kasus · 0 error di Agent.Core,
 Agent.Service, dan Agent.Overlay.
@@ -3712,7 +3712,7 @@ Semua 8 PC terverifikasi `Pc.autoUpdate = false`:
 
 ```
 PC001..PC007  autoUpdate=f  versiAgent=1.0.24.0   ← production, jangan disentuh
-testeer       autoUpdate=f  versiAgent=1.0.35.0   ← PC uji, satu-satunya yang boleh
+testeer       autoUpdate=f  versiAgent=1.0.36.0   ← PC uji, satu-satunya yang boleh
 ```
 
 MSI `1.0.34.0` sudah ada di server (88.969.137 byte, `SERVER_URL` terisi domain
