@@ -3528,103 +3528,115 @@ sha256 `f452b3d4622dbf8458f2a2e15a03ecacb30b2bafcf5af7d26f54510ecee3d0d7`.
 akun `opencode` (lihat bagian kredensial di atas). Lewat domain, Cloudflare
 memotong di ~18 MB dan berkas 55 MB selalu gagal.
 
-## 🔄 Pembaruan otomatis agent (self-update) — 13 Okt 2026 ✅
+## 🔄 Pembaruan otomatis agent (self-update) — per-PC, 13 Okt 2026
 
-Versi MSI `1.0.26.0`. Tujuannya: **fix berikutnya tidak perlu install MSI ke
-tiap PC satu per satu.**
+Tujuannya: **fix berikutnya tidak perlu install MSI ke tiap PC satu per satu.**
+Rundown lengkap: `/home/warnet/docker/v3netbill/RUNDOWN-AUTOUPDATE.md`.
 
-### ⚠️ Empat lapis yang semuanya HARUS benar sebelum satu `msiexec` jalan
+### ⚠️ Konsep awal (sakelar global) DIBATALKAN
 
-| Lapis | Kenapa | Kalau dilewati |
-|---|---|---|
-| Kode update ada di agent | Hanya versi ≥ `1.0.26.0` | PC lama diam, tidak_error |
-| `agent_auto_update` = `"true"` | Default `"false"` | Fitur mati diam-diam |
-| Versi server lebih baru | Perbandingan **numerik** | Upgrade terlewat |
-| PC kosong & hash cocok | Sesi/maintenance/locked | **Rugi uang** |
+Versi pertama memakai satu sakelar global `agent_auto_update`. **Sisanya
+dihapus** karena dua alasan, keduanya soal production:
 
-Lapis terakhir yang paling berbahaya. `msiexec` menghentikan service, jadi
-sesi pelanggan yang sedang berjalan ikut berhenti ditagih — dan itu berarti
-pelanggan bisa main lebih lama dari yang dibayar.
+1. Sakelar global menyalakan **semua agent yang tersambung** — termasuk PC
+   yang sedang dipakai pelanggan.
+2. Operator bisa salah klik dan seluruh PC bergerak bersamaan.
 
-### Server TIDAK boleh memerintahkan install
+Penggantinya: **multi-select per PC di Halaman PC Management**. Mustahil
+menyentuh PC yang tidak dipilih.
 
-Ini batas yang sengaja dan tidak boleh dibalik:
+### ⚠️ `agent_auto_update` TIDAK boleh dibuat ulang
+
+`autoUpdate` sekarang **kolom di tabel `Pc`**, bukan Setting. Kalau suatu saat
+dibuat lagi sebagai Setting global, seluruh keamanan di bawah hilang.
+
+### Alur satu PC
 
 ```
-Server  -> "sakelarnya nyala, ada MSI versi 1.0.27.0"
-Agent   -> memutuskan sendiri:(hash lokal vs hash server) + (PC kosong?)
+Operator centang PC di Halaman PC → "Perbarui N PC"
+  → kolom Pc.autoUpdate = true
+  → sesi baru DITOLAK, sesi yang berjalan dibiarkan
+  → auto-shutdown DILEWATI (PC harus tetap menyala)
+  → agent:auto_update_config {aktif:true} dikirim ke PC itu saja
+  → agent menunggu sesi berhenti, lalu: unduh → verifikasi hash → msiexec
+  → overlay menampilkan "per Jangan matikan PC ini" + progres
+  → selesai → PC restart sendiri → versi naik → toggle LEPAS OTOMATIS
+  → PC bisa dipakai pelanggan lagi tanpa campur operator
 ```
 
-Hanya PC ini yang tahu versinya, tahu sedang ada sesi, dan tahu teknisi
-sedang memperbaiki. Kalau keputusan install ada di server, satu MSI rusak
-bisa menjatuhkan billing di semua PC sekaligus.
+### 🔴 Sesi berjalan: toggle JALAN, efeknya MENUNGGU
 
-### Empat penjaga di `AutoUpdater.Putuskan()`
+Dulu saya cenderung menolak toggle kalau ada sesi. Itu **ditolak operator**:
+menolak tagihan yang sedang berjalan bukan urusan sistem pembaruan.
 
-Semua diuji di `.verify/AutoUpdaterTest/` (net8.0, jalan di Linux):
+Yang benar: toggle **tetap bisa ON**, dan agent menunggu. Efeknya langsung
+terjadi begitu pelanggan menekan STOP — bukan menunggu operator.
 
-| Penjaga | Mutasi removing | Hasil |
-|---|---|---|
-| `adaSesiBerjalan` | `if (false)` | 2 tes gagal |
-| `pcTerkunci` | `if (false)` | 2 tes gagal |
-| `maintenance` | — | ikut ter-cover |
-| Versi tidak terbaca | — | `VersiTidakSah`, **bukan** menebak |
+⚠️ Jangan pernah menyalakan sesi dari dashboard / buat voucher+Start selama
+flag aktif. Ketiganya wajib ditolak juga, bukan hanya login dari layar PC.
 
-### 🔴 Perbandingan versi WAJIB numerik, bukan string
+### 🔴 Gagal update → LANJUTKAN, bukan tersangkut
 
-```csharp
-// ❌ SALAH: "1.0.10.0" < "1.0.9.0" secara leksikografis
-string.CompareOrdinal(sa, sb);
+Mati listrik atau restart manual di tengah unduhan **tidak boleh** membuat PC
+kembali normal tanpa menyelesaikan update.
 
-// ✅ BENAR: bandingkan per bagian
-for (var i = 0; i < 4; i++)
-    if (a[i] != b[i]) return a[i].CompareTo(b[i]);
+Solusinya: `AutoUpdateAktif` **disimpan di registry**, bukan hanya di memory.
+Begitu agent konek lagi, dia langsung melanjutkan.
+
+⚠️ Ini alasan `AutoUpdateLastAttempt` juga di registry. Kalau jeda hanya di
+memory, PC yang baru nyala mencoba lagi tanpa jeda — itu persis yang membuat
+MSI rusak terasa seperti "PC nyala sendiri terus".
+
+### 🔴 Batas percobaan gagal: DUA KALI
+
+| Percobaan | Yang terjadi |
+|---|---|
+| 1 gagal | dicatat, tunggu 1 jam, coba lagi |
+| 2 gagal | **berhenti**, pesan tampil di baris PC, toggle TETAP ON |
+
+Toggle sengaja tidak dilepas otomatis supaya operator pegang kendali — PC
+tidak bisa dilogin, tapi itu lebih baik daripada update berulang yang
+membanjiri server.
+
+### 🔴 Restart WAJIB dipaksa
+
+⚠️ Tanpa `ForceReboot`, MSI selesai tapi PC tidak restart. Akibatnya overlay
+tetap versi lama **dan toggle tidak pernah lepas** — PC terkunci selamanya.
+
+```
+msiexec /i "…" /qn /norestart REBOOT=ReallySuppress ForceReboot=1 /l*v "…"
 ```
 
-Mutasi ke `string.CompareOrdinal` → **4 tes gagal**. Gejalanya di produksi
-adalah upgrade yang diam-diam tidak pernah terjadi: aplikasi terlihat
-"udah terbaru" padahal ada patch.
+### 🔴 Timer berkala DIHENTIKAN selama flag aktif
 
-### 🔴 SHA-256 wajib, dan server yang tidak mengirim hash DITOLAK
+Yang memicu update hanya perintah eksplisit dari server. Kalau timer 6 jam
+tetap jalan, PC bisa menyalakan update **kedua** sebelum yang pertama selesai —
+dan dua `msiexec` bersamaan berarti instalasi gagal setengah jalan.
 
-```csharp
-if (string.IsNullOrWhiteSpace(info.Sha256)) {
-    HapusBerkas(berkas);
-    CatatGagalUpdate("server tidak mengirim sha256");
-    return;   // ← jangan pernah fallen through ke msiexec
-}
-```
+### 🔴 Toggle lepas OTOMATIS saat versi naik
 
-89 MB dari jaringan tanpa hash berarti tidak ada dasar apa pun untuk
-mempercayainya.
+Tanpa ini: versi baru terpasang → tetap "lebih baru dari versi server"? Tidak,
+tetapi ada jalur lain — PC dengan versi baru akan semakin lama tidak pernah
+melepas flag kalau versi server dikembalikan.
 
-### 🔴 Kondisi PC dibaca DUA KALI
+Aturan: begitu `Pc.versiAgent` naik, `autoUpdate` = false **dari sisi server**,
+tanpa menunggu operator.
 
-Unduhan 89 MB bisa memakan puluhan detik, dan dalam selang itu pelanggan
-bisa login. Jadi `BolehUpdate()` dipanggil:
+### Penolakan versi minimum
 
-1. **sebelum** unduhan — biar tidak socializing bandwidth buat-update
-2. **tepat sebelum** `msiexec` — ini yang benar-benar melindungi sesi yang baru mulai
+PC `1.0.24.0`/`1.0.25.0` **tidak punya kode updater**. Menyalakan toggle untuk
+mereka akan membuat PC terkunci tanpa pernah bisa update. Jadi **toggle hanya
+boleh** kalau `versiAgent` sudah ≥ versi yang punya fitur ini.
 
-Kalau hanya dibaca sekali di awal, installer jalan di atas sesi yang sedang
-dibayar.
+⚠️ Ini bukan versi hardcoded di backend — biarkan **agent yang melaporkan
+kemampuannya** lewat `agent:register`, lalu server menyimpan boolean-nya.
+Membandingkan string versi di server membuka dua sumber kebenaran.
 
-### ⚠️ Jeda retry HARUS di registry, bukan memory
+### Overlay
 
-```csharp
-// registry: HKLM\Software\v3Netbill\Agent\AutoUpdateLastAttempt
-```
-
-Gagal update **berarti service di-restart MSI**. Kalau jeda hanya di field
-memory, PC yang baru nyala langsung mencoba lagi tanpa jeda — berulang
-setiap restart. Itu persis yang membuat MSI rusak terasa seperti "PC nyala
-sendiri terus".
-
-### `_autoUpdateLock` (SemaphoreSlim) wajib ada
-
-Timer 6 jam dan event `agent:auto_update_config` bisa masuk bersamaan.
-Tanpa lock, dua `msiexec` berjalan untuk satu MSI yang sama → hasil paling
-mungkin: instalasi gagal setengah jalan dan PC tidak bisa billing.
+Saat update berjalan, layar PC menampilkan peringatan + timeline progres, dan
+**tidak bisa ditutup**. Ada tombol **"Batalkan update"** untuk teknisi.
+Tepat sebelum restart, muncul hitung mundur 10 detik.
 
 ### Endpoint agent (tanpa JWT)
 
@@ -3638,26 +3650,6 @@ balasannya sama untuk token sah dan token asing, penyerang bisa memetakan
 token mana yang berlaku hanya dengan mengamati bedanya — dan `agentToken`
 cukup untuk `client:create_password` + `client:stop_session`.
 
-Nilai setting yang **ambigu** (`yes`, `1`, `on`) ditolak; hanya `"true"`
-(huruf besar-kecil bebas) yang dianggap nyala. Test: `test/auto-update-agen.spec.ts`
-(13 kasus). Mutasi validasi token dihapus → tepat 3 tes gagal.
-
-### Urutan rollout (sudah dilakukan)
-
-```
-1. push backend 31d3d02  -> endpoint + key, default false
-2. push frontend 30d6dd8 -> sakelar, default OFF
-3. push agent b0700c1     -> MSI 1.0.26.0, CI sukses
-4. sinkron MSI otomatis   -> 1.0.26.0 di server
-5. ❌ JANGAN nyalakan setting selama 1.0.26.0 belum ter-install manual
-6. operator install 1.0.26.0 ke tiap PC (satu kali)
-7. baru nyalakan sakelar -> update berikutnya otomatis
-```
-
-⚠️ **Langkah 5 wajib ditahan.** PC yang masih `1.0.24.0`/`1.0.25.0` tidak
-punya kodenya, jadi tidak akan pernah self-update — dan itu memang yang
-diinginkan sampai operator selesai meng-install manual.
-
 ### Cara menguji tanpa PC Windows
 
 ```bash
@@ -3668,6 +3660,30 @@ docker run --rm -v "$PWD:/w" -w /w/.verify/AutoUpdaterTest \
 `Agent.Core` menyasar **net8.0** (bukan `net8.0-windows`) justru supaya
 semua keputusan ini bisa diuji dari Linux. Kasus "update di tengah sesi"
 tidak boleh diuji di PC sungguhan — sekali salah, penagihan terputus.
+
+### ⚠️ Risiko yang TIDAK bisa diprakarsakan
+
+Tidak ada cara membuktikan MSI versi baru aman sebelum masuk PC. Jadwal
+30 menit setelah boot yang dipakai untuk mengurangi dampak, **bukan**
+menghilangkan risiko. **PC uji wajib.** Dari 8 PC di warnet ini, `testeer`
+yang dipakai — PC itu tidak punya pelanggan, dan PC006/PC007 justru sedang
+ada sesi berjalan.
+
+### Urutan rollout
+
+```
+1. backend + frontend + agent  -> test hijau
+2. agent push                 -> MSI 1.0.27.0, CI sukses
+3. sinkron MSI                 -> 1.0.27.0 ada di server
+4. Halaman PC                  -> pilih HANYA testeer -> "Perbarui 1 PC"
+5. amati: progres, restart, toggle lepas, login normal
+6. baru rollout ke PC lain
+```
+
+⚠️ **Langkah 4 WAJIB hanya `testeer`.** PC lain tidak menerima apa pun karena
+flag hanya ada di PC terpilih — itu yang membuat syarat "jangan ganggu
+production" terpenuhi.
+
 
 ## Pelajaran proses (penting untuk sesi berikutnya)
 
