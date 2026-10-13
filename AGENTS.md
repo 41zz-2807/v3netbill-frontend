@@ -1563,9 +1563,9 @@ tidak bisa dilakukan di Linux ditandai jelas.
 | `SERVER_URL` | GitHub Actions **variable** (bukan secret) |_repo_ Settings → Secrets and variables → Actions → Variables |
 | Gambar banner | `Installer/Bitmaps/Banner.bmp` | 493×58, 24-bit BMP |
 
-Versi MSI terakhir yang **sampai ke server**: `1.0.26.0` (13 Okt 2026:
+Versi MSI terakhir yang **sampai ke server**: `1.0.33.0` (13 Okt 2026:
 pembaruan otomatis agent). Kalau kamu mulai dari sini, naikkan ke
-`1.0.27.0` — **bukan** `1.0.26.0`, karena guard versi akan menolak MSI
+`1.0.34.0` — **bukan** `1.0.26.0`, karena guard versi akan menolak MSI
 yang versinya sama dengan yang sudah terpasang.
 
 #### 1. Build penuh di CI (jalur yang benar)
@@ -3678,64 +3678,63 @@ sampai mana**, dan itu yang hilang kalau hanya membaca desain.
 |---|---|---|---|
 | 1 | Flag per-PC, endpoint, penjaga | ✅ **selesai** | backend `32ef2b8`, `a16c0ab`, `dc43667` |
 | 2 | Multi-select + dialog + polling | ✅ **selesai** | frontend `1e40b90`, `f082b62` |
-| 3 | ForceReboot, timer, registry, batas 2x, progres | ✅ **selesai** | agent `762928f` |
-| 4 | **Overlay**: peringatan, timeline, tombol batal | ✅ **selesai** | agent `0acc381`, backend `e6c28e1` |
-| 5 | MSI `1.0.27.0` **sudah di server** | 🟡 **sebagian** | backend `03353a2` |
-| 5b | Uji end-to-end di `testeer` | ⬜ **menunggu operator** | — |
+| 3 | ForceReboot, timer, registry, batas 2x | ✅ **selesai** | agent `762928f` |
+| 4 | Overlay: progres, tombol batal | ✅ **selesai** | agent `0acc381`, backend `e6c28e1` |
+| 5 | MSI naik ke server otomatis | ✅ **selesai** | CI + `sinkron-agent-msi` |
+| 5b | Uji end-to-end di `testeer` | ✅ **selesai** | 5 siklus penuh lolos |
 
-**Test**: backend 232 lulus · `AutoUpdaterTest` 21 kasus · 0 error di Agent.Core dan
-Agent.Service.
+Versi agent yang sudah dibuktikan jalan di `testeer`: **1.0.33.0**.
+
+**Test**: backend 240 lulus · `AutoUpdaterTest` 27 kasus · 0 error di Agent.Core,
+Agent.Service, dan Agent.Overlay.
 
 ### 🔴 Status produksi saat ini — jangan diubah tanpa alasan
 
 Semua 8 PC terverifikasi `Pc.autoUpdate = false`:
 
 ```
-PC001..PC007  autoUpdate=f  versiAgent=1.0.24.0
-testeer       autoUpdate=f  versiAgent=1.0.26.0
+PC001..PC007  autoUpdate=f  versiAgent=1.0.24.0   ← production, jangan disentuh
+testeer       autoUpdate=f  versiAgent=1.0.33.0   ← PC uji, satu-satunya yang boleh
 ```
 
-MSI `1.0.27.0` sudah ada di server (sha256 `5e5f06c8…`, 88.965.041 byte,
-`SERVER_URL` terisi domain produksi — sudah diverifikasi dari isi MSI, bukan
-dari status CI).
+MSI `1.0.33.0` sudah ada di server (sha256 `9ebc7db0…`, 88.969.137 byte,
+`SERVER_URL` terisi domain produksi — diverifikasi dari **isi MSI** dan dari
+**unduhan ulang**, bukan dari status CI).
 
-🔴 **Tahap 5b butuh tindakan fisik di PC `testeer`**, jadi sampai itu belum
-selesai. Urutannya penting:
+🔴 **PC production masih 1.0.24.0 dan tidak bisa ditandai.** Ambang minimal
+auto-update adalah **1.0.27.0**, jadi PC001–PC007 wajib dipasang manual sekali
+dari Pengaturan > Instalasi. Sebelum itu, menandainya akan ditolak — dan
+penolakan itu benar: `1.0.26.0` memahami event config tapi **tidak punya
+`ForceReboot`**, sehingga msiexec selesai tanpa restart, versi tidak naik, flag
+tidak pernah lepas, dan PC terkunci selamanya (dinaikkan di `03353a2`).
+
+### Empat siklus uji yang sudah lolos
 
 ```
-1. pasang MSI 1.0.27.0 di testeer secara MANUAL lewat Pengaturan > Instalasi
-2. baru tandai testeer dari Halaman PC
+1.0.27.0 → 1.0.28.0   unduh → hash → pasang → ForceReboot → toggle lepas
+1.0.28.0 → 1.0.29.0   + registry persistence terbukti (reboot)
+1.0.29.0 → 1.0.32.0   + "diam" report + timer pengingat 1 jam
+1.0.32.0 → 1.0.33.0   + overlay card menutupi form login (dikonfirmasi operator)
 ```
 
-⚠️ **Jangan tandai sebelum langkah 1.** Ambang minimal di backend sudah
-`1.0.27.0`, jadi server akan menolak — dan penolakan itu benar. Alasannya
-`1.0.26.0` memahami event config tapi **tidak punya `ForceReboot`**: msiexec
-selesai tanpa restart, versi tidak naik, flag tidak pernah lepas, PC menolak
-sesi dan tidak akan pernah update lagi. Ambang `1.0.26.0` yang lama justru
-mengizinkan jebakan itu — sudah dinaikkan di `03353a2`.
-
-`testeer` pernah diberi flag **sementara** untuk menguji polling, lalu
-dikembalikan `false`. Itu satu-satunya PC yang boleh disentuh.
+UUID `testeer`: `c039a9ad-c419-4553-aee3-955e6e537a8d`.
 
 ### ⚠️ Yang diketahui belum jadi (bukan sekadar belum dikerjakan)
 
-Tiga hal ini sudah dikerjakan tapi masih menggantung. Model baru akan
-salah mengira kalau tidak tahu:
-
-1. **Pesan `UpdateProgress` sudah dikirim tapi belum ada yang menerima.**
-   Service sudah mengirim progres ke overlay lewat pipe, tapi overlay belum
-   menangani pesannya. Akibatnya **saat update berjalan, layar PC masih
-   menampilkan form login biasa** — dan orang bisa mengira PC-nya macet lalu
-   menekan tombol matikan. Ini yang dikerjakan Tahap 4.
-2. **`AutoUpdater.HitungMundurRestartDetik` baru konstanta + tes**, belum
-   dipakai. Countdown 10 detik sebelum restart belum ada.
-3. **`.verify/` di-gitignore**, jadi harness tes agent tidak ikut repo.
+1. **`.verify/` di-gitignore**, jadi harness tes agent tidak ikut repo.
    Konvensi proyek yang sudah berjalan, tapi berarti tes itu hilang kalau
-   repo di-clone ulang.
+   repo di-clone ulang. Yang mungkin kejadian: ada perubahan di `Agent.Core`
+   yang tidak pernah diuji karena harness-nya tidak ada.
+2. **`RUNDOWN-AUTOUPDATE.md` dan `sinkron-agent-msi` tidak versioned** — keduanya
+   ada di root project, dan root project **bukan git repo**. `bersihkan-pesan.py`
+   juga. Kalau mesin ini hilang, ketiganya hilang.
+3. **Halaman PC menjadi kartu di bawah `lg` masih belum dikerjakan** — lihat
+   bagian "Bug lama" di bawah.
 
-### ⚠️ Dua bug yang sudah ditemukan dan sudah diperbaiki
+### ⚠️ Empat bug yang ditemukan lewat UJI, bukan lewat baca kode
 
-Dicatat karena keduanya lolos build dan `nest build`:
+Dicatat karena keempatnya lolos `dotnet build` dan `nest build`, dan tiga
+diantaranya baru ketahuan saat update benar-benar dijalankan di PC uji.
 
 1. **Endpoint menolak semua request.** `@IsString()` tanpa `@IsOptional()`
    menolak `undefined`, jadi `alasan` yang tidak dikirim menghasilkan
@@ -3744,6 +3743,14 @@ Dicatat karena keduanya lolos build dan `nest build`:
    `ValidationPipe`. Sekarang ada tes yang memanggil DTO lewat `validate()`.
 2. **Progres diterima dari PC yang tidak ditandai.** Handler
    `agent:auto_update_progress` memeriksa token tapi tidak memeriksa flag.
+3. **Overlay tidak pernah tahu sedang ada update.** Progres sudah terkirim ke
+   server dan tersimpan di DB, tapi overlay yang hidup terlambat tidak pernah
+   menerimanya. Pola yang sama dengan `kirimUlangSesiKeAgent()`: sekarang
+   `StateRequest` juga memicu pengiriman ulang progres terakhir.
+4. **Early return saat flag bernilai sama mematikan jalur pemulihan.** Registry
+   basi setelah `ForceReboot` membunuh service; server kirim `{aktif: true}`
+   lagi, nilainya sama, dan update tidak pernah dimulai. Terverifikasi langsung.
+   Sekarang handler selalu menyinkronkan nilai dan selalu memicu pengecekan.
 
 ### Bug lama yang ditemukan dan BELUM diperbaiki
 
@@ -3751,7 +3758,16 @@ Tabel PC di Halaman PC **sudah rusak di lebar HP** — header saling tumpuk
 (`TokenID Listrik Status Versi Heart Rustdesk`) karena total lebar kolom
 110%. Dibuktikan pre-existing lewat `git stash`, bukan dari perubahan
 auto-update. Pola perbaikannya sudah ada di tabel Log Aktivitas: jadi kartu
-bertumpuk di bawah `lg`. Belum dikerjakan karena di luar scope Tahap 2.
+bertumpuk di bawah `lg`.
+
+Ini bukan kecelakaan kosmetik: kolom yang berisi nama PC dan versi agent
+seluruhnya di luar layar 390px, dan `overflow-x-auto` tanpa petunjuk bisa
+digeser membuat operator tidak bisa memakai halaman ini dari HP — padahal
+halaman inilah satu-satunya tempat mengelola pembaruan otomatis.
+
+Susunan kolom yang benar (total 110%) dan cara memperbaikinya ada di
+`frontend/AGENTS.md` bagian "PC Management"; belatu ada pola kartu bertumpuk
+`lg:hidden` + `hidden lg:block` di halaman Log Aktivitas untuk ditiru.
 
 ### Urutan rollout
 
@@ -3767,6 +3783,10 @@ bertumpuk di bawah `lg`. Belum dikerjakan karena di luar scope Tahap 2.
 ⚠️ **Langkah 4 WAJIB hanya `testeer`.** PC lain tidak menerima apa pun karena
 flag hanya ada di PC terpilih — itu yang membuat syarat "jangan ganggu
 production" terpenuhi.
+
+✅ **Langkah 1–5 sudah selesai dan terverifikasi.** Yang tersisa dari langkah 6:
+PC001–PC007 masih `1.0.24.0`, jadi masing-masing perlu dipasang MSI `1.0.27.0`
+atau lebih baru secara manual sekali, sebelum bisa ditandai dari Halaman PC.
 
 
 ## Pelajaran proses (penting untuk sesi berikutnya)
