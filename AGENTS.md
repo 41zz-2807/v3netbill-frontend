@@ -882,7 +882,7 @@ sementara kekurangan 630pt, dan menggeser koordinat justru menambah pemecahan
 halaman.
 
 Aturannya: kalau yang perlu dipadatkan adalah **tabel yang tumbuh sendiri**,
-batasi jumlah barisnya. Jangan tambah محاولة kompres selebar-lebarnya.
+batasi jumlah barisnya. Jangan tambah percobaan kompres selebar-lebarnya.
 
 ### 📧 Penerima email laporan bisa diatur (6 Okt)
 
@@ -3687,9 +3687,21 @@ production" terpenuhi.
 
 ## Pelajaran proses (penting untuk sesi berikutnya)
 
-1. **Karakter asing nyasar di commit message — sudah 5 kali.** CJK, Korea, dan Rusia
+1. **Karakter asing nyasar di commit message — sudah 6 kali.** CJK, Korea, dan Rusia
    muncul tanpa sengaja. Karena commit message masuk repo **public**, ini tidak boleh
    terjadi.
+
+   🔴 **Pemindai HARUS keluar dengan kode bukan nol.** Terjadi nyata 13 Okt:
+   pemindai mencetak daftar karakter, `&&` tetap berjalan karena python keluar
+   dengan kode 0, dan commit berisi satu karakter Mandarin sampai ke repo public.
+   Peringatan yang tidak menghentikan proses sama dengan tidak ada peringatan.
+   Bentuk yang dipakai sekarang adalah `bersihkan-pesan.py` (lihat di bawah),
+   dan diperiksa sebagai `python3 bersihkan-pesan.py <berkas> && git commit ...`.
+
+   🔴 **Perbaikan keliru lebih berbahaya daripada tidak memperbaiki.** Saat memperbaiki
+   pesan itu, salah ganti justru menyisipkan karakter baru di kata yang sedang
+   diperbaiki. Karena itu pemindai dijalankan **setelah** perbaikan teks,
+   bukan sebelum.
    **Prosedur wajib:** tulis pesan ke file terpisah → scan karakter non-ASCII dengan
    skrip → **baru** `git commit`. Contoh:
    ```bash
@@ -3699,6 +3711,31 @@ production" terpenuhi.
    print('bersih' if not s else sorted(set(s)))"
    ```
    Hal sama bisa terjadi di **komentar kode** — scan `src/` sebelum commit juga.
+### Pemindai karakter asing (wajib sebelum commit)
+
+`bersihkan-pesan.py` ada di root project (sejajar dengan `dk` dan `fl`, jadi
+tidak ikut ter-commit). Keluar dengan kode **bukan nol** kalau menemukan
+CJK, Hangul, kana, Sirilik, atau Arab — jadi bisa dipakai di tengah `&&`.
+
+```bash
+cat > /tmp/msg.txt <<'EOF'
+isi pesan commit
+EOF
+python3 bersihkan-pesan.py /tmp/msg.txt && git commit -F /tmp/msg.txt
+```
+
+Sama untuk diff dan untuk kode yang akan di-commit:
+
+```bash
+git diff | python3 /tmp/opencode/bersihkan-pesan.py && git add -A src
+```
+
+⚠️ **Jalankan pemindai SESUDAH memperbaiki teks, bukan sebelumnya.** Saat
+memperbaiki satu karakter asing di dalam sebuah kata, penggantiannya sendiri
+bisa menyisipkan karakter lain di kata yang sama. Terjadi nyata 13 Okt:
+memperbaiki satu kata pada pesan commit justru menyisipkan karakter asing
+di dalam kata itu — jadi hasil perbaikannya lebih buruk daripada sebelum.
+
 2. **`git add -A src` menyapu pekerjaan lain yang belum di-commit.** Pernah ikut
    membawa 4 file (SettingsPage 295 baris) dari sesi sebelumnya ke commit yang tidak
    related. **Stage eksplisit per file**; kalau ada uncommitted lain, commit terpisah.
