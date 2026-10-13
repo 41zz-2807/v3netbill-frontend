@@ -3761,17 +3761,27 @@ diantaranya baru ketahuan saat update benar-benar dijalankan di PC uji.
    rilis, jadi fix overlay tidak pernah aktif. Sekarang watchdog membandingkan
    versi overlay yang berjalan dengan versi agent dan mengganti beda versi.
 
-### ⚠️ Unduhan bisa mandek di 5% (13 Okt, jaringannya sendiri)
+### ⚠️ Kecepatan unduh lewat Cloudflare tidak stabil (13 Okt)
 
-Terpantau langsung: unduhan MSI mulai 20:30:51 dan tetap di 5% lebih dari
-15 menit, sementara heartbeat tetap hidup tiap 15 detik. Jadi **agent hidup,
-socket hidup, tapi unduhan HTTP mandek** — gejalanya "update tidak pernah
-selesai" padahal service-nya sehat.
+Diukur langsung ke endpoint yang sama dipakai agent:
 
-Batas waktu unduh `TimeoutUnduhDetik` adalah 15 menit, jadi pipeline mandek
-akan berhenti sendiri dan masuk cooldown 1 jam. Kalau PC tidak punya
-auto-update manual, operator melihat progres 5% yang tidak bergerak dan
-tidak ada penjelasan.
+| Percobaan | Ukuran | Waktu | Kecepatan |
+|---|---|---|---|
+| 1 (host) | 17 MB terpotong | 300 s | 56 KB/s |
+| 2 (host) | 89 MB lengkap | 30 s | 2,9 MB/s |
+| localhost | 89 MB lengkap | 0,27 s | 332 MB/s |
+
+**Beda 50x pada jalur yang sama.** Server dan berkas sehat (sha256 benar,
+localhost 0,27 s). Yang tidak stabil adalah tunnel Cloudflare.
+
+Akibatnya di PC remote: unduhan tampak **mandek di 5%** dan akhirnya timeout
+di 15 menit, sementara heartbeat tetap hidup tiap 15 detik. Gejalanya
+"update tidak pernah selesai" padahal service-nya sehat — dan tidak ada
+penjelasan di layar.
+
+Kalau kecepatan jatuh ke ~5 KB/s seperti percobaan 1, 89 MB tidak mungkin
+selesai dalam 15 menit. Jadi ini **bukan** bug unduhan; batas waktunya bekerja
+benar dan menolak melanjutkan sesuatu yang tidak akan selesai.
 
 ### Bug lama yang ditemukan dan BELUM diperbaiki
 
