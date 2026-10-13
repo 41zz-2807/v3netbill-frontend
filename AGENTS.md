@@ -3760,7 +3760,7 @@ UUID `testeer`: `c039a9ad-c419-4553-aee3-955e6e537a8d`.
 3. **Halaman PC menjadi kartu di bawah `lg` masih belum dikerjakan** — lihat
    bagian "Bug lama" di bawah.
 
-### ⚠️ Enam bug yang ditemukan lewat UJI, bukan lewat baca kode
+### ⚠️ Tujuh bug yang ditemukan lewat UJI, bukan lewat baca kode
 
 Dicatat karena keempatnya lolos `dotnet build` dan `nest build`, dan tiga
 diantaranya baru ketahuan saat update benar-benar dijalankan di PC uji.
@@ -3825,6 +3825,15 @@ penjelasan di layar.
 Kalau kecepatan jatuh ke ~5 KB/s seperti percobaan 1, 89 MB tidak mungkin
 selesai dalam 15 menit. Jadi ini **bukan** bug unduhan; batas waktunya bekerja
 benar dan menolak melanjutkan sesuatu yang tidak akan selesai.
+
+7. **Sesi teknisi menggantung membuat PC tak pernah auto-matikan.**
+   Satu baris `SesiTeknisi` yang `selesaiAt`-nya kosong — karena service mati,
+   PC reboot, atau listrik putus — membuat `checkAutoShutdown` melewati PC itu
+   **selamanya**: Pengaman 3b menganggap "orang masih di depan PC" dan tidak ada
+   yang menutup sesinya. Terverifikasi 14 Okt: satu baris dari 13 Okt membuat
+   `testeer` lewat dari auto-matikan 13 jam. Sekarang PC yang register
+   menutup sesi teknisi menggantung, karena PC yang baru boot berarti tidak ada
+   yang login.
 
 ### Bug lama yang ditemukan dan BELUM diperbaiki
 
