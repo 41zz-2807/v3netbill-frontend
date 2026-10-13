@@ -1563,9 +1563,9 @@ tidak bisa dilakukan di Linux ditandai jelas.
 | `SERVER_URL` | GitHub Actions **variable** (bukan secret) |_repo_ Settings → Secrets and variables → Actions → Variables |
 | Gambar banner | `Installer/Bitmaps/Banner.bmp` | 493×58, 24-bit BMP |
 
-Versi MSI terakhir yang **sampai ke server**: `1.0.33.0` (13 Okt 2026:
+Versi MSI terakhir yang **sampai ke server**: `1.0.34.0` (13 Okt 2026:
 pembaruan otomatis agent). Kalau kamu mulai dari sini, naikkan ke
-`1.0.34.0` — **bukan** `1.0.26.0`, karena guard versi akan menolak MSI
+`1.0.35.0` — **bukan** `1.0.26.0`, karena guard versi akan menolak MSI
 yang versinya sama dengan yang sudah terpasang.
 
 #### 1. Build penuh di CI (jalur yang benar)
@@ -3684,6 +3684,7 @@ sampai mana**, dan itu yang hilang kalau hanya membaca desain.
 | 5b | Uji end-to-end di `testeer` | ✅ **selesai** | 5 siklus penuh lolos |
 
 Versi agent yang sudah dibuktikan jalan di `testeer`: **1.0.33.0**.
+MSI terbaru di server: **1.0.34.0** (memperbaiki overlay tertinggal versi).
 
 **Test**: backend 240 lulus · `AutoUpdaterTest` 27 kasus · 0 error di Agent.Core,
 Agent.Service, dan Agent.Overlay.
@@ -3695,11 +3696,12 @@ Semua 8 PC terverifikasi `Pc.autoUpdate = false`:
 ```
 PC001..PC007  autoUpdate=f  versiAgent=1.0.24.0   ← production, jangan disentuh
 testeer       autoUpdate=f  versiAgent=1.0.33.0   ← PC uji, satu-satunya yang boleh
+                                                 (sedang diuji ke 1.0.34.0)
 ```
 
-MSI `1.0.33.0` sudah ada di server (sha256 `9ebc7db0…`, 88.969.137 byte,
-`SERVER_URL` terisi domain produksi — diverifikasi dari **isi MSI** dan dari
-**unduhan ulang**, bukan dari status CI).
+MSI `1.0.34.0` sudah ada di server (88.969.137 byte, `SERVER_URL` terisi domain
+produksi — diverifikasi dari **isi MSI** dan dari **unduhan ulang**, bukan dari
+status CI).
 
 🔴 **PC production masih 1.0.24.0 dan tidak bisa ditandai.** Ambang minimal
 auto-update adalah **1.0.27.0**, jadi PC001–PC007 wajib dipasang manual sekali
@@ -3715,6 +3717,7 @@ tidak pernah lepas, dan PC terkunci selamanya (dinaikkan di `03353a2`).
 1.0.28.0 → 1.0.29.0   + registry persistence terbukti (reboot)
 1.0.29.0 → 1.0.32.0   + "diam" report + timer pengingat 1 jam
 1.0.32.0 → 1.0.33.0   + overlay card menutupi form login (dikonfirmasi operator)
+1.0.33.0 → 1.0.34.0   + overlay versi lama diganti watchdog (sedang diuji)
 ```
 
 UUID `testeer`: `c039a9ad-c419-4553-aee3-955e6e537a8d`.
@@ -3731,7 +3734,7 @@ UUID `testeer`: `c039a9ad-c419-4553-aee3-955e6e537a8d`.
 3. **Halaman PC menjadi kartu di bawah `lg` masih belum dikerjakan** — lihat
    bagian "Bug lama" di bawah.
 
-### ⚠️ Empat bug yang ditemukan lewat UJI, bukan lewat baca kode
+### ⚠️ Lima bug yang ditemukan lewat UJI, bukan lewat baca kode
 
 Dicatat karena keempatnya lolos `dotnet build` dan `nest build`, dan tiga
 diantaranya baru ketahuan saat update benar-benar dijalankan di PC uji.
@@ -3751,6 +3754,24 @@ diantaranya baru ketahuan saat update benar-benar dijalankan di PC uji.
    basi setelah `ForceReboot` membunuh service; server kirim `{aktif: true}`
    lagi, nilainya sama, dan update tidak pernah dimulai. Terverifikasi langsung.
    Sekarang handler selalu menyinkronkan nilai dan selalu memicu pengecekan.
+5. **Overlay tertinggal versi sampai reboot penuh.** MSI mengganti binary di
+   disk tapi proses overlay yang sudah berjalan tidak diganti, dan watchdog
+   tidak meluncurkannya ulang karena masih ada prosesnya. Terverifikasi:
+   agent restart 18:56:21, overlay terakhir start 18:20:29 — tertinggal dua
+   rilis, jadi fix overlay tidak pernah aktif. Sekarang watchdog membandingkan
+   versi overlay yang berjalan dengan versi agent dan mengganti beda versi.
+
+### ⚠️ Unduhan bisa mandek di 5% (13 Okt, jaringannya sendiri)
+
+Terpantau langsung: unduhan MSI mulai 20:30:51 dan tetap di 5% lebih dari
+15 menit, sementara heartbeat tetap hidup tiap 15 detik. Jadi **agent hidup,
+socket hidup, tapi unduhan HTTP mandek** — gejalanya "update tidak pernah
+selesai" padahal service-nya sehat.
+
+Batas waktu unduh `TimeoutUnduhDetik` adalah 15 menit, jadi pipeline mandek
+akan berhenti sendiri dan masuk cooldown 1 jam. Kalau PC tidak punya
+auto-update manual, operator melihat progres 5% yang tidak bergerak dan
+tidak ada penjelasan.
 
 ### Bug lama yang ditemukan dan BELUM diperbaiki
 
