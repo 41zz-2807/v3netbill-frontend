@@ -1586,7 +1586,7 @@ verify MSI: isi file, SERVER_URL, ProductVersion, RustDesk ada, versi > server
 ```
 
 Lalu `sinkron-agent-msi` di host menariknya tiap 20 menit dan mengunggah ke
-`http://127.0.0.1:3000`. Detail: bagian "Sinkronisasi MSI Agent".
+`http://127.0.0.1:3000`. Detail: bagian "Sinkronisasi MSI Agent" di `/home/warnet/AGENTS.md`.
 
 ⚠️ **Ukuran MSI sekarang ~89 MB** (RustDesk 24 MB ikut di dalamnya), jadi unduhan
 artifact bisa memakan 16 menit sementara cronnya tiap 20 menit. Karena itu
