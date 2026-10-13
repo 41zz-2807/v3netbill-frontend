@@ -3743,7 +3743,7 @@ UUID `testeer`: `c039a9ad-c419-4553-aee3-955e6e537a8d`.
 3. **Halaman PC menjadi kartu di bawah `lg` masih belum dikerjakan** — lihat
    bagian "Bug lama" di bawah.
 
-### ⚠️ Lima bug yang ditemukan lewat UJI, bukan lewat baca kode
+### ⚠️ Enam bug yang ditemukan lewat UJI, bukan lewat baca kode
 
 Dicatat karena keempatnya lolos `dotnet build` dan `nest build`, dan tiga
 diantaranya baru ketahuan saat update benar-benar dijalankan di PC uji.
@@ -3769,6 +3769,23 @@ diantaranya baru ketahuan saat update benar-benar dijalankan di PC uji.
    agent restart 18:56:21, overlay terakhir start 18:20:29 — tertinggal dua
    rilis, jadi fix overlay tidak pernah aktif. Sekarang watchdog membandingkan
    versi overlay yang berjalan dengan versi agent dan mengganti beda versi.
+6. 🔴 **Perbaikan untuk bug 5 justru membuat bug baru yang lebih parah.**
+   Versi pertama membandingkan `MainModule.FileVersion` proses overlay dengan
+   `AgentVersion` di registry. Kedua csproj tidak menyetel `<Version>`, jadi
+   assembly version selalu `1.0.0.0` sementara registry berisi angka dari
+   `[ProductVersion]` MSI (`1.0.34.0`). **Keduanya tidak pernah sama**, jadi
+   watchdog membunuh dan meluncurkan overlay **setiap 5 detik selamanya** —
+   log penuh baris berulang, PC kedip-kedip, dan tidak bisa dipakai sama
+   sekali. Dua pelajaran dari sini:
+
+   - **Jangan membandingkan versi dari dua sumber bernomor berbeda.**
+     Registry pakai `ProductVersion` (naik tiap rilis), assembly pakai
+     `<Version>` (default `1.0.0.0`). Itu dua skala, bukan dua tampilan.
+     Yang benar: bandingkan proses dengan **berkas di disk**, karena
+     keduanya dari sumber yang sama.
+   - **Penjaga berkala setiap 5 detik memperbesar setiap kesalahan jadi loop
+     tak berujung.** Satu perbandingan salah yang terlihat tak berguna di
+     watchdog 6 jam akan tampak sebagai PC rusak di watchdog 5 detik.
 
 ### ⚠️ Kecepatan unduh lewat Cloudflare tidak stabil (13 Okt)
 
