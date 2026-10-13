@@ -21,7 +21,6 @@ export default function TabAgent({
   ncFolderAwal,
   ncPasswordTerisi,
   preventSleepAwal,
-  autoUpdateAwal,
 }: {
   ctx: SettingsCtx
   otpChatIdAwal: string
@@ -31,7 +30,6 @@ export default function TabAgent({
   ncFolderAwal: string
   ncPasswordTerisi: boolean
   preventSleepAwal: boolean
-  autoUpdateAwal: boolean
 }) {
   const { busy, run, setErr } = ctx
 
@@ -116,8 +114,6 @@ export default function TabAgent({
   const [ncTerisi, setNcTerisi] = useState(ncPasswordTerisi)
   const [ncMsg, setNcMsg] = useState<string | null>(null)
   const [preventSleep, setPreventSleep] = useState(preventSleepAwal)
-  const [autoUpdate, setAutoUpdate] = useState(autoUpdateAwal)
-  const [autoUpdateMsg, setAutoUpdateMsg] = useState<string | null>(null)
 
   async function simpanPreventSleep(aktif: boolean): Promise<void> {
     await run('power', async () => {
@@ -131,23 +127,6 @@ export default function TabAgent({
     })
   }
 
-  async function simpanAutoUpdate(aktif: boolean): Promise<void> {
-    await run('autoUpdate', async () => {
-      try {
-        setErr(null)
-        setAutoUpdateMsg(null)
-        await patchSetting('agent_auto_update', aktif ? 'true' : 'false')
-        setAutoUpdate(aktif)
-        setAutoUpdateMsg(
-          aktif
-            ? 'Pembaruan otomatis dinyalakan. Agent akan cek dalam waktu 6 jam, dan langsung dapat pesan ini.'
-            : 'Pembaruan otomatis dimatikan. Agent tetap pada versi sekarang.',
-        )
-      } catch (e) {
-        setErr(e instanceof Error ? e.message : String(e))
-      }
-    })
-  }
 
   async function submitPin() {
     await run('pin', async () => {
@@ -636,34 +615,6 @@ export default function TabAgent({
         </label>
       </SettingsCard>
 
-      <SettingsCard
-        title="Pembaruan Otomatis"
-        description="Agent memasang versi MSI terbaru sendiri. Aman: tidak akan pernah diperbarui di tengah sesi pelanggan."
-      >
-        <label className="flex cursor-pointer items-start gap-3">
-          <input
-            type="checkbox"
-            checked={autoUpdate}
-            onChange={(e) => void simpanAutoUpdate(e.target.checked)}
-            disabled={busy !== null}
-            className="mt-0.5 h-4 w-4 rounded border-slate-300"
-          />
-          <span className="text-sm text-slate-700">
-            Update agent otomatis
-            <span className="block text-xs text-slate-500">
-              {autoUpdate
-                ? 'Aktif: setiap 6 jam agent cek versi. Kalau ada versi baru, ia unduh (hash diverifikasi), lalu pasang hanya saat PC tidak ada sesi berjalan.'
-                : 'Nonaktif (default): agent tidak akan memasang apa pun. Update tetap manual lewat tab Instalasi.'}
-            </span>
-          </span>
-        </label>
-
-        <p className="mt-3 text-xs text-slate-500">
-          Windows agent ≥ 1.0.26.0 dibutuhkan — versi di bawah itu tidak punya
-          fitur ini. Hash berkas selalu dicocokkan dengan server sebelum dipasang.
-        </p>
-        {autoUpdateMsg && <div className="mt-2 text-sm text-green-700">{autoUpdateMsg}</div>}
-      </SettingsCard>
     </div>
   )
 }

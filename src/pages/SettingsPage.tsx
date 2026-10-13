@@ -44,7 +44,6 @@ export default function SettingsPage() {
   const [ncFolder, setNcFolder] = useState('log-pc-warnet')
   const [ncPasswordTerisi, setNcPasswordTerisi] = useState(false)
   const [preventSleep, setPreventSleep] = useState(true)
-  const [autoUpdate, setAutoUpdate] = useState(false)
   const [installed, setInstalled] = useState<InstallerMeta | null>(null)
   const [apk, setApk] = useState<InstallerMeta | null>(null)
   const [wallFname, setWallFname] = useState<string | null>(null)
@@ -71,10 +70,6 @@ export default function SettingsPage() {
         setNcFolder(s.nextcloud_folder || 'log-pc-warnet')
         setNcPasswordTerisi(Boolean(s.nextcloud_password))
         setPreventSleep(s.agent_prevent_sleep !== 'false')
-        // ⚠️ Default FALSE, dan itu sengaja. Agent yang sudah terpasang sebelum
-        // versi 1.0.26.0 tidak punya kode update, dan yang sudah terpasang pun
-        // tidak boleh bergerak sampai operator sengaja menyalakan.
-        setAutoUpdate(s.agent_auto_update === 'true')
       setInstalled(parseMeta<InstallerMeta>(s.installer_meta))
       setApk(parseMeta<InstallerMeta>(s.apk_meta))
       setWallFname(s.wallpaper_lockscreen_path ?? null)
@@ -179,7 +174,6 @@ export default function SettingsPage() {
           ncFolderAwal={ncFolder}
           ncPasswordTerisi={ncPasswordTerisi}
           preventSleepAwal={preventSleep}
-          autoUpdateAwal={autoUpdate}
         />
       )}
       {tab === 'instalasi' && (
