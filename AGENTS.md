@@ -418,6 +418,8 @@ tanpa JWT sama sekali.
 | GET | `/api/log-billing` | ADMIN |
 | GET | `/api/log-billing/:tanggal?cari=` | ADMIN |
 | GET | `/api/log-billing/:tanggal/unduh` | ADMIN |
+| POST | `/api/settings/agent/cek-pembaruan` | **PUBLIC** |
+| POST | `/api/settings/agent/unduh-installer` | **PUBLIC** |
 | POST | `/api/diagnosa` | **PUBLIC** |
 | GET | `/api/diagnosa` | ADMIN |
 | GET | `/api/diagnosa/:nama` | ADMIN |
@@ -1194,6 +1196,7 @@ Dikirim server → klien:
 | `agent:otp_config` | agent | `{ botToken, chatId }` — dorongan saat register & saat admin simpan |
 | `agent:bypass_config` | agent | `{ hash }` — hash bcrypt PIN bypass |
 | `agent:power_config` | agent | `{ preventSleep }` — dorongan saat register & saat admin ubah sakelar; default `true` |
+| `agent:auto_update_config` | agent | `{ aktif }` — dorongan saat register & saat admin ubah sakelar; default `false` |
 | `dashboard:pc_update` | room `dashboard` | `{ pcs: [...] }` — array detail PC + sesi aktif + sisa detik |
 | `dashboard:log` | room `dashboard` | jejak aktivitas |
 
@@ -1560,9 +1563,9 @@ tidak bisa dilakukan di Linux ditandai jelas.
 | `SERVER_URL` | GitHub Actions **variable** (bukan secret) |_repo_ Settings → Secrets and variables → Actions → Variables |
 | Gambar banner | `Installer/Bitmaps/Banner.bmp` | 493×58, 24-bit BMP |
 
-Versi MSI terakhir yang **sampai ke server**: `1.0.25.0` (12 Okt 2026:
-clear field login + sakelar daya PC). Kalau kamu mulai dari sini, naikkan
-ke `1.0.26.0` — **bukan** `1.0.25.0`, karena guard versi akan menolak MSI
+Versi MSI terakhir yang **sampai ke server**: `1.0.26.0` (13 Okt 2026:
+pembaruan otomatis agent). Kalau kamu mulai dari sini, naikkan ke
+`1.0.27.0` — **bukan** `1.0.26.0`, karena guard versi akan menolak MSI
 yang versinya sama dengan yang sudah terpasang.
 
 #### 1. Build penuh di CI (jalur yang benar)
@@ -3524,6 +3527,147 @@ sha256 `f452b3d4622dbf8458f2a2e15a03ecacb30b2bafcf5af7d26f54510ecee3d0d7`.
 ⚠️ Unggah APK/MSI ke backend **wajib lewat `localhost:3000`** dan memakai
 akun `opencode` (lihat bagian kredensial di atas). Lewat domain, Cloudflare
 memotong di ~18 MB dan berkas 55 MB selalu gagal.
+
+## 🔄 Pembaruan otomatis agent (self-update) — 13 Okt 2026 ✅
+
+Versi MSI `1.0.26.0`. Tujuannya: **fix berikutnya tidak perlu install MSI ke
+tiap PC satu per satu.**
+
+### ⚠️ Empat lapis yang semuanya HARUS benar sebelum satu `msiexec` jalan
+
+| Lapis | Kenapa | Kalau dilewati |
+|---|---|---|
+| Kode update ada di agent | Hanya versi ≥ `1.0.26.0` | PC lama diam, tidak_error |
+| `agent_auto_update` = `"true"` | Default `"false"` | Fitur mati diam-diam |
+| Versi server lebih baru | Perbandingan **numerik** | Upgrade terlewat |
+| PC kosong & hash cocok | Sesi/maintenance/locked | **Rugi uang** |
+
+Lapis terakhir yang paling berbahaya. `msiexec` menghentikan service, jadi
+sesi pelanggan yang sedang berjalan ikut berhenti ditagih — dan itu berarti
+pelanggan bisa main lebih lama dari yang dibayar.
+
+### Server TIDAK boleh memerintahkan install
+
+Ini batas yang sengaja dan tidak boleh dibalik:
+
+```
+Server  -> "sakelarnya nyala, ada MSI versi 1.0.27.0"
+Agent   -> memutuskan sendiri:(hash lokal vs hash server) + (PC kosong?)
+```
+
+Hanya PC ini yang tahu versinya, tahu sedang ada sesi, dan tahu teknisi
+sedang memperbaiki. Kalau keputusan install ada di server, satu MSI rusak
+bisa menjatuhkan billing di semua PC sekaligus.
+
+### Empat penjaga di `AutoUpdater.Putuskan()`
+
+Semua diuji di `.verify/AutoUpdaterTest/` (net8.0, jalan di Linux):
+
+| Penjaga | Mutasi removing | Hasil |
+|---|---|---|
+| `adaSesiBerjalan` | `if (false)` | 2 tes gagal |
+| `pcTerkunci` | `if (false)` | 2 tes gagal |
+| `maintenance` | — | ikut ter-cover |
+| Versi tidak terbaca | — | `VersiTidakSah`, **bukan** menebak |
+
+### 🔴 Perbandingan versi WAJIB numerik, bukan string
+
+```csharp
+// ❌ SALAH: "1.0.10.0" < "1.0.9.0" secara leksikografis
+string.CompareOrdinal(sa, sb);
+
+// ✅ BENAR: bandingkan per bagian
+for (var i = 0; i < 4; i++)
+    if (a[i] != b[i]) return a[i].CompareTo(b[i]);
+```
+
+Mutasi ke `string.CompareOrdinal` → **4 tes gagal**. Gejalanya di produksi
+adalah upgrade yang diam-diam tidak pernah terjadi: aplikasi terlihat
+"udah terbaru" padahal ada patch.
+
+### 🔴 SHA-256 wajib, dan server yang tidak mengirim hash DITOLAK
+
+```csharp
+if (string.IsNullOrWhiteSpace(info.Sha256)) {
+    HapusBerkas(berkas);
+    CatatGagalUpdate("server tidak mengirim sha256");
+    return;   // ← jangan pernah fallen through ke msiexec
+}
+```
+
+89 MB dari jaringan tanpa hash berarti tidak ada dasar apa pun untuk
+mempercayainya.
+
+### 🔴 Kondisi PC dibaca DUA KALI
+
+Unduhan 89 MB bisa memakan puluhan detik, dan dalam selang itu pelanggan
+bisa login. Jadi `BolehUpdate()` dipanggil:
+
+1. **sebelum** unduhan — biar tidak socializing bandwidth buat-update
+2. **tepat sebelum** `msiexec` — ini yang benar-benar melindungi sesi yang baru mulai
+
+Kalau hanya dibaca sekali di awal, installer jalan di atas sesi yang sedang
+dibayar.
+
+### ⚠️ Jeda retry HARUS di registry, bukan memory
+
+```csharp
+// registry: HKLM\Software\v3Netbill\Agent\AutoUpdateLastAttempt
+```
+
+Gagal update **berarti service di-restart MSI**. Kalau jeda hanya di field
+memory, PC yang baru nyala langsung mencoba lagi tanpa jeda — berulang
+setiap restart. Itu persis yang membuat MSI rusak terasa seperti "PC nyala
+sendiri terus".
+
+### `_autoUpdateLock` (SemaphoreSlim) wajib ada
+
+Timer 6 jam dan event `agent:auto_update_config` bisa masuk bersamaan.
+Tanpa lock, dua `msiexec` berjalan untuk satu MSI yang sama → hasil paling
+mungkin: instalasi gagal setengah jalan dan PC tidak bisa billing.
+
+### Endpoint agent (tanpa JWT)
+
+| Method | Path | Auth |
+|---|---|---|
+| POST | `/api/settings/agent/cek-pembaruan` | `pcId` + `agentToken` |
+| POST | `/api/settings/agent/unduh-installer` | `pcId` + `agentToken` |
+
+⚠️ **Token asing harus dibalas `401`, bukan "tidak ada pembaruan".** Kalau
+balasannya sama untuk token sah dan token asing, penyerang bisa memetakan
+token mana yang berlaku hanya dengan mengamati bedanya — dan `agentToken`
+cukup untuk `client:create_password` + `client:stop_session`.
+
+Nilai setting yang **ambigu** (`yes`, `1`, `on`) ditolak; hanya `"true"`
+(huruf besar-kecil bebas) yang dianggap nyala. Test: `test/auto-update-agen.spec.ts`
+(13 kasus). Mutasi validasi token dihapus → tepat 3 tes gagal.
+
+### Urutan rollout (sudah dilakukan)
+
+```
+1. push backend 31d3d02  -> endpoint + key, default false
+2. push frontend 30d6dd8 -> sakelar, default OFF
+3. push agent b0700c1     -> MSI 1.0.26.0, CI sukses
+4. sinkron MSI otomatis   -> 1.0.26.0 di server
+5. ❌ JANGAN nyalakan setting selama 1.0.26.0 belum ter-install manual
+6. operator install 1.0.26.0 ke tiap PC (satu kali)
+7. baru nyalakan sakelar -> update berikutnya otomatis
+```
+
+⚠️ **Langkah 5 wajib ditahan.** PC yang masih `1.0.24.0`/`1.0.25.0` tidak
+punya kodenya, jadi tidak akan pernah self-update — dan itu memang yang
+diinginkan sampai operator selesai meng-install manual.
+
+### Cara menguji tanpa PC Windows
+
+```bash
+docker run --rm -v "$PWD:/w" -w /w/.verify/AutoUpdaterTest \
+  mcr.microsoft.com/dotnet/sdk:8.0 dotnet run --project AutoUpdaterTest.csproj
+```
+
+`Agent.Core` menyasar **net8.0** (bukan `net8.0-windows`) justru supaya
+semua keputusan ini bisa diuji dari Linux. Kasus "update di tengah sesi"
+tidak boleh diuji di PC sungguhan — sekali salah, penagihan terputus.
 
 ## Pelajaran proses (penting untuk sesi berikutnya)
 
