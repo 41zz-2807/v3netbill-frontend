@@ -3679,8 +3679,9 @@ sampai mana**, dan itu yang hilang kalau hanya membaca desain.
 | 1 | Flag per-PC, endpoint, penjaga | ✅ **selesai** | backend `32ef2b8`, `a16c0ab`, `dc43667` |
 | 2 | Multi-select + dialog + polling | ✅ **selesai** | frontend `1e40b90`, `f082b62` |
 | 3 | ForceReboot, timer, registry, batas 2x, progres | ✅ **selesai** | agent `762928f` |
-| 4 | **Overlay**: peringatan, timeline, tombol batal, countdown | ⬜ **belum** | — |
-| 5 | MSI `1.0.27.0` + uji end-to-end | ⬜ **belum** | — |
+| 4 | **Overlay**: peringatan, timeline, tombol batal | ✅ **selesai** | agent `0acc381`, backend `e6c28e1` |
+| 5 | MSI `1.0.27.0` **sudah di server** | 🟡 **sebagian** | backend `03353a2` |
+| 5b | Uji end-to-end di `testeer` | ⬜ **menunggu operator** | — |
 
 **Test**: backend 232 lulus · `AutoUpdaterTest` 21 kasus · 0 error di Agent.Core dan
 Agent.Service.
@@ -3694,9 +3695,27 @@ PC001..PC007  autoUpdate=f  versiAgent=1.0.24.0
 testeer       autoUpdate=f  versiAgent=1.0.26.0
 ```
 
+MSI `1.0.27.0` sudah ada di server (sha256 `5e5f06c8…`, 88.965.041 byte,
+`SERVER_URL` terisi domain produksi — sudah diverifikasi dari isi MSI, bukan
+dari status CI).
+
+🔴 **Tahap 5b butuh tindakan fisik di PC `testeer`**, jadi sampai itu belum
+selesai. Urutannya penting:
+
+```
+1. pasang MSI 1.0.27.0 di testeer secara MANUAL lewat Pengaturan > Instalasi
+2. baru tandai testeer dari Halaman PC
+```
+
+⚠️ **Jangan tandai sebelum langkah 1.** Ambang minimal di backend sudah
+`1.0.27.0`, jadi server akan menolak — dan penolakan itu benar. Alasannya
+`1.0.26.0` memahami event config tapi **tidak punya `ForceReboot`**: msiexec
+selesai tanpa restart, versi tidak naik, flag tidak pernah lepas, PC menolak
+sesi dan tidak akan pernah update lagi. Ambang `1.0.26.0` yang lama justru
+mengizinkan jebakan itu — sudah dinaikkan di `03353a2`.
+
 `testeer` pernah diberi flag **sementara** untuk menguji polling, lalu
-dikembalikan `false`. Itu satu-satunya PC yang boleh disentuh, dan hanya
-sampai Tahap 5.
+dikembalikan `false`. Itu satu-satunya PC yang boleh disentuh.
 
 ### ⚠️ Yang diketahui belum jadi (bukan sekadar belum dikerjakan)
 
