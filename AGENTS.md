@@ -3683,7 +3683,7 @@ sampai mana**, dan itu yang hilang kalau hanya membaca desain.
 | 5 | MSI naik ke server otomatis | ✅ **selesai** | CI + `sinkron-agent-msi` |
 | 5b | Uji end-to-end di `testeer` | ✅ **selesai** | 5 siklus penuh lolos |
 
-Versi agent yang sudah dibuktikan jalan di `testeer`: **1.0.33.0**.
+Versi agent yang sudah dibuktikan jalan di `testeer`: **1.0.34.0**.
 MSI terbaru di server: **1.0.34.0** (memperbaiki overlay tertinggal versi).
 
 **Test**: backend 240 lulus · `AutoUpdaterTest` 27 kasus · 0 error di Agent.Core,
@@ -3695,8 +3695,7 @@ Semua 8 PC terverifikasi `Pc.autoUpdate = false`:
 
 ```
 PC001..PC007  autoUpdate=f  versiAgent=1.0.24.0   ← production, jangan disentuh
-testeer       autoUpdate=f  versiAgent=1.0.33.0   ← PC uji, satu-satunya yang boleh
-                                                 (sedang diuji ke 1.0.34.0)
+testeer       autoUpdate=f  versiAgent=1.0.34.0   ← PC uji, satu-satunya yang boleh
 ```
 
 MSI `1.0.34.0` sudah ada di server (88.969.137 byte, `SERVER_URL` terisi domain
@@ -3717,7 +3716,17 @@ tidak pernah lepas, dan PC terkunci selamanya (dinaikkan di `03353a2`).
 1.0.28.0 → 1.0.29.0   + registry persistence terbukti (reboot)
 1.0.29.0 → 1.0.32.0   + "diam" report + timer pengingat 1 jam
 1.0.32.0 → 1.0.33.0   + overlay card menutupi form login (dikonfirmasi operator)
-1.0.33.0 → 1.0.34.0   + overlay versi lama diganti watchdog (sedang diuji)
+1.0.33.0 → 1.0.34.0   + overlay versi lama diganti watchdog (terbukti live)
+
+Bukti siklus kelima dari log agent -- overlay versi lama terdeteksi dan
+diganti dalam 5 detik, tanpa reboot penuh:
+
+```
+22:02:44  Launch overlay OK pid=7632      ← overlay LAMA (1.0.33.0)
+22:02:49  Watchdog: overlay versi lama dibunuh -- akan diluncurkan ulang
+22:02:54  Launch overlay OK pid=2748      ← overlay BARU (1.0.34.0)
+22:02:55  OVERLAY TERHUBUNG
+```
 ```
 
 UUID `testeer`: `c039a9ad-c419-4553-aee3-955e6e537a8d`.
