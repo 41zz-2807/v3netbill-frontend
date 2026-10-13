@@ -3669,6 +3669,23 @@ menghilangkan risiko. **PC uji wajib.** Dari 8 PC di warnet ini, `testeer`
 yang dipakai — PC itu tidak punya pelanggan, dan PC006/PC007 justru sedang
 ada sesi berjalan.
 
+### 🔴 WAJIB: setiap CI agent sukses, jalankan sinkronisasi MSI
+
+```
+CI build-agent.yml sukses  ->  cd /home/warnet/docker/v3netbill
+                           ->  ./sinkron-agent-msi
+                           ->  verifikasi GET /api/settings/installer/info
+```
+
+⚠️ **"Hijau di GitHub" TIDAK berarti MSI sudah sampai ke server.** Upload dari
+runner GitHub dimatikan, jadi yang menarik artifact adalah cron di host —
+tapi cron baru jalan tiap 20 menit dan unduhan 89 MB bisa memakan belasan
+menit. Tanpa perintah manual, uji bisa menunggu lebih dari satu jam.
+
+⚠️ **Verifikasi dari `installer/info`, bukan dari log CI.** Yang menentukan
+adalah `versionName` dan `sha256` yang dilaporkan server. Unduh ulang lalu
+cocokkan `sha256` kalau ragu — ukuran berkas tetap sama antar build.
+
 ### 📍 STATUS PER TAHAP (13 Okt 2026) — baca ini duluan
 
 ⚠️ Bagian di atas menjelaskan **desainnya**. Bagian ini menjelaskan **sudah
