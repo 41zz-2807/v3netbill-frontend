@@ -2,6 +2,76 @@
 
 Panduan untuk AI agent (opencode) mengerjakan project ini. Baca penuh sebelum mulai.
 
+---
+
+# 🔴🔴 BACA INI DULU — JANGAN EDIT `backend/src/` SELAGI ADA KLIEN
+
+> **Folder ini adalah server produksi yang SEDANG DIPAKAI. Ada PC kasir yang
+>berpembayaran.**
+
+## ⛔ Aturan #0 — mengedit `backend/src/` memutus semua PC kasir
+
+Backend produksi berjalan dengan **watch mode**. Jadi:
+
+```
+menyimpan 1 berkas .ts  ->  NestJS recompile  ->  SELURUH PROSES MATI
+                        ->  semua WebSocket terputus  ->  SETIAP PC kasir
+                            kehilangan koneksi  ->  pelanggan melihat
+                            "SERVER TERPUTUS" merah
+```
+
+**Yang sudah terbukti terjadi (14 Okt 2026):** membuat satu modul backend
+menghasilkan **6 restart dalam 37 detik**. Empat PC terputus, dan **3 sesi
+pelanggan yang sedang berjalan** ikut berfluktuatif. Uangnya tidak hilang
+(semua detik dikembalikan), tapi pelanggan sempat dikick dari PC-nya.
+
+### Kalau memang HARUS mengedit backend
+
+1. **Cek dulu apakah ada yang sedang pakai:**
+   ```bash
+   docker exec postgres-15 psql -U billing_user -d v3netbill -c \
+     "SELECT p.\"namaPc\", a.\"nama\" FROM \"Session\" s
+       JOIN \"Pc\" p ON p.id=s.\"pcId\" JOIN \"Account\" a ON a.id=s.\"accountId\"
+      WHERE s.status='BERJALAN';"
+   ```
+   Kalau ada hasilnya, **tanya user dulu** — jangan mengedit.
+2. **Gabung semua perubahan backend jadi SEKALI.** Lima berkas yang disimpan
+   berurutan = lima restart, bukan satu. Batching menaikkan peluang ada
+   sesi terpengaruh.
+3. **Sampaikan ke user sebelum menyimpan.** Katakan berapa restart yang
+   akan terjadi dan PC mana yang tersambung.
+4. **Setelah menyimpan, cek log** dan pastikan jumlah restart sesuai
+   harapan:
+   ```bash
+   docker compose logs --since 5m v3netbill-backend | grep -c "File change detected"
+   ```
+
+### Yang TIDAK memutus koneksi
+
+| Pekerjaan | Memutus PC? |
+|---|---|
+| Edit **frontend** (`frontend/src/`) | **Tidak** &mdash; hanya rebuild bundle, tidak menyentuh backend |
+| Edit `backend/prisma/schema.prisma` | **Tidak** &mdash; belum ada yang menjalankan migrate |
+| Membaca berkas apa pun | **Tidak** |
+| `docker compose exec ... npm test` | **Tidak** |
+| Edit `backend/src/**.ts` | ⚠️ **Ya &mdash; satu restart per berkas** |
+| `touch backend/src/app.module.ts` | ⚠️ **Ya &mdash; sengaja memicu restart** |
+| `docker compose restart v3netbill-backend` | ⚠️ **Ya &mdash; seluruh PC terputus** |
+
+### Kenapa menulis "restart" tidak selalu merusak tagihan
+
+Waktu sesi dihitung ulang dari `Session.waktuMulai` + saldo di database saat
+restart, dan `recoverRunningSessions()` menyalakan ulang tick-nya. Jadi
+**tidak ada detik yang hilang dan tidak ada saldo yang berkurang berlebihan.**
+Sesi pelanggan selamat secara finansial.
+
+Yang rusak adalah **pengalaman pelanggan**: hitung mundur di layarnya
+membeku, label merah `SERVER TERPUTUS` muncul, dan kalau disconnect-nya
+jatuh tempo (sebelum grace period habis) mereka benar-benar dikeluarkan dari
+PC. Detail mekanisme grace period: bagian "Masa tenggang" di bawah.
+
+---
+
 ## Dokumen mana yang dibaca
 
 | Dokumen | Isi | Status |
@@ -63,6 +133,14 @@ pakai `docker compose` yang sudah ada dan build di dalam container.
 
 ## Aturan mutlak (harus selalu dipatuhi)
 
+0. 🔴 **JANGAN mengedit `backend/src/**/*.ts` saat ada PC kasir yang sedang
+   memakai sistem.** Backend produksi berjalan dengan watch mode, jadi satu
+   berkas yang disimpan = satu restart penuh = semua WebSocket terputus =
+   semua PC kasir kehilangan koneksi dan pelanggan melihat "SERVER TERPUTUS".
+   Before mengedit: cek sesi berjalan (perintah ada di kotak merah paling atas
+   dokumen ini), **tanya user dulu kalau ada**, gabungkan semua perubahan jadi
+   satu kali, dan cek jumlah restart di log sesudahnya. Edit **frontend**,
+   `schema.prisma`, dan `test/` **tidak** memutus koneksi.
 1. 🔴 **JANGAN PERNAH menghapus, memindahkan, atau men-trash apa pun di bawah
    `/home/warnet/docker/`.** Folder itu isi seluruh server produksi: source, `.env`,
    `ds.msi`, `data/`, dan project lain (`monitoring`, `nextcloud`, `yearly-book`,
@@ -176,6 +254,7 @@ Logika bisnis yang sudah berjalan:
 - Nominal voucher/member harus kelipatan 500; sisa waktu = floor((nominal/harga_per_menit)*60) detik.
 - Session: server yang jadi sumber kebenaran waktu (tick interval 1dtk di SessionService),
   grace period disconnect = `Setting.grace_period_detik` (default 180dtk), auto-stop `disconnect_timeout`.
+  ✅ **Grace period sekarang benar-benar bekerja** — lihat bagian "🔴 Masa tenggang disconnect".
 - Saat session stop dengan alasan `habis` → `Account.sisaWaktuDetik` di-reset ke 0 (voucher tidak bisa
   dipakai ulang). Alasan lain (`manual`/`disconnect_timeout`) → refund sisa waktu.
 - WebSocket events (`/session`): `agent:register`, `agent:heartbeat`, `client:login_request`
@@ -1093,6 +1172,59 @@ Tes: `test/recovery-sesi.spec.ts` (6). Sebelumnya **nol** tes menyentuh recovery
 jalan terhadap mock `[]`, tanpa satu pun assertion. Kalau
 `recoverRunningSessions()` dihapus, semua tes lama tetap hijau. Mutasi sudah
 dibuktikan: 4 dari 6 tes gagal tepat di try/catch yang dihapus.
+
+### 🔴 Masa tenggang disconnect — dulu TIDAK PERNAH BEKERJA (14 Okt 2026)
+
+Dilaporkan pagi 14 Okt: akun `musaf` di PC007 kehilangan sesi **dua kali**
+dengan alasan `disconnect_timeout`, padahal jaringan hanya kedip sesaat.
+
+**Penyebabnya bukan jaringan.** `grace_period_detik` (bawaan 180 detik, ada di
+Pengaturan → Tarif) **tidak pernah berefek apa pun selama ini**. Dua bagian:
+
+```
+handleDisconnect()  ->  stopSession(id, 'disconnect_timeout')   <- LANGSUNG berhenti
+disconnectedAt     ->  TIDAK PERNAH ditulis di seluruh kode
+checkGracePeriodExpired() -> menebak baris yang tidak pernah ada
+```
+
+Kolom `disconnectedAt` hanya dibaca dan di-set `null`. Tidak ada satu baris pun
+yang mengisi timestamp-nya — jadi pemeriksa masa tenggang tidak pernah punya
+baris untuk diperiksa, dan setiap disconnect langsung membunuh sesi.
+
+**Akibatnya:** kedipan jaringan sedetik apa pun langsung mengeluarkan pelanggan
+dari PC-nya. Uangnya memang dikembalikan, tapi pelanggan harus login ulang dari
+awal, dan itu terasa seperti dikick. Terbukti di data: **6 disconnect melintasi
+PC007/PC006** (dan PC003 399x dalam 72 jam) &mdash; masing-masing jelas-jelas
+mematikan sesi yang sedang berjalan.
+
+**Perbaikannya dua bagian, keduanya wajib:**
+
+| Bagian | Isi |
+|---|---|
+| `handleDisconnect()` | Hanya menulis `disconnectedAt = now()`. **Tidak** lagi memanggil `stopSession()`. |
+| `registerPc()` | Menghapus `disconnectedAt` saat agent konek ulang — di sini, **bukan** menunggu heartbeat, karena heartbeat baru 15 detik lagi dan masa tenggang bisa sudah terlewati. |
+
+`checkGracePeriodExpired()` sendiri **sudah benar sejak awal** dan tidak diubah.
+Kode yang tidak perlu disentuh memang tidak disentuh.
+
+⚠️ **`disconnectedAt` TIDAK boleh ditulis ulang kalau sudah terisi.** Kalau
+ditulis ulang, setiap disconnect berikutnya menggeser ambang dan sesi bisa
+bertahan selamanya tepat saat seharusnya berakhir.
+
+⚠️ **Konsekuensi yang harus disadari:** selama masa tenggang, **waktu pelanggan
+tetap berjalan** (sesuai `sisaWaktuSekarang`). Kalau PC-nya benar-benar mati,
+pelanggan tetap ditagih selama masa tenggang. Itu tradeoff standar grace period
+&mdash; admin bisa memperpendeknya di Pengaturan → Tarif kalau perlu.
+
+Tes: `backend/test/grace-period.spec.ts` (7 kasus).
+**Mutasi sudah dibuktikan dua arah:**
+- `handleDisconnect()` dikembalikan jadi pemanggil `stopSession()` langsung &rarr; **2 tes gagal**
+- blok pembersihan `disconnectedAt` di `registerPc()` dihapus &rarr; **1 tes gagal**
+
+Verifikasi end-to-end di PC uji `testeer` (tanpa pelanggan): disconnect &rarr;
+sesi **tetap BERJALAN** dengan penanda terisi; reconnect &rarr; penanda dibersihkan;
+penanda dibuat lewat-lewat ambang &rarr; sesi berhenti dengan `disconnect_timeout`
+dan 527 detik dikembalikan dari 600.
 
 ### Hitung mundur di dashboard
 
