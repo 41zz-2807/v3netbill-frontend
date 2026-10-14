@@ -1,5 +1,10 @@
 import { useRef, useState } from 'react'
-import { downloadAuth, uploadInstaller, uploadWallpaper } from '../../lib/api.ts'
+import {
+  downloadAuth,
+  openDokumentasi,
+  uploadInstaller,
+  uploadWallpaper,
+} from '../../lib/api.ts'
 import type { InstallerMeta } from '../../lib/types.ts'
 import ProgressBar from '../../components/ui/ProgressBar.tsx'
 import { SettingsCard } from './SettingsCard'
@@ -81,6 +86,17 @@ export default function TabInstalasi({
         const res = await uploadWallpaper(file)
         await reload()
         setMsg(`Wallpaper terupload: ${res.path}`)
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e))
+      }
+    })
+  }
+
+  async function onDokumentasi() {
+    await run('dokumentasi', async () => {
+      try {
+        setErr(null)
+        await openDokumentasi()
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e))
       }
@@ -260,6 +276,32 @@ export default function TabInstalasi({
         >
           {busy === 'wallpaper' ? 'Mengunggah...' : 'Upload Wallpaper'}
         </button>
+      </SettingsCard>
+
+      {/* ⚠️ Dokumen ini memuat struktur database, daftar endpoint, dan prosedur
+          internal. Karena itu penyajiannya lewat `GET /api/dokumentasi` yang
+          wajib JWT + ADMIN — BUKAN berkas statis di `frontend/public`, karena
+          folder itu disajikan tanpa autentikasi. */}
+      <SettingsCard
+        title="Dokumentasi Update"
+        description="Dokumentasi teksis lengkap: frontend, backend, mobile, agent Windows, struktur database, semua tombol, dan troubleshooting. Dibuka di tab baru."
+      >
+        <ul className="mb-3 list-disc space-y-0.5 pl-4 text-xs text-slate-600">
+          <li>Stack, cara build, dan perintah tiap aplikasi</li>
+          <li>Struktur database: 12 tabel, kolom, enum, index</li>
+          <li>Fungsi setiap tombol di semua halaman</li>
+          <li>Troubleshooting sampai ke level query database</li>
+        </ul>
+        <div className="mt-auto">
+          <button
+            type="button"
+            onClick={() => void onDokumentasi()}
+            disabled={busy !== null}
+            className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
+          >
+            {busy === 'dokumentasi' ? 'Membuka...' : 'Buka Dokumentasi'}
+          </button>
+        </div>
       </SettingsCard>
     </div>
   )

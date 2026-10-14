@@ -495,6 +495,53 @@ export async function downloadAuth(
   onProgress?.({ loaded, total: loaded, percent: 100 })
 }
 
+/**
+ * Ambil halaman dokumentasi lalu buka di tab baru.
+ *
+ * ⚠️ Berbeda dengan `downloadAuth`: dokumen ini bukan berkas yang diunduh, tapi
+ * HTML yang harus dirender. Karena itu hasilnya/blob URL-nya dibuka lewat
+ * `window.open`, bukan `<a download>`.
+ *
+ * ⚠️ Token tetap dikirim lewat header `Authorization` — sama seperti
+ * `downloadAuth`. Menaruh token di query string akan menjawab 401.
+ *
+ * ⚠️ Blob URL sengaja TIDAK direvoke di sini. Halaman yang baru dibuka butuh
+ * URL itu terus-menerus selama dibaca; merevoke-nya di sini akan membuat
+ * dokumen berubah jadi "about:blank" di tengah dibaca.
+ */
+export async function openDokumentasi(): Promise<void> {
+  const token = store().getItem(TOKEN_KEY)
+  const res = await fetch('/api/dokumentasi', {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  })
+  if (!res.ok) {
+    if (res.status === 401) throw new Error('Sesi berakhir. Silakan login kembali.')
+    if (res.status === 403) throw new Error('Dokumentasi ini hanya untuk ADMIN.')
+    throw new Error(`Gagal membuka dokumentasi (${res.status})`)
+  }
+
+  const html = await res.text()
+  if (!html.trim()) throw new Error('Dokumentasi kosong di server.')
+
+  const url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }))
+  const tab = window.open(url, '_blank')
+  if (!tab) {
+    // Popup diblokir browser. Kasir tetap harus bisa sampai ke dokumennya.
+    URL.revokeObjectURL(url)
+    const a = document.createElement('a')
+    a.href = '/api/dokumentasi'
+    a.target = '_blank'
+    a.rel = 'noopener'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    throw new Error(
+      'Popup diblokir peramban. Membuka lewat tab baru tanpa login — silakan buka manual.',
+    )
+  }
+  tab.focus()
+}
+
 export function parseMeta<T>(raw?: string): T | null {
   if (!raw) return null
   try {
