@@ -3703,7 +3703,7 @@ sampai mana**, dan itu yang hilang kalau hanya membaca desain.
 Versi agent yang sudah dibuktikan jalan di `testeer`: **1.0.37.0**.
 MSI terbaru di server: **1.0.37.0** (memperbaiki overlay tertinggal versi + loop watchdog).
 
-**Test**: backend 240 lulus · `AutoUpdaterTest` 27 kasus · 0 error di Agent.Core,
+**Test**: backend 244 lulus · `AutoUpdaterTest` 27 kasus · 0 error di Agent.Core,
 Agent.Service, dan Agent.Overlay.
 
 ### 🔴 Status produksi saat ini — jangan diubah tanpa alasan
@@ -3834,6 +3834,18 @@ benar dan menolak melanjutkan sesuatu yang tidak akan selesai.
    `testeer` lewat dari auto-matikan 13 jam. Sekarang PC yang register
    menutup sesi teknisi menggantung, karena PC yang baru boot berarti tidak ada
    yang login.
+
+### 🔍 Panduan diagnosis: gejala yang menyesatkan
+
+Tiga keluhan yang pemetaannya **terbalik** dari penyebabnya. Dicatat supaya
+sesi berikutnya tidak menebak:
+
+| Keluhan | Penyebab sebenarnya |
+|---|---|
+| "PC tidak auto-matikan lagi" | `SesiTeknisi` menggantung — bukan fiturnya rusak. Pengaman 3b melewati PC itu selamanya. Cek `SELECT * FROM "SesiTeknisi" WHERE "selesaiAt" IS NULL` |
+| "PC saya kenapa, mati sendiri" | Sama seperti di atas TAPI sebaliknya: `checkAutoShutdown` memang mematikan PC idle. Cek `terakhirAktifAt` + `auto_shutdown_menit` |
+| "Kartu update nempel 100%, PC sudah bisa login" | Kartu overlay stale dari tahap `diam` — state server sudah bersih, yang salah tampilan. Fix 1.0.37.0 reboot segar |
+| "Overlay buka-tutup sendiri terus" | Versi 1.0.34.0 bukan terbaru. `VersiOverlayBerbedaDariAgent` membandingkan registry 1.0.34.0 vs assembly 1.0.0.0 yang tak pernah sama. Restart penuh / update ke 1.0.35.0 |
 
 ### Bug lama yang ditemukan dan BELUM diperbaiki
 
