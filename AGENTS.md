@@ -1226,6 +1226,76 @@ sesi **tetap BERJALAN** dengan penanda terisi; reconnect &rarr; penanda dibersih
 penanda dibuat lewat-lewat ambang &rarr; sesi berhenti dengan `disconnect_timeout`
 dan 527 detik dikembalikan dari 600.
 
+### 🔴 Grace period SEHARUSNYA juga menahan status PC (14 Okt 2026, `22441e5`)
+
+Setelah masa tenggang di atas benar-benar bekerja, ada konsekuensi yang tidak
+dipikirkan: **sesinya sudah tetap hidup, tapi PC tetap tampil OFFLINE** selama
+ hampir tiga menit. Dua-duanya benar menurut definisinya, dan gejalanya justru
+lebih buruk daripada salah satunya:
+
+```
+sesi      -> masih BERJALAN, hitung mundur masih berjalan  (betul)
+status PC -> OFFLINE, kolom `status` = OFFLINE            (hanya cache)
+```
+
+Penyebabnya satu aturan lama di `statusPcDitampilkan()` yang justru saya tulis
+sendiri weeks sebelumnya, dengan alasan yang sekarang terbukti **salah**:
+
+> "Sesi tidak boleh mengalahkan heartbeat yang basi... kalau sesinya yang menang,
+> dashboard menampilkan hitung mundur yang tidak lagi bergerak berdampingan
+> dengan tombol Start."
+
+Alasan itu **berlaku hanya ketika grace period tidak bekerja** — waktu itu sesi
+memang sudah di-stop, jadi hitung mundurnya benar-benar tidak bergerak. Sekarang
+sesinya hidup, jadi argumennya tidak lagi berlaku.
+
+⚠️ Gejalanya persis yang dilaporkan: "PC tidak nyambung ke server, semua PC
+OFFLINE padahal masih jalan." Karena `checkPcOffline()` menulis `OFFLINE` ke
+kolom setiap 10 detik, **seluruh** PC terlihat mati begitu satu restart server.
+
+**Perbaikannya:** `statusPcDitampilkan()` menerima `Session` (bukan `boolean`)
+plus nilai masa tenggang, dan mengembalikan `ACTIVE` selama `disconnectedAt`
+belum melewati ambang.
+
+⚠️ **Tiga call site wajib ikut, dan hanya satu yang terlihat di UI web:**
+
+| Call site | Untuk siapa |
+|---|---|
+| `SessionService.getDashboardData()` | Dashboard web (WS) |
+| `PcService.findAll()` | Mobile `GET /api/pcs` |
+| `PcService.ringkas()` | Halaman login (publik) |
+
+Hanya yang pertama yang kelihatan saat kasir watching. Kalau hanya
+`getDashboardData()` yang diperbarui, tes visual di dashboard lulus sementara
+HP kasir masih menampilkan OFFLINE — persis pelajaran no. 7 (`GET /api/pcs`
+saja tidak cukup karena call site-nya berbeda).
+
+⚠️ **`disconnectedAt` harus ikut di `select`.** Dua dari tiga query hanya
+mengambil `pcId`, jadi kalau select tidak diperluas, `sesi.disconnectedAt`
+bernilai `undefined` dan masa tenggang tidak pernah aktif.
+
+⚠️ **Masa tenggang dibaca SEKALI per panggilan, bukan per PC.**
+`getDashboardData()` dipanggil tiap 10 detik dan tiap broadcast; satu query
+`Setting` per PC di dalamnya akan jadi beban.
+
+⚠️ **`!disconnectedAt`, bukan `disconnectedAt === null`.** Benda uji sebagian
+(`test/pc-rusak.spec.ts`) punya `undefined`, yang lolos perbandingan dengan
+`null` lalu membuat `.getTime()` dipanggil pada `undefined` → `TypeError`.
+Jebakan yang sama seperti `Map.get()` di `getDashboardData()`.
+
+Tes: `test/pc-status.spec.ts` **25 kasus** (dari 11). Suite penuh **264 lulus /
+21 berkas**. Mutasi menghapus cabang masa tenggang → tepat 2 kasus gagal.
+
+⚠️ **Belum terbukti lewat uji live.** `testeer` sedang ditandai `rusak`, jadi
+`client:login_request` ditolak `"PC sedang tidak dipakai (ditandai rusak)"`.
+Logikanya terbukti, jalur produksi belum. **Jangan dianggap selesai hanya
+karena dashboard terlihat benar saat kasir watching** — kalau belum ada
+disconnect saat itu, tesnya tidak membuktikan apa pun.
+
+⚠️ **Masa tenggang berlaku hanya kalau fiturnya tidak dimatikan.** Nilai `0`
+atau tidak valid berarti tidak ada yang ditahan, dan PC langsung kembali
+menampilkan OFFLINE begitu heartbeat basi — itu benar, bukan regresi.
+
 ### Hitung mundur di dashboard
 
 `DashboardPcInfo` menambah `matiDalamDetik: number | null`. `null` = PC tidak akan
@@ -3835,7 +3905,7 @@ sampai mana**, dan itu yang hilang kalau hanya membaca desain.
 Versi agent yang sudah dibuktikan jalan di `testeer`: **1.0.37.0**.
 MSI terbaru di server: **1.0.37.0** (memperbaiki overlay tertinggal versi + loop watchdog).
 
-**Test**: backend 244 lulus · `AutoUpdaterTest` 27 kasus · 0 error di Agent.Core,
+**Test**: backend 264 lulus · `AutoUpdaterTest` 27 kasus · 0 error di Agent.Core,
 Agent.Service, dan Agent.Overlay.
 
 ### 🔴 Status produksi saat ini — jangan diubah tanpa alasan
