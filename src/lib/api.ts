@@ -2,7 +2,6 @@ import axios from 'axios'
 import type {
   LoginResponse,
   Pc,
-  StatusPcRingkas,
   Account,
   Transaction,
   DailyReport,
@@ -48,7 +47,20 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (error) => {
-    if (error.response?.status === 401) {
+    // ⚠️ 401 pada endpoint login BUKAN sesi kedaluwarsa — itu password salah.
+    //
+    // Versi ini mengirim `window.location.href = '/login'` untuk SEMUA 401,
+    // termasuk 401 dari `POST /api/auth/login`. Akibatnya kasir yang salah
+    // ketik sandi tidak pernah melihat pesan "sandi salah": halamannya
+    // reload sendiri, kedua field terkosong, dan tidak ada penjelasan
+    // sama sekali. Terbukti lewat Playwright — `window.__penanda` hilang
+    // setelah klik, artinya dokumen benar-benar dimuat ulang.
+    //
+    // Sesi kedaluwarsa tetap ditangani: yang diproses hanya 401 dari request
+    // yang bukan percobaan login.
+    const url = (error.config?.url as string | undefined) ?? ''
+    const percobaanLogin = url.includes('/auth/login')
+    if (error.response?.status === 401 && !percobaanLogin) {
       clearAuth()
       window.location.href = '/login'
     }
@@ -147,18 +159,6 @@ export async function setAutoUpdatePc(
   aktif: boolean,
 ): Promise<{ diminta: number; berhasil: number; ditolak: number; hasil: HasilAutoUpdate[] }> {
   const { data } = await api.patch('/pcs/auto-update', { ids, aktif })
-  return data
-}
-
-/**
- * Ringkasan PC untuk halaman login. Endpoint publik — tidak butuh token.
- *
- * ⚠️ Jangan pakai `fetchPcs()` di sini: yang itu mengembalikan `agentToken`,
- * dan halaman login tampil sebelum operator masuk. Endpoint `/pcs/ringkas`
- * hanya mengembalikan nama PC, status, tipe akun, dan sisa waktu.
- */
-export async function fetchStatusPcRingkas(): Promise<StatusPcRingkas[]> {
-  const { data } = await api.get<StatusPcRingkas[]>('/pcs/ringkas')
   return data
 }
 

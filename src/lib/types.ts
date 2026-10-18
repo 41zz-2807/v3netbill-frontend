@@ -80,21 +80,6 @@ export interface Pc {
   autoUpdateWaktu?: string | null
 }
 
-/**
- * Ringkasan PC untuk halaman login (endpoint publik `GET /pcs/ringkas`).
- *
- * ⚠️ Bentuk ini SENGAJA tidak memuat `id`, `agentToken`, `ipClient`, dan
- * identitas akun. Halaman login terlihat sebelum operator masuk, jadi isinya
- * harus cukup untuk menampilkan status tanpa membuka apa pun yang bisa dipakai
- * untuk masuk sistem.
- */
-export interface StatusPcRingkas {
-  namaPc: string
-  status: PcStatus
-  tipe: 'VOUCHER' | 'MEMBER' | null
-  sisaDetik: number | null
-}
-
 export interface DashboardSession {
   id: string
   accountId: string

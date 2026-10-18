@@ -964,13 +964,33 @@ export default function DashboardPage() {
                   // cuma untuk milih tombol: hitung mundur, sisa waktu, tipe
                   // akun, dan tombolnya.
                   //
-                  // Alasannya `sesi` saja tidak bisa dipercaya. Setelah agent
-                  // putus, session masih ada beberapa detik sementara status PC
-                  // sudah OFFLINE. Kalau hanya `sesi` yang dipakai, baris ini
-                  // menampilkan sisa waktu yang sudah tidak jalan berdampingan
-                  // dengan tombol Start — dan di aplikasi billing, angka yang
-                  // tidak lagi benar lebih buruk daripada tidak ditampilkan.
-                  const sedangBerjalan = sesi !== null && pc.status === 'ACTIVE'
+                  // ⚠️ Dua fakta yang berbeda sengaja dipisah di sini:
+                  //
+                  //   1. `sesi !== null`  -> ada tagihan yang SEDANG jalan
+                  //   2. `pc.status`      -> apakah agent PC bisa dihubungi
+                  //
+                  // Versi lama memakai `sesi !== null && pc.status === 'ACTIVE'`,
+                  // jadi_pc offline_ tapi masih punya sesi diperlakukan seperti
+                  // PC kosong: kolom waktu berganti ke hitung mundur auto-matikan,
+                  // dan tombol KUNCI berubah jadi MULAI — yang backend pasti
+                  // tolak dengan "PC sudah memiliki sesi berjalan". Kasir tidak
+                  // punya tombol apa pun untuk menghentikan tagihan yang
+                  // benar-benar terus berjalan.
+                  //
+                  // Keadaan itu bukan teori: setelah mati listrik total, `Session`
+                  // tetap `BERJALAN` di database sementara agent PC-nya masih
+                  // mati, jadi `disconnectedAt` kosong, masa tenggang tidak
+                  // pernah aktif, dan `statusPcDitampilkan()` mengembalikan
+                  // OFFLINE. Hitung mundurnya nyata jalan.
+                  //
+                  // Alasannya `|| pc.status === 'ACTIVE'` tetap dipertahankan:
+                  // status ACTIVE sempat muncul tanpa `session` sesaat setelah
+                  // sisi server berubah, dan di keadaan itu MULAI juga pasti
+                  // ditolak.
+                  //
+                  // Sama persis dengan `PcCard` di aplikasi Android
+                  // (`pc.hasSession || pc.status == active`).
+                  const sedangBerjalan = sesi !== null || pc.status === 'ACTIVE'
 
                   // Hitung mundur auto-matikan. Nilai mulainya datang dari
                   // server, lalu dikurangi lokal setiap detik — server hanya
