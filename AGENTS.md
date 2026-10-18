@@ -2913,64 +2913,85 @@ keytool -list -v -keystore android/app/v3netbill-release.jks -storepass "…"
 python3 -c "import zipfile;d=zipfile.ZipFile('app-release.apk').read('lib/arm64-v8a/libapp.so');print(b'/session' in d)"
 ```
 
-## Halaman login + daftar status PC (4 Okt) ✅
+## Halaman login — satu kartu saja (16 Okt 2026)
 
-Kartu login **satu kartu besar**: kiri = daftar PC, kanan = form login.
-Tepat sesuai mockup yang disetujui (concept 5 yang disederhanakan).
+Dulu layout 2 kolom: kiri daftar PC, kanan form login. **Daftar PC dihapus atas
+permintaan operator** — kasir sudah punya dashboard dan aplikasi HP untuk tahu PC
+mana yang terpakai, jadi di layar login cukup satu tugas: masuk.
 
 ```
-src/pages/LoginPage.tsx     layout 2 kolom, tombol lihat sandi, DaftarPc
-src/index.css                .login-container--pc, .login-split, .login-pc__*
-                             .login-form-side, .login-form-side__logo
-src/lib/api.ts               fetchStatusPcRingkas()  -> /pcs/ringkas
+src/pages/LoginPage.tsx   268 -> 190 baris. Kartu tunggal + logo + form
+src/index.css             1171 -> 954 baris (217 baris CSS mati dibuang)
+src/lib/api.ts            fetchStatusPcRingkas() DIHAPUS
+src/lib/types.ts          StatusPcRingkas DIHAPUS
 ```
 
-Data diambil lewat **REST polling 10 detik**, bukan WebSocket — `dashboard:subscribe`
-butuh JWT, sedangkan halaman login belum punya. `PcService.ringkas()` yang
-menghitung, jadi angka di layar login tidak mungkin berbeda dari dashboard.
-Gagal ambil status **tidak boleh** menghalangi login; errornya sengaja diamkan saja.
+⚠️ **Endpoint `/api/pcs/ringkas` di backend SENGAJA TIDAK ikut dihapus.** Menghapusnya
+perlu `migrate`/restart backend, dan endpoint itu aman (hanya mengembalikan
+`namaPc`/`status`/`tipe`/`sisaDetik`). Yang mati adalah pemanggilnya di frontend.
 
-**Indikator:** 🟢 hijau **berdenyut** = sedang dipakai · 🟡 kuning diam =
-tersedia · 🔴 merah diam = offline. Hanya hijau yang berdenyut supaya operator
-bisa membedakan "dipakai" dari sekadar "tersedia" dalam sekali lihat. Sudah ada
-`@media (prefers-reduced-motion: reduce)` untuk mematikan denyut.
+Dampaknya bagus: **halaman login tidak lagi memanggil API apa pun** selain
+`POST /api/auth/login`. Polling 10 detik yang tadinya berjalan walau tidak ada
+operator di halaman sudah hilang.
 
-⚠️ **Tinggi daftar PC TIDAK boleh menyesuaikan isi.** Kalau ikut tinggi, kartu
-ikut memanjang setiap kali jumlah PC bertambah — terukur: 7 PC = 429px, **14 PC =
-694px**. Jadi tingginya dikunci (`height: 274px`) + `overflow-y: auto`. Di bawah
-720px layout jadi satu kolom dengan form login **di atas** (`order: -1`), dan
-tinggi daftar diturunkan ke 168px.
+Selector yang dibuang dari `index.css` — semua cuma untuk daftar PC:
+`.login-container--pc`, `.login-split`, `.login-pc__*`, `@keyframes login-pc-denyut`,
+`.login-form-side`, `.login-form-side__logo`, dan seluruh blok
+`@media (max-width: 719px)` yang isinya cuma aturan daftar PC.
 
-### ⚠️ Logo v3Netbill menggantikan tulisan "LOGIN" (4 Okt)
+### ⚠️ Logo di tengah memakai `margin: 0 auto`, BUKAN `align-self` (16 Okt)
 
-Judul kolom form **bukan teks "Login"** - tapi logo. Alasannya kolom form kini
-sangat pendek (dua field + tombol), jadi judul teks cuma menambah tinggi dan
-ruang kosong di atas. Logo ada di dalam `.login-form-side__logo`, **bukan** lagi
-di kolom kiri seperti versi pertama.
+`.login-form-side__logo` yang lama memakai `align-self: center` karena induknya
+kolom flex. Sekarang `.login-container` blok biasa, jadi `align-self` **tidak
+berlaku** dan logo akan diam di kiri. Diganti `margin: 0 auto`.
 
-Atribut `width`/`height` asli (411×144) tetap ditulis di `<img>` supaya browser
-tahu rasionya. Yang berubah cuma `align-self`:
+Terukur di 5 lebar (1440 / 1024 / 768 / 390 / 360): jarak logo ke tepi kiri =
+jarak ke tepi kanan **persis sama** (118px di 350px kartu, 107px di 328px),
+`overflow-x = 0`, nol error konsol.
 
-```css
-.login-form-side__logo { height: 40px; width: auto; max-width: none; align-self: center; }
-```
+⚠️ **`.heading` masih ada di `index.css` tapi sudah mati** — sisa dari zaman judul
+teks "LOGIN" diganti logo (4 Okt). Tidak disentuh karena tidak terkait, tapi jangan
+lupa kalau suatu saat mencari selector `heading`.
 
-⚠️ **`align-self` tetap wajib, hanya nilainya berubah jadi `center`.** Kedua kolom
-adalah flex column dan default `align-items` = stretch, jadi tanpa itu `<img>`
-ikut diregangkan selebar kolom (terukur **299px**) sementara `height` dikunci 40px
-— hasilnya logo melebar dan gepeng. Di bawah 720px `.login-form-side` jadi anak
-pertama, jadi logo otomatis muncul paling atas dan tetap ter-center.
+### ⚠️ Tombol Login tidak boleh pakai animasi loading
 
-⚠️ **Tombol Login tidak boleh pakai animasi loading.** Semula isinya
-`<ProgressBar>` (komponen `src/components/ui/ProgressBar.tsx`) saat `loading`.
+Semula isinya `<ProgressBar>` (`src/components/ui/ProgressBar.tsx`) saat `loading`.
 Dihapus — yang tersisa cuma kelas `.is-memproses` yang mengubah warna tombol
 samar (`#334155`, opacity 0.85). Alasannya `ProgressBar` membuat tombol melompat
 tinggi dan terlihat seperti elemen lain yang tidak sengaja muncul, dan di aplikasi
 billing animasi yang tidak terkait data sumber hanya menambah gangguan.
 
-⚠️ **`key={namaPc}` di `DaftarPc` boleh dipakai sekarang** — server sudah
-menolak nama duplikat dengan 409, jadi dua kunci itu tidak mungkin bentrok. Kalau
-nama duplikat suatu saat diizinkan, key itu harus diganti.
+### 🔴 Bug lama: sandi salah → halaman reload sendiri, tanpa pesan (16 Okt)
+
+Ditemukan waktu menguji halaman login, **bukan dari perubahan ini** — `api.ts`
+tidak disentuh soal itu.
+
+`api.interceptors.response` mengirim `window.location.href = '/login'` untuk
+**SEMUA** 401, termasuk 401 dari `POST /api/auth/login` yang artinya **sandi
+salah**. Akibatnya:
+
+```
+sandi salah  ->  halaman reload sendiri, kedua field kosong, pesan TIDAK MUNCUL
+```
+
+Kasir tidak pernah tahu itu salah sandi, server mati, atau tombolnya tidak merespons.
+Terbukti lewat Playwright — `window.__penanda` hilang setelah klik, artinya
+dokumen benar-benar dimuat ulang, bukan hanya state React yang hilang.
+
+Perbaikannya mengecualikan endpoint login:
+
+```ts
+const percobaanLogin = (error.config?.url as string | undefined)?.includes('/auth/login')
+if (error.response?.status === 401 && !percobaanLogin) { clearAuth(); window.location.href = '/login' }
+```
+
+Sesudahnya: sandi salah → **tidak** reload, pesan **"Invalid credentials"** muncul,
+username tetap terisi. Sandi benar → dashboard. **Token basi tetap dialihkan ke
+login** — yang dikecualikan cuma 401 dari endpoint login, bukan seluruh kelas 401.
+
+⚠️ Pesan error masih berbahasa Inggris karena itu pesan dari backend. Kalau mau
+"Sandi salah", ubah di backend (1 restart) atau terjemahkan di frontend (tanpa
+restart) — belum diputuskan.
 
 ## Sesi web terkunci otomatis (30 Sep) ✅
 
@@ -4086,6 +4107,203 @@ PC001–PC007 masih `1.0.24.0`, jadi masing-masing perlu dipasang MSI `1.0.27.0`
 atau lebih baru secara manual sekali, sebelum bisa ditandai dari Halaman PC.
 
 
+## 🔴 Mati listrik total — 4 bug, uang pelanggan terkuras (16 Okt 2026)
+
+Dilaporkan pagi 16 Okt: **mati listrik sekitar 20:00-21:02 WIB**. Server ikut
+mati, semua PC mati. Setelah listrik kembali, **hitung mundur pelanggan di aplikasi
+HP masih terus jalan, tapi tidak bisa dikunci maupun dimatikan dari HP**.
+
+Ternyata bukan satu bug, **empat**, dan hanya satu yang kelihatan di HP.
+
+### Kronologi — direkonstruksi dari data, bukan dari cerita
+
+| Waktu WIB | Bukti |
+|---|---|
+| 19:01-19:02 | 4 sesi mulai: PC004 `3333`, PC002 `biu02`, PC005 `adit`, PC001 `malik` |
+| ~20:00 | Mati listrik. Proses server **dibunuh OS** — `handleDisconnect()` tidak pernah jalan |
+| **21:02:17** | `docker inspect` → `StartedAt` container. `RestartCount=0` |
+| 21:07 / 21:22 / 22:21 | Sesi dihentikan `alasan=manual`, tercatat sebagai `PC Dibuka` |
+
+**Bukti terkuat:** di `billing-2026-10-15.log`, label `PC Dibuka` (`pc_unlock`)
+muncul **45 kali**, sedangkan `PC Dikunci` (`pc_lock` = `dashboard:lock_pc`)
+**0 kali**. Jadi operator **tidak pernah** berhasil lewat tombol KUNCI semalaman
+itu — semuanya lewat halaman PC Management → Buka Kunci yang khusus ADMIN.
+
+### Kerugiannya nyata, bukan hanya tampilan
+
+Sesi PC004 akun `3333`: `dipakai = 12000` dtk (3j20m) untuk periode 19:01-22:21,
+dengan `sisaKembali = 7312`. **Sekitar 1 jam dari 3j20m itu adalah waktu mati
+listrik** — PC-nya gelap, tidak ada yang memakai. Saldo pelanggan tetap terpotong.
+
+⚠️ `Account.sisaWaktuDetik` **tidak** berkurang selama sesi — pengurangannya
+baru ditulis saat `stopSession()`. Jadi di tengah sesi tidak ada yang berubah di
+database, dan `durasiTerpakaiDetik` pulihannya **tidak pernah** dibandingkan
+dengan waktu yang benar-benar terpakai.
+
+### Bug 1 — Mobile: `canOperate` mematikan KEDUA tombol saat OFFLINE
+
+```
+v3netbill-mobile/lib/features/pcs/models/pc.dart:21
+  /// PC offline tidak punya sesi, jadi tidak bisa dikunci atau dimatikan.
+  bool get canOperate => this != PcStatus.offline;
+```
+
+Dipakai di `pc_card.dart` pada kedua tombol → `enabled: false`, `onTap: null`.
+
+**Asumsi di komentarnya salah.** "PC offline tidak punya sesi" benar sebelum mati
+listrik, salah sesudahnya: `Session` tetap `BERJALAN` sementara agent-nya masih
+mati. Gejalanya persis yang dilaporkan — `pc_card.dart:120` tetap merender kotak
+sesi dengan hitung mundur (`:150`), tapi tombolnya mati.
+
+Perbaikan: **aksinya dipisah tiga**, bukan semuanya lewat satu gerbang.
+
+| Tombol | Izin | Alasan |
+|---|---|---|
+| Akhiri Sesi | `!busy` saja | Operasi sisi server, PC tidak perlu hidup |
+| Mulai Sesi | `canOperate && !busy` | Sesi di PC gelap sia-sia |
+| Matikan | `canOperate && !busy` | Benar-benar tidak bisa sampai ke PC mati |
+
+⚠️ `canOperate` **tidak boleh dipakai** sebagai syarat mengakhiri sesi. Perilaku
+`canOperate` sendiri tidak diubah — masih dikunci `test/model_test.dart`.
+
+### Bug 2 — Backend: perintah kunci **menolak sebelum** menghentikan sesi
+
+Ini yang paling serius — **uang tetap tertagih dan tidak ada cara menghentikannya**:
+
+```
+session.gateway.ts  handleDashboardLockPc / handleDashboardShutdownPc
+  const socketId = this.pcSocketMap.get(pcId);
+  if (!socketId) return { success: false, message: 'PC tidak terhubung' };  // <- BERHENTI DI SINI
+  await this.sessionService.unlockPc(pcId);                                // <- tidak pernah sampai
+```
+
+`unlockPc()` (`session.service.ts:1383`) **murni sisi server**
+(`prisma.session.findFirst` + `stopSession`) — tidak butuh soket sama sekali.
+Soket hanya menentukan apakah **layar** bisa dikunci, bukan apakah **sesi** bisa
+dihentikan.
+
+Perbaikan: `unlockPc()` dipanggil **dulu**, soket belakangan. Pesannya dibedakan:
+
+```ts
+await this.sessionService.unlockPc(pcId);
+await this.broadcastPcUpdate();
+if (!socketId) return { success: true, message: 'Sesi dihentikan. PC tidak terhubung, ...' };
+this.broadcastActivityLog('pc_lock', { ... });
+this.server.to(socketId).emit('admin:lock', { pcId });
+```
+
+⚠️ **`pc_lock` / `pc_shutdown` hanya ditulis kalau perintahnya benar-benar sampai.**
+Versi pertama menuliskannya tanpa syarat, dan uji langsung ke server sungguhan
+membuktikan hasilnya: `billing-2026-10-16.log` berisi `PC Dikunci` untuk PC001 yang
+**offline** — tidak ada yang dikunci. Log aktivitas jadi **berbohong**. Jejak sesi
+yang benar-benar dihentikan sudah ditulis sendiri `stopSession()` sebagai
+`Sesi Berakhir`.
+
+### Bug 3 — Backend: masa tenggang tidak pernah aktif setelah restart keras
+
+`disconnectedAt` hanya ditulis `handleDisconnect()` — event Socket.IO yang **tidak
+pernah jalan** kalau proses dibunuh OS. Maka:
+
+- `sesiDalamMasaTenggang(NULL, ...)` → `false` (`pc-status.ts:73`)
+- → jatuh ke `heartbeatSegar()` → agent masih mati → **`OFFLINE`** (`pc-status.ts:119`)
+- → payload jadi kontradiktif: `status: "OFFLINE"` + `session: { sisaDetik }`
+
+Ini **kelanjutan langsung** dari bagian "Grace period SEHARUSNYA juga menahan status
+PC" di atas: yang itu dibangun untuk "server hidup, socket agent putus", dan **tidak
+menutup** kasus "server ikut mati".
+
+### Bug 4 — Web: tombol MULAI di PC yang sesinya hidup
+
+```
+DashboardPage.tsx  const sedangBerjalan = sesi !== null && pc.status === 'ACTIVE'
+```
+
+Status OFFLINE + sesi ada → `sedangBerjalan = false` → KUNCI berubah jadi
+**MULAI**, yang pasti ditolak backend dengan "PC sudah memiliki sesi berjalan".
+Jadi di web kasir juga tidak bisa menghentikan sesi — hanya dapat pesan menyesatkan.
+
+Alasan lamanya (`&&`) sudah **usang**: saat ditulis, masa tenggang belum bekerja,
+jadi hitung mundurnya memang tidak lagi bergerak. Sekarang sesi hidup dan
+angkanya **benar-benar jalan**. Sekarang `|| pc.status === 'ACTIVE'`, sama persis
+dengan `pc_card.dart` di aplikasi Android.
+
+### 🔴 Prinsipnya: MUNDURKAN JAM, jangan mencoba mendeteksi mati listrik
+
+Ini inti yang harus diingat, karena kelihatan seperti ide kecil padahal tidak:
+
+> **Sistem tidak boleh mencoba mendeteksi mati listrik.** Mati listrik tidak bisa
+> dibedakan dari crash server, kabel putus, atau Postgres mati — logika deteksi
+> apa pun akan salah di salah satu kasus.
+
+Yang diketahui dengan kepastian cuma satu: **`durasiTerpakaiDetik`**, yaitu detik
+yang benar-benar terpakai, ditulis **tick tiap detik** (`session.service.ts:1110`)
+ke database — jadi selamat dari listrik yang dicabut.
+
+🔴 **Mematikan tick TIDAK menghentikan tagihan.** `sisaWaktuSekarang()` =
+`saldo - (now - waktuMulai)` dihitung **saat baca**; tick hanya menulis. Satu-satunya
+cara memandikan jam adalah **memindahkan `waktuMulai` ke depan**. Itu yang dilakukan
+`recoverRunningSessions()`:
+
+```
+1. Recovery sesi  ->  waktuMulai = now - durasiTerpakaiDetik   ← jam dimundurkan
+                      disconnectedAt = now                      ← masa tenggang aktif
+                      tick dinyalankan
+2. Agent kembali  ->  registerPc() menghapus disconnectedAt, sesi jalan lagi
+3. Agent tak kembali dalam masa tenggang
+                  ->  checkGracePeriodExpired() menutup + refund sisa
+```
+
+⚠️ **Dua `try/catch` TERPISAH, dan urutannya tidak boleh ditukar.** Kalau
+pemunduran gagal tapi tick ikut dilewati, sesi itu **tidak ditagih dan tidak juga
+berhenti** — berhenti bekerja untuk warnet tanpa ada yang mengetahuinya. Jadi tick
+WAJIB dinyalakan apa pun hasil pemunduran.
+
+⚠️ **Konsekuensi yang harus disadari:** pemunduran membuat pelanggan **tidak
+ditagih** selama server down. Kalau yang mati hanya server dan PC pelanggan tetap
+nyala, itu berarti tambahan waktu gratis. Ini trade-off yang **disetujui operator**
+("tidak apa-apa rugi 1-2 menit"), bukan pilihan teknis netral.
+
+⚠️ **Masa tenggang ikut ditagih.** Terbukti: sesi `testeer` 16 Okt terputus dengan
+`disconnectedAt` 11:35:23, ditutup 11:37:31 → `dipakai = 231` dtk = 103 dtk
+pemakaian nyata + **128 dtk masa tenggang**. Kalau mau lebih kecil, ubah
+**Pengaturan → Tarif → Grace Period** (bawaan 120 dtk, sudah diset 120 di produksi),
+tanpa restart — setting dibaca ulang tiap 10 detik.
+
+### Hasil uji langsung, dan batasnya yang jujur
+
+**Terbukti live ke server sungguhan:**
+
+| Uji | Hasil |
+|---|---|
+| `dashboard:lock_pc` di PC offline | `{success: true, message: 'Sesi dihentikan. PC tidak terhubung, ...'}` |
+| `dashboard:shutdown_pc` di PC offline | `{success: true, message: 'Sesi dihentikan. ... perintah mati tidak bisa sampai'}` |
+| PC mati → ditutup sendiri | 2x berturut (`11:37:31` dan `11:49:31`), `disconnect_timeout`, refund 969 dtk lalu 776 dtk |
+| Log tidak berbohong | tidak ada `PC Dikunci`/`PC Dimatikan` untuk PC offline |
+
+⚠️ **Belum terbukti live — jangan dianggap selesai.** Yang baru **unit test**:
+- Pemunduran jam **tidak pernah jalan di data produksi**. Saat restart, warnet
+  kebetulan kosong, jadi baris `Recovery: N sesi berjalan, N jam dimundurkan`
+  **tidak pernah muncul** di log sungguhan.
+- Bug 1 & 4 (tombol KUNCI/Akhiri di PC offline) belum pernah dilihat di layar.
+
+⚠️ **`sudo poweroff -f` TIDAK bisa dipakai untuk mereproduksi.** Terbukti dua kali:
+`-f` masih sempat mengirim disconnect dengan rapi, jadi `disconnectedAt` **terisi**,
+masa tenggang aktif, status tetap `ACTIVE`, dan **bug tidak pernah tercapai**.
+Untuk sampai ke kondisi bug, disconnect harus hilang tanpa FIN sama sekali —
+persis yang terjadi kalau **server-nya ikut mati**. Cara lain yang belum dicoba:
+`iptables -j DROP` (bukan REJECT) atau mencabut NIC.
+
+⚠️ **Bedakan "grace period 120 detik" dari "hemat 1 jam".** Kalau nanti restart
+lalu menunggu 3 menit, `dipakai` harus jadi `terpakai_awal + 120`, **bukan**
+`+ 180`. Angka itulah satu-satunya bukti pemunduran jam benar-benar hidup.
+
+Tes: `backend/test/recovery-mundur-jam.spec.ts` (5) — **sudah dibuktikan menangkap
+bug**: dijalankan SEBELUM kodenya diubah, kelima tes gagal dengan
+`session.update` dipanggil **0 kali**. Tidak perlu memutasi `src/` (yang memicu
+restart) untuk dapat bukti itu.
+`test/recovery-sesi.spec.ts` (6) ikut diperbarui: `select` jadi
+`{ id: true, durasiTerpakaiDetik: true }`.
+
 ## Pelajaran proses (penting untuk sesi berikutnya)
 
 1. **Karakter asing nyasar di commit message — sudah 6 kali.** CJK, Korea, dan Rusia
@@ -4322,6 +4540,57 @@ di dalam kata itu — jadi hasil perbaikannya lebih buruk daripada sebelum.
     posisi dan cari sumber kebenarannya** (reflection API, berkas skema, atau
     dokumentasi). Enam percobaan berurutan di sini semuanya salah karena tidak
     ada satu pun yang berbasis bukti.
+
+24. ⚠️ **`docker run` TIDAK mewarisi environment host.** `TOKEN=x docker run ...`
+    hanya memberi variabel itu ke proses `docker` di host — **container tidak
+    menerimanya**. Harus `-e TOKEN="$TOKEN"`.
+    Gejalanya sangat menyesatkan: token masuk sebagai teks `"undefined"` (9
+    karakter), jadi request terkirim dengan header `Authorization: Bearer
+    undefined`. Itu terlihat **persis seperti bug aplikasi**, dan saya sempat
+    hampir menyalahkan `api.ts` yang salah. Bukti rpc-nya: `sessionStorage` berisi
+    `"undefined"` sepanjang 9 karakter — itulah yang harus dicek pertama kalau
+    auth selalu gagal di Playwright tapi `curl` dengan token yang sama berhasil.
+
+25. ⚠️ **Bukti "sebelum" lebih berguna daripada mutasi "sesudah" — dan tidak
+   restart.** Aturan lama menyatakan mutation adalah bukti; aturan yang sama juga
+    melarang menyentuh `src/` saat ada pelanggan. Dua aturan itu bertabrakan, dan
+    penyelesaianya adalah **menjalankan tes baru SEBELUM mengubah kodenya**.
+    `test/recovery-mundur-jam.spec.ts` dijalankan lebih dulu: kelima tes gagal
+    dengan `session.update` dipanggil **0 kali**. Bukti identik, nol restart.
+    ⚠️ Tapi ini hanya berlaku kalau tesnya benar-benar baru. Untuk tes lama, ada
+    satu aturan yang sering dilanggar dan tidak tercatat: **mengedit satu berkas
+    beberapa kali = beberapa restart.** Sesi ini menulis `session.gateway.ts`
+    dua kali (untuk dua handler) dan `session.service.ts` sekali — hasilnya
+    **4 restart**, padahal 2 sudah cukup karena kedua handler bisa disunting
+    dalam satu operasi.
+    Aturan praktis: **sunting satu berkas sekali, untuk semua perubahan yang akan
+    masuk ke berkas itu.** Kalau sudah terlanjur mengedit berkali-kali, terima saja
+    dan laporkan jumlah restartnya — jangan disamarkan jadi "satu perubahan".
+
+26. ⚠️ **Compile error dari watcher TIDAK mematikan server — tapi `nest build`
+    manual sangat mudah tertukar dengan dua hal lain.**
+    Bukti nyata sesi ini: `session.service.ts` sempat salah tulis (blok duplikat,
+    `Found 30 errors`) selama **±90 detik**. Selama itu jumlah app start **tetap**,
+    proses lama tetap melayani semua PC, dan baru restart begitu `Found 0 errors`.
+    Jadi urutan `nest start --watch` = **compile dulu, baru restart** — compile
+    gagal = tidak restart = aman.
+    Yang **berbahaya** adalah `npx nest build` manual (lihat pelajaran di atas): ia
+    menghapus `dist/` lalu membangun ulang, dan proses yang sedang jalan bisa
+    memuat modul saat `dist` belum lengkap → `ERR_MODULE_NOT_FOUND` → server mati
+    ±15 menit.
+    Konsekuensi praktis: **berhenti dan perbaiki compile error dengan tenang.**
+    Pelanggan tidak boleh diabaikan begitu saja. Tapi jangan pernah menyangkal dengan
+    "ah compile error cuma warning" — kalau `nest build` manual sempat jalan di
+    tengah-tengah, akibatnya bisa fatal.
+
+27. ⚠️ **Uji otomatis pada halaman publik bisa menemukan bug yang bukan dari
+    perubahannya.** Uji login gagal "karena halaman reload sendiri". Sumbernya
+    interceptor 401 di `api.ts` yang sudah berumur berbulan-bulan — bukan dari
+    perubahan hari itu. Kalau Anda mereparasi yang seperti ini, diff-nya
+    jadi tidak jelas milik siapa.
+    Aturan: **sebelum mengklaim ada bug, `git diff` dulu untuk membuktikan file itu
+    tidak kamu sentuh.** `git diff src/lib/api.ts` hanya menunjukkan penghapusan
+    `fetchStatusPcRingkas` — jadi interceptor 401 jelas bukan hasil kerja saya.
 
 ## Notifikasi push FCM — pelanggan login di komputer warnet (30 Sep) ✅
 
@@ -5899,3 +6168,88 @@ kecil, dan jumlah `teks` wajib > 10.
 ⚠️ **`@Res()` harus parameter pertama di controller.** TypeScript menolak
 parameter wajib yang mengikuti parameter opsional (`TS1016`), dan karena
 watcher menunggu compile, satu baris itu menjatuhkan seluruh server.
+
+## 🔴 Layar PC terkunci dengan hitung mundur basi (17 Okt 2026, PC002)
+
+Dilaporkan dari lokasi: notifikasi "PC002 koneksi terputus" masuk, tapi
+pelanggan **masih terlihat bermain dan masih ada sisa waktu di PC-nya**.
+Kasir menekan "Matikan" pukul 15:24:09 — dan PC002 di server sudah
+`IDLE` sejak 2 menit sebelumnya.
+
+### Kronologi dari data, bukan dari cerita
+
+| Waktu WIB | Yang terjadi |
+|---|---|
+| 15:04:46 | monik login, sesi 6160 detik |
+| 15:20:03 | socket agent putus → `disconnectedAt` diisi, masa tenggang 120 detik mulai |
+| 15:22:04 | masa tenggang habis → `stopSession('disconnect_timeout')`, ditagih 1038 detik, **5122 detik dikembalikan**; notifikasi FCM "Koneksi terputus" dikirim |
+| 15:22:04–15:24:09 | **overlay masih menampilkan hitung mundur basi — pelanggan main gratis** |
+| ~15:23 | agent konek lagi → `kirimUlangSesiKeAgent()` **tidak mengirim apa pun** |
+| 15:24:09 | kasir tekan Matikan (`PC Dimatikan`, kasir `aziz`) → PC mati → overlay fresh → "normal lagi" |
+
+**Ketiga gejala yang dilaporkan itu satu bug yang sama**, bukan tiga bug.
+Termasuk "sudah `IDLE`" — karena saat kasir menekan Matikan, sesinya
+memang sudah tutup 2 menit sebelumnya. Dashboard benar.
+
+### Akar masalahnya
+
+`emitSessionStop()` mengirim `session:stop` lewat `server.to(socketId)`.
+Masa tenggang habis itu **PASTI** terjadi saat agent sudah offline, jadi
+socket selalu kosong dan perintahnya **selalu dibuang — persis di kasus
+yang paling membutuhkan**. Tidak ada antrean, tidak ada retry, tidak ada
+log.
+
+Di sisi agent, `Worker.cs` hanya bisa kembali ke `Locked` lewat
+`ForceLockScreenAsync()`, yang dipicu `session:stop` saja
+(`ServerConnection.cs`). `_currentState`-nya in-memory, jadi kalau
+`session:stop` tidak pernah sampai, PC terkunci bertahan dengan hitung
+mundur yang terus turun dari nilai basi — **87 menit** (6160 − 1038).
+
+### ⚠️ Arah kebocorannya bukan "uang pelanggan hilang"
+
+Sisa **5122 detik dikembalikan dengan benar** — buktinya sesi
+berikutnya monik login **tepat 5122 detik** (15:29:20), jadi angkanya
+tercocok persis.
+
+Yang bocor justru **arah sebaliknya**: pelanggan memakai PC **gratis**
+selama hitung mundur basi itu belum habis. Pada insiden ini hanya
+**±2 menit** karena kasir kebetulan lewat, tapi tanpa intervensi itu
+87 menit.
+
+⚠️ **Kesalahan umum saat membaca insiden ini:** "87 menit" itu **nilai
+hitung mundur yang tertinggal**, bukan lama pelanggan benar-benar main.
+Yang benar selalu dihitung dari `waktuSelesai` (atau `PC Dimatikan`)
+ dikurangi `waktuMulai`.
+
+### Perbaikannya (2 bagian, keduanya wajib)
+
+| Bagian | Isi |
+|---|---|
+| `Set<string> menungguDikunci` di gateway | diisi saat `emitSessionStop()` tidak menemukan socket |
+| `kirimUlangSesiKeAgent()` | mengirim `admin:lock` saat PC konek lagi **kalau penandanya masih ada** |
+
+⚠️ **Dua syarat di `kirimUlangSesiKeAgent()` keduanya wajib.** Tanpa
+syarat pertama, PC yang memang sedang login akan ikut terkunci. Tanpa
+syarat kedua (`pcSocketMap.has(pcId)`), agent yang konek tapi belum masuk
+map akan diberi perintah ke socket yang salah.
+
+⚠️ **Penanda basi harus dibuang begitu sesi ditemukan masih hidup**
+(`this.menungguDikunci.delete(pcId)` di jalur `session:start`). Kalau
+tidak, PC yang sedang dipakai pelanggan bisa terkunci oleh peristiwa
+lama.
+
+⚠️ **Simpan sebagai penanda, bukan antrean pesan.** Yang perlu dikirim
+bukan "sesi berhenti" — itu sudah terlalu basi kalau baru sampai — tapi
+"balik ke layar login", dan itu tetap benar berapa pun lamanya PC ini
+offline.
+
+Tes: `backend/test/pc-terkunci-masa-tenggang.spec.ts` (8 kasus).
+Mutasi sudah dibuktikan: membuang cabang lock saat reconnect → gagal.
+
+⚠️ **Belum terbukti lewat uji live di PC sungguhan.** Yang terbukti
+baru log billing + baris `Session` + kode. Jangan dianggap selesai hanya
+karena tes hijau.
+
+⚠️ **Blind spot yang masih ada:** tidak ada notifikasi ke kasir kalau
+ada PC yang layarnya dikunci saat reconnect. Kalau kejadian serupa terjadi
+dan tidak dilihat langsung, kejadian itu quiet saja.
