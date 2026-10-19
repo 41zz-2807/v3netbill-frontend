@@ -28,6 +28,7 @@ const LOG_EVENT_LABEL: Record<string, string> = {
   pc_shutdown_auto: 'PC Mati Otomatis',
   'teknisi:login': 'Teknisi Login',
   'teknisi:logout': 'Teknisi Keluar',
+  'koneksi:diagnosis': 'Diagnosis Koneksi',
 }
 
 const LOG_EVENT_VARIANT: Record<string, 'default' | 'success' | 'warning' | 'danger' | 'info'> = {
@@ -44,6 +45,7 @@ const LOG_EVENT_VARIANT: Record<string, 'default' | 'success' | 'warning' | 'dan
   pc_unlock: 'info',
   pc_unlocked: 'info',
   pc_shutdown: 'danger',
+  'koneksi:diagnosis': 'warning',
 }
 
 const STOP_REASON: Record<string, string> = {
@@ -92,6 +94,17 @@ export function formatLogDetail(log: DashboardLog, pcName?: string): string {
       return `${pc} dibuka oleh teknisi ${log.teknisi ?? '-'} — tanpa penagihan`
     case 'teknisi:logout':
       return `${pc} dikunci — akses teknisi dimatikan${log.teknisi ? ` (${log.teknisi})` : ''}`
+    case 'koneksi:diagnosis': {
+      // ⚠️ Ringkasan berkala tidak punya nama PC, jadi tidak boleh
+      // diawali "PC ...". Kalau dipaksa pakai awalan yang sama, baris
+      // ringkasan seluruh warnet akan terbaca sebagai satu PC tertentu.
+      if (log.alasan === 'RINGKASAN') {
+        return log.keterangan ?? 'Ringkasan diagnosis koneksi'
+      }
+      // Nama PC ikut di dalam kalimat dari backend, bukan dicari dari daftar
+      // PC yang tampil -- PC yang sedang putus tidak selalu ada di daftar itu.
+      return `${pc} — ${log.keterangan ?? log.alasan ?? '-'}`
+    }
     default:
       return ''
   }
@@ -133,7 +146,12 @@ export function itemKeLog(item: ActivityLogItem): DashboardLog {
     nama: detail.nama as string | undefined,
     by: detail.by as string | undefined,
     pc: detail.pc as string | undefined,
-    keterangan: detail.detail as string | undefined,
+    // ⚠️ `detail.keterangan` lebih dulu, `detail.detail` jadi cadangan.
+    // Dua kunci itu punya asal berbeda: `log-billing.service.ts` menulis
+    // berkas dari `payload['keterangan']`, sedangkan beberapa event lama
+    // memang mengirim `detail`. Kalau hanya salah satu, kolomnya kosong
+    // tanpa error sama sekali.
+    keterangan: (detail.keterangan ?? detail.detail) as string | undefined,
     menit: detail.menit as number | undefined,
     teknisi: detail.teknisi as string | undefined,
   }
